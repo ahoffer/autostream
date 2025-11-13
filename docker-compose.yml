@@ -2,6 +2,7 @@ services:
   samples:
     image: samples:latest
     container_name: samples
+    hostname: samples
     restart: unless-stopped
     ports:
       - "9554:8554"     # RTSP
