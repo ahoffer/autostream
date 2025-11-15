@@ -1,27 +1,3 @@
-# MediaMTX configuration
-logLevel: info
-
 paths:
-  stream0:
-    runOnInit: ffmpeg -re -stream_loop -1 -i /app/videos/lots-ofppeople-in-a-park.mp4 -c copy -f rtsp rtsp://localhost:$RTSP_PORT/$MTX_PATH
-    runOnInitRestart: yes
-
-  stream1:
-    runOnInit: ffmpeg -re -stream_loop -1 -i /app/videos/peoplewalking_india.mp4 -c copy -f rtsp rtsp://localhost:$RTSP_PORT/$MTX_PATH
-    runOnInitRestart: yes
-
-  stream2:
-    runOnInit: ffmpeg -re -stream_loop -1 -i /app/videos/usv_vid.mp4 -c copy -f rtsp rtsp://localhost:$RTSP_PORT/$MTX_PATH
-    runOnInitRestart: yes
-
-  stream3:
-    runOnInit: ffmpeg -re -stream_loop -1 -i /app/videos/village-2boys.mp4 -c copy -f rtsp rtsp://localhost:$RTSP_PORT/$MTX_PATH
-    runOnInitRestart: yes
-
-  stream4:
-    runOnInit: ffmpeg -re -stream_loop -1 -i /app/videos/village-3people.mp4 -c copy -f rtsp rtsp://localhost:$RTSP_PORT/$MTX_PATH
-    runOnInitRestart: yes
-
-  stream5:
-    runOnInit: ffmpeg -re -stream_loop -1 -i /app/videos/village-disappearingpeople.mp4 -c copy -f rtsp rtsp://localhost:$RTSP_PORT/$MTX_PATH
-    runOnInitRestart: yes
+  village1:
+    source: file:///app/videos/village-2boys.mp4

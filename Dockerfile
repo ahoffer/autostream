@@ -1,13 +1,9 @@
-# Real RTSP server + ffmpeg already included
-FROM bluenviron/mediamtx:latest-ffmpeg
+FROM bluenviron/mediamtx:latest
 
 USER root
 RUN apk add --no-cache bash
 
 WORKDIR /app
-
-# MediaMTX configuration
-COPY mediamtx.yml /mediamtx.yml
 
 # Our script that runs mediamtx + publishers
 COPY entrypoint.sh /app/entrypoint.sh
