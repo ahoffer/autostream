@@ -6,6 +6,8 @@ services:
     container_name: ${CONTAINER_NAME}
     hostname: ${CONTAINER_NAME}
     restart: unless-stopped
+    environment:
+      - STREAM_BITRATE=${STREAM_BITRATE}
     ports:
       - "${RTSP_PORT}:8554"          # RTSP
       - "${RTSP_HTTP_PORT}:8888"     # RTSP over HTTP
