@@ -1,9 +1,11 @@
+SHELL := /bin/bash
+
 .PHONY: build up down
 
 build:
 	set -a && . .env && docker build -t samples:$$VERSION .
 
-up:
+up: down
 	docker compose up
 
 down:
