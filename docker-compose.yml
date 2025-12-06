@@ -7,9 +7,11 @@ services:
     container_name: ${CONTAINER_NAME}
     hostname: ${CONTAINER_NAME}
     restart: unless-stopped
+    stop_grace_period: 1s
     environment:
       - MEDIAMTX_RTSP_PORT=${MEDIAMTX_RTSP_PORT}
       - CONTAINER_NAME=${CONTAINER_NAME}
+      - LOG_LEVEL=${LOG_LEVEL}
     ports:
       - "9554:${MEDIAMTX_RTSP_PORT}"    # RTSP
       - "9322:8888"                      # RTSP over HTTP

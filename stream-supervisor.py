@@ -5,7 +5,6 @@ Stream supervisor: watches /app/videos and manages FFmpeg streaming processes
 import os
 import re
 import subprocess
-import signal
 import time
 import socket
 from pathlib import Path
@@ -15,6 +14,7 @@ from inotify_simple import INotify, flags
 VIDEOS_DIR = Path("/app/videos")
 STREAM_VIDEO_SCRIPT = "stream-video.sh"
 RTSP_PORT = int(os.getenv("MEDIAMTX_RTSP_PORT", "8554"))
+LOG_LEVEL = os.getenv("LOG_LEVEL", "info").lower()
 
 # Get hostname from environment (required)
 HOSTNAME = os.getenv("CONTAINER_NAME")
@@ -70,14 +70,21 @@ def start_stream(video_path, stream_name):
         return False
 
     try:
-        # Don't redirect output so we can see FFmpeg errors in container logs
-        process = subprocess.Popen(
-            [STREAM_VIDEO_SCRIPT, str(video_path), stream_name]
-        )
+        # Show FFmpeg output only in debug mode
+        if LOG_LEVEL == "debug":
+            process = subprocess.Popen(
+                [STREAM_VIDEO_SCRIPT, str(video_path), stream_name]
+            )
+        else:
+            process = subprocess.Popen(
+                [STREAM_VIDEO_SCRIPT, str(video_path), stream_name],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL
+            )
         streams[stream_name] = process
         rtsp_url = f"rtsp://{HOSTNAME}:{RTSP_PORT}/{stream_name}"
-        log(f"Started stream: {stream_name} -> {video_path}")
-        log(f"RTSP URL: {rtsp_url}")
+        #log(f"Starting {stream_name} -> {video_path}")
+        log(f"Now playing {rtsp_url}")
         return True
     except Exception as e:
         log(f"Failed to start stream {stream_name}: {e}")
@@ -184,18 +191,7 @@ def watch_directory():
             last_cleanup = time.time()
 
 
-def signal_handler(signum, frame):
-    log("Shutting down...")
-    for stream_name in list(streams.keys()):
-        stop_stream(stream_name)
-    exit(0)
-
-
 def main():
-    # Register signal handlers
-    signal.signal(signal.SIGTERM, signal_handler)
-    signal.signal(signal.SIGINT, signal_handler)
-
     log("Stream supervisor starting...")
 
     # Wait for MediaMTX
@@ -205,10 +201,7 @@ def main():
     sync_videos()
 
     # Watch for changes
-    try:
-        watch_directory()
-    except KeyboardInterrupt:
-        signal_handler(None, None)
+    watch_directory()
 
 
 if __name__ == "__main__":

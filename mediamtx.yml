@@ -1,5 +1,6 @@
 # Log level: debug, info, warn, error
-logLevel: info
+# This will be overridden by entrypoint.sh based on LOG_LEVEL env var
+logLevel: error
 
 # Protocol listeners
 rtspAddress: :8554
