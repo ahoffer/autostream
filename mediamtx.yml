@@ -1,3 +1,6 @@
+# Log level: debug, info, warn, error
+logLevel: info
+
 # Protocol listeners
 rtspAddress: :8554
 rtpAddress: :8000
@@ -8,17 +11,8 @@ hls: yes
 hlsAddress: :8888
 
 # Paths configuration
-# Using stream-video.sh wrapper script: stream-video.sh <video-file> <stream-path>
+# All videos in /app/videos are automatically discovered and streamed
+# by the stream-supervisor.py process
 paths:
-  village1:
-    runOnInit: stream-video.sh /app/videos/village-2boys.mp4 $MTX_PATH
-    runOnInitRestart: yes
-  village2:
-    runOnInit: stream-video.sh /app/videos/village-disappearing-people.mp4 $MTX_PATH
-    runOnInitRestart: yes
-  village3:
-    runOnInit: stream-video.sh /app/videos/village-3people.mp4 $MTX_PATH
-    runOnInitRestart: yes
-  martac:
-    runOnInit: stream-video.sh /app/videos/usv_vid.mp4 $MTX_PATH
-    runOnInitRestart: yes
+  all:
+    source: publisher

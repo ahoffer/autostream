@@ -1,15 +1,26 @@
 FROM bluenviron/mediamtx:1.15.3-ffmpeg
 
+# Install Python3 and dependencies for stream supervisor
+RUN apk add --no-cache python3 py3-pip && \
+    pip3 install --no-cache-dir inotify-simple --break-system-packages
+
+# Create non-root user
+RUN addgroup -g 1000 autostream && \
+    adduser -D -u 1000 -G autostream autostream
+
 WORKDIR /app
 
-# Copy stream wrapper script
 COPY stream-video.sh /usr/local/bin/stream-video.sh
-RUN chmod +x /usr/local/bin/stream-video.sh
+COPY stream-supervisor.py /app/stream-supervisor.py
+COPY entrypoint.sh /app/entrypoint.sh
 
-# Bake videos into the image
-COPY videos /app/videos
+# Set ownership
+RUN chown -R autostream:autostream /app
 
-# Expose MediaMTX default ports
+# Switch to non-root user
+USER autostream
+
+# Expose MediaMTX ports
 EXPOSE 8554 8888 8000/udp 8001/udp
 
-ENTRYPOINT ["/mediamtx", "/mediamtx.yml"]
+ENTRYPOINT ["/app/entrypoint.sh"]

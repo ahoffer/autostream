@@ -10,7 +10,7 @@
 #   - B-frame reference dependencies break at loop boundary
 #   - Large GOP (8.3s) causes artifacts to persist
 #
-# This creates visible artifacts (pixelation, tearing) at 12-second intervals.
+# This creates visible artifacts (pixelation, tearing).
 # Solution: Transcode with clean GOP structure and regenerated timestamps.
 # Artifacts should clear up after the first loop.
 

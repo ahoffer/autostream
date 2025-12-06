@@ -3,7 +3,7 @@ SHELL := /bin/bash
 .PHONY: build up down
 
 build:
-	set -a && . .env && docker build -t samples:$$VERSION .
+	set -a && . .env && docker build -t $$CONTAINER_NAME:$$VERSION .
 
 up: down
 	docker compose up
