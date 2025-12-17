@@ -14,6 +14,9 @@ COPY stream-video.sh /usr/local/bin/stream-video.sh
 COPY stream-supervisor.py /app/stream-supervisor.py
 COPY entrypoint.sh /app/entrypoint.sh
 
+# Copy mediamtx.yml to app directory so it can be modified by non-root user
+RUN cp /mediamtx.yml /app/mediamtx.yml
+
 # Set ownership
 RUN chown -R autostream:autostream /app
 
