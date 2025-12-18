@@ -1,6 +1,6 @@
 # Autostream
 
-Automatic RTSP video streaming server with hot-reload file discovery.
+Automatic RTSP video streaming server with web-based stream control and hot-reload file discovery.
 
 ## Quickstart
 
@@ -9,110 +9,89 @@ Automatic RTSP video streaming server with hot-reload file discovery.
    cp your-video.mp4 videos/
    ```
 
-2. **Start the container**:
+2. **Build and start**:
    ```bash
-   make build up
+   make build    # Only needed once, or after code changes
+   make up
    ```
 
-3. **Access your streams** at:
+3. **Control your streams** via the web UI:
+   ```
+   http://localhost:9080
+   ```
+
+4. **Access streams** via RTSP:
    ```
    rtsp://localhost:9554/<video-name>
    ```
 
-That's it! Videos are automatically discovered and streamed. Check logs for exact URLs:
-```bash
-docker logs autostream
-```
+## Web Control UI
+
+A built-in web interface at **http://localhost:9080** lets you:
+
+- **Start/Stop** individual streams
+- **Stop All / Start All** streams at once
+- **Set playback count**: Infinite loop, or play 1x, 2x, 3x, 5x, 10x times
+- **View status** of all streams (auto-refreshes every 5 seconds)
+
+The playback count setting persists when you stop a stream.
 
 ## How It Works
 
 Autostream automatically:
 - **Scans** the `videos/` directory on startup
-- **Starts streaming** each video file via RTSP
+- **Starts streaming** each video file via RTSP (infinite loop by default)
 - **Watches** for new files added at runtime
 - **Removes streams** when files are deleted
 
 ## Stream URLs
 
 Videos are accessible at:
-- **From host**: `rtsp://localhost:9554/<stream-name>`
-- **From Docker network**: `rtsp://autostream:8554/<stream-name>`
+- **RTSP (from host)**: `rtsp://localhost:9554/<stream-name>`
+- **RTSP (Docker network)**: `rtsp://autostream:8554/<stream-name>`
+- **HLS**: `http://localhost:9322/<stream-name>/index.m3u8`
 
 Stream names are sanitized from filenames:
-- `My Video (1080p).mp4` → `rtsp://localhost:9554/my_video_1080p`
-- `test-stream.mkv` → `rtsp://localhost:9554/test-stream`
-- `__demo__.mov` → `rtsp://localhost:9554/demo`
+- `My Video (1080p).mp4` → `my_video_1080p`
+- `test-stream.mkv` → `test-stream`
 
 ## Configuration
 
 Edit `.env` file:
 
 ```bash
-VERSION=0.4
-CONTAINER_NAME=autostream
-MEDIAMTX_RTSP_PORT=8554
-# LOG_LEVEL=debug  # Uncomment for verbose FFmpeg/MediaMTX output
-```
-
-### Log Levels
-
-- **Default (info)**: Only supervisor messages showing stream URLs
-- **Debug**: Full FFmpeg encoding output + MediaMTX connection logs
-
-Enable debug mode:
-```bash
-# Uncomment in .env
-LOG_LEVEL=debug
+VERSION=0.6                    # Docker image version
+CONTAINER_NAME=autostream      # Container name
+MEDIAMTX_RTSP_PORT=8554       # Internal RTSP port
 ```
 
 ## Port Mapping
 
-| Service | Container Port | Host Port |
-|---------|---------------|-----------|
-| RTSP | 8554 | 9554 |
-| HLS | 8888 | 9322 |
-| RTP | 8000/udp | 9000/udp |
-| RTCP | 8001/udp | 9001/udp |
+| Service | Host Port | Description |
+|---------|-----------|-------------|
+| RTSP | 9554 | Main streaming protocol |
+| HLS | 9322 | HTTP Live Streaming |
+| Web UI | 9080 | Stream Control Interface |
 
-## Supported Formats
+## REST API
 
-Any video format supported by FFmpeg: MP4, MKV, AVI, MOV, WEBM, FLV, TS, etc.
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/` | GET | Web UI |
+| `/api/streams` | GET | List all streams with status |
+| `/api/streams/{name}/start?loop=N` | POST | Start stream (-1=infinite, 0=1x, 1=2x, etc.) |
+| `/api/streams/{name}/stop` | POST | Stop stream |
+| `/api/streams/start-all` | POST | Start all stopped streams |
+| `/api/streams/stop-all` | POST | Stop all running streams |
 
 ## Commands
 
 ```bash
-make build      # Build container
+make build      # Build container image
 make up         # Start container
-make build up   # Build and start
-
-docker compose down         # Stop container
-docker logs -f autostream   # Follow logs
+make down       # Stop container
 ```
 
-## Testing Streams
+## Supported Formats
 
-**Using ffplay:**
-```bash
-ffplay rtsp://localhost:9554/my_video
-```
-
-**Using VLC:**
-Open VLC → Media → Open Network Stream → Enter RTSP URL
-
-**Using ffprobe:**
-```bash
-ffprobe rtsp://localhost:9554/my_video
-```
-
-## File Exclusions
-
-- Hidden files (starting with `.`) are automatically skipped
-- All other files are assumed to be playable videos
-
-## Docker Network
-
-The container runs on the `octo-cx-network` Docker network. Other containers on this network can access streams using the container hostname:
-
-```
-rtsp://autostream:8554/<stream-name>
-```
+Any video format supported by FFmpeg: MP4, MKV, AVI, MOV, WEBM, FLV, TS, etc.

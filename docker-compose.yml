@@ -11,12 +11,12 @@ services:
     environment:
       - MEDIAMTX_RTSP_PORT=${MEDIAMTX_RTSP_PORT}
       - CONTAINER_NAME=${CONTAINER_NAME}
-      - LOG_LEVEL=${LOG_LEVEL}
     ports:
       - "9554:${MEDIAMTX_RTSP_PORT}"    # RTSP
-      - "9322:8888"                      # RTSP over HTTP
+      - "9322:8888"                      # HLS
       - "9000:8000/udp"                  # RTP
       - "9001:8001/udp"                  # RTCP
+      - "9080:8080"                      # Stream Control UI
     networks:
       - octo-cx-network
 

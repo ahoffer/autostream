@@ -1,6 +1,7 @@
 #!/bin/sh
 # Wrapper script to stream a video file to MediaMTX via RTSP
-# Usage: stream-video.sh <video-file> <stream-path>
+# Usage: stream-video.sh <video-file> <stream-path> [loop-count]
+#   loop-count: -1 for infinite (default), 0 for no loop, N for N additional plays
 #
 # LOOPING DISCONTINUITY FIX:
 # The source videos have negative DTS (-0.067s) and B-frames. When using
@@ -16,8 +17,9 @@
 
 VIDEO_FILE="$1"
 STREAM_PATH="$2"
+LOOP_COUNT="${3:--1}"
 
-exec ffmpeg -re -stream_loop -1 -i "$VIDEO_FILE" \
+exec ffmpeg -re -stream_loop "$LOOP_COUNT" -i "$VIDEO_FILE" \
   -c:v libx264 -preset ultrafast -tune zerolatency \
   -g 30 -keyint_min 30 -sc_threshold 0 \
   -bf 0 \
