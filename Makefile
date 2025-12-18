@@ -5,7 +5,7 @@ SHELL := /bin/bash
 build:
 	set -a && . .env && docker build -t $$CONTAINER_NAME:$$VERSION .
 
-up: down
+up:
 	docker compose up
 
 down:
