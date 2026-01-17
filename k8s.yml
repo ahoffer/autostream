@@ -15,21 +15,23 @@ spec:
     spec:
       containers:
         - name: autostream
-          image: autostream:0.7
+          image: autostream:${VERSION}
           imagePullPolicy: Never
           env:
             - name: MEDIAMTX_RTSP_PORT
-              value: "8554"
+              value: "18554"
+            - name: MEDIAMTX_HLS_PORT
+              value: "18888"
             - name: CONTAINER_NAME
               value: autostream
           ports:
-            - containerPort: 8554
+            - containerPort: 18554
               protocol: TCP
-            - containerPort: 8888
+            - containerPort: 18888
               protocol: TCP
-            - containerPort: 8000
+            - containerPort: 18000
               protocol: UDP
-            - containerPort: 8001
+            - containerPort: 18001
               protocol: UDP
             - containerPort: 8080
               protocol: TCP
@@ -59,20 +61,20 @@ spec:
     app: autostream
   ports:
     - name: rtsp
-      port: 8554
-      targetPort: 8554
+      port: 18554
+      targetPort: 18554
       protocol: TCP
     - name: hls
-      port: 8888
-      targetPort: 8888
+      port: 18888
+      targetPort: 18888
       protocol: TCP
     - name: rtp
-      port: 8000
-      targetPort: 8000
+      port: 18000
+      targetPort: 18000
       protocol: UDP
     - name: rtcp
-      port: 8001
-      targetPort: 8001
+      port: 18001
+      targetPort: 18001
       protocol: UDP
     - name: ui
       port: 8080

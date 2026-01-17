@@ -20,6 +20,7 @@ from urllib.parse import urlparse, parse_qs
 VIDEOS_DIR = Path("/app/videos")
 STREAM_VIDEO_SCRIPT = "stream-video.sh"
 RTSP_PORT = int(os.getenv("MEDIAMTX_RTSP_PORT", "8554"))
+HLS_PORT = int(os.getenv("MEDIAMTX_HLS_PORT", "8888"))
 API_PORT = int(os.getenv("STREAM_API_PORT", "8080"))
 LOG_LEVEL = os.getenv("LOG_LEVEL", "info").lower()
 
@@ -93,7 +94,8 @@ def start_stream(video_path, stream_name, loop_count=-1):
         stream_loop_counts[stream_name] = loop_count
 
         rtsp_url = f"rtsp://{HOSTNAME}:{RTSP_PORT}/{stream_name}"
-        log(f"Now playing {rtsp_url}")
+        hls_url = f"http://{HOSTNAME}:{HLS_PORT}/{stream_name}/index.m3u8"
+        log(f"Now playing {rtsp_url} (HLS: {hls_url})")
         return True
     except Exception as e:
         log(f"Failed to start stream {stream_name}: {e}")
@@ -181,6 +183,20 @@ def handle_delete(filepath, event_type="deleted"):
         del available_videos[stream_name]
 
 
+def handle_modify(filepath):
+    path = Path(filepath)
+    if path.name.startswith('.'):
+        return
+
+    stream_name = sanitize_name(path)
+    available_videos[stream_name] = str(path)
+    log(f"Video updated: {path.name}")
+    if stream_name in streams:
+        stop_stream(stream_name)
+    loop_count = stream_loop_counts.get(stream_name, -1)
+    start_stream(path, stream_name, loop_count)
+
+
 def cleanup_dead_processes():
     dead_streams = []
     for stream_name, info in streams.items():
@@ -190,6 +206,19 @@ def cleanup_dead_processes():
 
     for stream_name in dead_streams:
         del streams[stream_name]
+        video_path = available_videos.get(stream_name)
+        if not video_path:
+            continue
+        try:
+            if not Path(video_path).exists():
+                log(f"Cannot restart stream {stream_name}: file missing")
+                continue
+        except OSError as e:
+            log(f"Cannot restart stream {stream_name}: {e}")
+            continue
+        loop_count = stream_loop_counts.get(stream_name, -1)
+        if not start_stream(video_path, stream_name, loop_count):
+            log(f"Failed to restart stream: {stream_name}")
 
 
 HTML_PAGE = """<!DOCTYPE html>
@@ -390,7 +419,11 @@ def watch_directory():
     log(f"Watching {VIDEOS_DIR} for changes (polling mode)...")
 
     last_cleanup = time.time()
-    known_files = get_video_files()
+    try:
+        known_files = get_video_files()
+    except Exception as e:
+        log(f"Error scanning directory: {e}")
+        known_files = {}
 
     while True:
         time.sleep(2)  # Poll every 2 seconds
@@ -403,6 +436,9 @@ def watch_directory():
                 if filename not in known_files:
                     filepath = VIDEOS_DIR / filename
                     handle_create(filepath, "added")
+                elif current_files[filename] != known_files.get(filename):
+                    filepath = VIDEOS_DIR / filename
+                    handle_modify(filepath)
 
             # Check for deleted files
             for filename in list(known_files.keys()):

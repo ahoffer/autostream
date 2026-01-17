@@ -18,6 +18,7 @@
 VIDEO_FILE="$1"
 STREAM_PATH="$2"
 LOOP_COUNT="${3:--1}"
+RTSP_PORT="${MEDIAMTX_RTSP_PORT:-8554}"
 
 exec ffmpeg -re -stream_loop "$LOOP_COUNT" -i "$VIDEO_FILE" \
   -c:v libx264 -preset ultrafast -tune zerolatency \
@@ -29,7 +30,7 @@ exec ffmpeg -re -stream_loop "$LOOP_COUNT" -i "$VIDEO_FILE" \
   -avoid_negative_ts make_zero \
   -vsync cfr \
   -max_muxing_queue_size 1024 \
-  -f rtsp "rtsp://localhost:8554/$STREAM_PATH"
+  -f rtsp "rtsp://localhost:${RTSP_PORT}/$STREAM_PATH"
 
 # FLAG EXPLANATIONS
 # FFMPEG is complex. Some flags might be redundant.

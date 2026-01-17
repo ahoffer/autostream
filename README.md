@@ -5,12 +5,12 @@ Automatic RTSP video streaming server with web-based stream control and hot-relo
 ## Quickstart
 
 1. **Place your videos** in the `videos/` directory:
-   ```bash
+   ```sh
    cp your-video.mp4 videos/
    ```
 
 2. **Build and deploy**:
-   ```bash
+   ```sh
    make build    # Only needed once, or after code changes
    make up
    ```
@@ -42,7 +42,7 @@ Stream names are sanitized from filenames:
 
 Edit `.env` file:
 
-```bash
+```sh
 VERSION=0.6                    # Docker image version
 CONTAINER_NAME=autostream      # Container name
 MEDIAMTX_RTSP_PORT=8554       # Internal RTSP port
@@ -61,7 +61,7 @@ MEDIAMTX_RTSP_PORT=8554       # Internal RTSP port
 
 ## Commands
 
-```bash
+```sh
 make build      # Build container image with nerdctl
 make export     # Save image to autostream.tar
 make import     # Import tar into k3s (requires sudo)
@@ -74,7 +74,7 @@ make down       # Remove from Kubernetes
 nerdctl and k3s use separate containerd namespaces. Images built with nerdctl are not visible to k3s until exported and imported.
 
 **Code changes** (stream-supervisor.py, Dockerfile, etc.):
-```bash
+```sh
 make build          # Build the image
 make export         # Save to autostream.tar
 make import         # Import into k3s (prompts for sudo)
@@ -82,7 +82,7 @@ make down && make up  # Redeploy
 ```
 
 **Config changes** (mediamtx.yml only):
-```bash
+```sh
 make down && make up  # ConfigMap is recreated from local file
 ```
 

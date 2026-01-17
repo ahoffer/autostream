@@ -1,4 +1,4 @@
-SHELL := /bin/bash
+SHELL := /bin/sh
 NAMESPACE := octocx
 IMAGE_TAR := autostream.tar
 
@@ -21,10 +21,10 @@ IMAGE_TAR := autostream.tar
 .PHONY: build export import up down
 
 build:
-	set -a && . .env && docker build -t $$CONTAINER_NAME:$$VERSION .
+	set -a && . ./.env && DOCKER_BUILDKIT=0 docker build -t $$CONTAINER_NAME:$$VERSION .
 
 export:
-	@set -a && . .env && \
+	@set -a && . ./.env && \
 	IMAGE_ID=$$(nerdctl images --format '{{.ID}}' $$CONTAINER_NAME:$$VERSION) && \
 	echo "Exporting $$CONTAINER_NAME:$$VERSION ($$IMAGE_ID) to $(IMAGE_TAR)..." && \
 	nerdctl save -o $(IMAGE_TAR) $$IMAGE_ID && \
@@ -36,8 +36,8 @@ import:
 
 up:
 	kubectl create configmap autostream-config --from-file=mediamtx.yml -n $(NAMESPACE) --dry-run=client -o yaml | kubectl apply -f -
-	kubectl apply -f k8s.yml
+	set -a && . ./.env && envsubst < k8s.yml | kubectl apply -f -
 
 down:
-	kubectl delete -f k8s.yml --ignore-not-found
+	set -a && . ./.env && envsubst < k8s.yml | kubectl delete -f - --ignore-not-found
 	kubectl delete configmap autostream-config -n $(NAMESPACE) --ignore-not-found

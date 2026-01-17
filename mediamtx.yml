@@ -4,7 +4,7 @@ logLevel: error
 
 # API configuration (for mediamtx-connect)
 api: yes
-apiAddress: :9997
+apiAddress: :19997
 
 # Allow API access from any IP (needed for Docker networking)
 authInternalUsers:
@@ -17,13 +17,13 @@ authInternalUsers:
       - action: publish
 
 # Protocol listeners
-rtspAddress: :8554
-rtpAddress: :8000
-rtcpAddress: :8001
+rtspAddress: :18554
+rtpAddress: :18000
+rtcpAddress: :18001
 
 # Enable HLS
 hls: yes
-hlsAddress: :8888
+hlsAddress: :18888
 
 # Paths configuration
 # All videos in /app/videos are automatically discovered and streamed
