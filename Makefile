@@ -26,5 +26,11 @@ up:
 	set -a && . ./.env && envsubst < k8s.yml | kubectl apply -f -
 
 down:
-	set -a && . ./.env && envsubst < k8s.yml | kubectl delete -f - --ignore-not-found
+	set -a && . ./.env && envsubst < k8s.yml | kubectl delete -f - --ignore-not-found --wait=true --timeout=30s || true
+	@# Force delete any pods stuck in Terminating state
+	@stuck_pods=$$(kubectl get pods -n $(NAMESPACE) -l app=autostream -o jsonpath='{.items[?(@.metadata.deletionTimestamp)].metadata.name}'); \
+	if [ -n "$$stuck_pods" ]; then \
+		echo "Force deleting stuck pods: $$stuck_pods"; \
+		kubectl delete pods -n $(NAMESPACE) -l app=autostream --force --grace-period=0; \
+	fi
 	kubectl delete configmap autostream-config -n $(NAMESPACE) --ignore-not-found
