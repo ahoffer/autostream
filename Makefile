@@ -1,41 +1,28 @@
-SHELL := /bin/sh
 NAMESPACE := octocx
 IMAGE_TAR := autostream.tar
 
-# =============================================================================
-# Workflow for deploying to k3s:
-#
-# 1. Code changes (stream-supervisor.py, entrypoint.sh, etc.):
-#      make build      # Build container image with nerdctl
-#      make export     # Save image to tar (autostream.tar)
-#      make import     # Import tar into k3s (requires sudo password)
-#      make down up    # Redeploy to k8s
-#
-# 2. Config changes (mediamtx.yml only):
-#      make down up    # ConfigMap is recreated from local file
-#
-# Why export/import? nerdctl and k3s use separate containerd namespaces.
-# Images built with nerdctl are not visible to k3s until imported.
-# =============================================================================
+# Typical flow: down -> build -> push -> up
 
-.PHONY: build export import up down
+.PHONY: build push up down
 
 build:
-	set -a && . ./.env && DOCKER_BUILDKIT=0 docker build -t $$CONTAINER_NAME:$$VERSION .
+	set -a && . ./.env && DOCKER_BUILDKIT=0 docker build \
+		--build-arg MEDIAMTX_RTSP_PORT=$$MEDIAMTX_RTSP_PORT \
+		--build-arg MEDIAMTX_HLS_PORT=$$MEDIAMTX_HLS_PORT \
+		--build-arg MEDIAMTX_RTP_PORT=$$MEDIAMTX_RTP_PORT \
+		--build-arg MEDIAMTX_RTCP_PORT=$$MEDIAMTX_RTCP_PORT \
+		--build-arg STREAM_API_PORT=$$STREAM_API_PORT \
+		-t $$CONTAINER_NAME:$$VERSION .
 
-export:
-	@set -a && . ./.env && \
-	IMAGE_ID=$$(nerdctl images --format '{{.ID}}' $$CONTAINER_NAME:$$VERSION) && \
-	echo "Exporting $$CONTAINER_NAME:$$VERSION ($$IMAGE_ID) to $(IMAGE_TAR)..." && \
-	nerdctl save -o $(IMAGE_TAR) $$IMAGE_ID && \
-	echo "Saved to $(IMAGE_TAR)"
-
-import:
-	@echo "Importing $(IMAGE_TAR) into k3s (requires sudo)..."
-	sudo k3s ctr images import $(IMAGE_TAR)
+push:
+	set -a && . ./.env && k3s-push-image $$CONTAINER_NAME:$$VERSION
 
 up:
-	kubectl create configmap autostream-config --from-file=mediamtx.yml -n $(NAMESPACE) --dry-run=client -o yaml | kubectl apply -f -
+	set -a && . ./.env && \
+	TMP_MEDIAMTX=$$(mktemp) && \
+	envsubst < mediamtx.yml > $$TMP_MEDIAMTX && \
+	kubectl create configmap autostream-config --from-file=mediamtx.yml=$$TMP_MEDIAMTX -n $(NAMESPACE) --dry-run=client -o yaml | kubectl apply -f - && \
+	rm -f $$TMP_MEDIAMTX
 	set -a && . ./.env && envsubst < k8s.yml | kubectl apply -f -
 
 down:

@@ -401,7 +401,7 @@ class StreamHandler(BaseHTTPRequestHandler):
 
 def start_api_server():
     server = HTTPServer(('0.0.0.0', API_PORT), StreamHandler)  # type: ignore[arg-type]
-    log(f"Stream Control UI: http://localhost:9080")
+    log(f"Stream Control UI: http://localhost:{API_PORT}")
     server.serve_forever()
 
 

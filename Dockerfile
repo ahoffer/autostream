@@ -1,5 +1,11 @@
 FROM bluenviron/mediamtx:1.15.3-ffmpeg
 
+ARG MEDIAMTX_RTSP_PORT
+ARG MEDIAMTX_HLS_PORT
+ARG MEDIAMTX_RTP_PORT
+ARG MEDIAMTX_RTCP_PORT
+ARG STREAM_API_PORT
+
 # Install Python3 and dependencies for stream supervisor
 RUN apk add --no-cache python3 py3-pip && \
     pip3 install --no-cache-dir inotify-simple --break-system-packages
@@ -23,7 +29,8 @@ RUN chown -R autostream:autostream /app
 # Switch to non-root user
 USER autostream
 
-# Expose MediaMTX ports
-EXPOSE 8554 8888 8000/udp 8001/udp
+# Expose MediaMTX + API ports (defaults can be overridden via build args)
+EXPOSE ${MEDIAMTX_RTSP_PORT} ${MEDIAMTX_HLS_PORT} ${STREAM_API_PORT} \
+  ${MEDIAMTX_RTP_PORT}/udp ${MEDIAMTX_RTCP_PORT}/udp
 
 ENTRYPOINT ["/app/entrypoint.sh"]
