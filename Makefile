@@ -1,6 +1,3 @@
-NAMESPACE := octocx
-IMAGE_TAR := autostream.tar
-
 # Typical flow: down -> build -> push -> up
 
 .PHONY: build push up down compose-up compose-down compose-logs
@@ -21,19 +18,19 @@ up:
 	set -a && . ./.env && \
 	TMP_MEDIAMTX=$$(mktemp) && \
 	envsubst < mediamtx.yml > $$TMP_MEDIAMTX && \
-	kubectl create configmap autostream-config --from-file=mediamtx.yml=$$TMP_MEDIAMTX -n $(NAMESPACE) --dry-run=client -o yaml | kubectl apply -f - && \
+	kubectl create configmap autostream-config --from-file=mediamtx.yml=$$TMP_MEDIAMTX -n $$K8S_NAMESPACE --dry-run=client -o yaml | kubectl apply -f - && \
 	rm -f $$TMP_MEDIAMTX
 	set -a && . ./.env && envsubst < k8s.yml | kubectl apply -f -
 
 down:
 	set -a && . ./.env && envsubst < k8s.yml | kubectl delete -f - --ignore-not-found --wait=true --timeout=30s || true
 	@# Force delete any pods stuck in Terminating state
-	@stuck_pods=$$(kubectl get pods -n $(NAMESPACE) -l app=autostream -o jsonpath='{.items[?(@.metadata.deletionTimestamp)].metadata.name}'); \
+	@stuck_pods=$$(kubectl get pods -n $$K8S_NAMESPACE -l app=autostream -o jsonpath='{.items[?(@.metadata.deletionTimestamp)].metadata.name}'); \
 	if [ -n "$$stuck_pods" ]; then \
 		echo "Force deleting stuck pods: $$stuck_pods"; \
-		kubectl delete pods -n $(NAMESPACE) -l app=autostream --force --grace-period=0; \
+		kubectl delete pods -n $$K8S_NAMESPACE -l app=autostream --force --grace-period=0; \
 	fi
-	kubectl delete configmap autostream-config -n $(NAMESPACE) --ignore-not-found
+	kubectl delete configmap autostream-config -n $$K8S_NAMESPACE --ignore-not-found
 
 # Docker Compose targets
 compose-up:

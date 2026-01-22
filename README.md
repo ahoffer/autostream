@@ -43,12 +43,20 @@ Stream names are sanitized from filenames:
 
 Edit `.env` file:
 
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `K8S_NAMESPACE` | Kubernetes namespace for deployment | `octocx` |
+| `VERSION` | Image version tag | `1.0.1` |
+| `MAX_VIDEO_BITRATE` | Cap video bitrate (e.g., `3M`, `5M`) | `2M` |
+| `MEDIAMTX_RTSP_PORT` | RTSP listener port | `8554` |
+| `MEDIAMTX_HLS_PORT` | HLS HTTP port | `8888` |
+
 ## Commands
 
 ```bash
 make build      # Build container image with docker
 make push       # Push image to k3s node
-make up         # Deploy to Kubernetes (namespace: octocx)
+make up         # Deploy to Kubernetes (uses K8S_NAMESPACE from .env)
 make down       # Remove from Kubernetes
 ```
 
