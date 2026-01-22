@@ -60,14 +60,14 @@ For local development or standalone deployment:
 # Build the image
 make build
 
-# Start the service
-docker compose up -d
+# Start the service (processes config from .env)
+make compose-up
 
 # View logs
-docker compose logs -f
+make compose-logs
 
 # Stop the service
-docker compose down
+make compose-down
 ```
 
 **Note:** Docker Compose uses an external network `octo-cx-network`. Create it first if it doesn't exist:

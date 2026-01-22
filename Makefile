@@ -3,7 +3,7 @@ IMAGE_TAR := autostream.tar
 
 # Typical flow: down -> build -> push -> up
 
-.PHONY: build push up down
+.PHONY: build push up down compose-up compose-down compose-logs
 
 build:
 	set -a && . ./.env && DOCKER_BUILDKIT=0 docker build \
@@ -34,3 +34,15 @@ down:
 		kubectl delete pods -n $(NAMESPACE) -l app=autostream --force --grace-period=0; \
 	fi
 	kubectl delete configmap autostream-config -n $(NAMESPACE) --ignore-not-found
+
+# Docker Compose targets
+compose-up:
+	set -a && . ./.env && envsubst < mediamtx.yml > .mediamtx.generated.yml
+	docker compose up -d
+
+compose-down:
+	docker compose down
+	rm -f .mediamtx.generated.yml
+
+compose-logs:
+	docker compose logs -f

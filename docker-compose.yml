@@ -2,7 +2,7 @@ services:
   autostream:
     image: ${CONTAINER_NAME}:${VERSION}
     volumes:
-      - ./mediamtx.yml:/app/mediamtx.yml
+      - ./.mediamtx.generated.yml:/app/mediamtx.yml
       - ./videos:/app/videos:ro
     container_name: ${CONTAINER_NAME}
     hostname: ${CONTAINER_NAME}
