@@ -52,6 +52,44 @@ make up         # Deploy to Kubernetes (namespace: octocx)
 make down       # Remove from Kubernetes
 ```
 
+## Docker Compose
+
+For local development or standalone deployment:
+
+```bash
+# Build the image
+make build
+
+# Start the service
+docker compose up -d
+
+# View logs
+docker compose logs -f
+
+# Stop the service
+docker compose down
+```
+
+**Note:** Docker Compose uses an external network `octo-cx-network`. Create it first if it doesn't exist:
+```bash
+docker network create octo-cx-network
+```
+
+### Port Mappings (Docker Compose)
+
+| Service | External Port | Internal Port |
+|---------|---------------|---------------|
+| RTSP    | 9554          | 8554          |
+| HLS     | 9322          | 8888          |
+| RTP     | 9000/udp      | 8000/udp      |
+| RTCP    | 9001/udp      | 8001/udp      |
+| Web UI  | 9080          | 8080          |
+
+Access streams at:
+- **RTSP**: `rtsp://localhost:9554/<stream-name>`
+- **HLS**: `http://localhost:9322/<stream-name>/index.m3u8`
+- **Web UI**: `http://localhost:9080`
+
 ## Kubernetes (k3s) Setup
 
 k3s runs its own containerd namespace, so images are pushed into the node to be available.

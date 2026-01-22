@@ -10,13 +10,16 @@ services:
     stop_grace_period: 1s
     environment:
       - MEDIAMTX_RTSP_PORT=${MEDIAMTX_RTSP_PORT}
+      - MEDIAMTX_HLS_PORT=${MEDIAMTX_HLS_PORT}
+      - MEDIAMTX_RTP_PORT=${MEDIAMTX_RTP_PORT}
+      - MEDIAMTX_RTCP_PORT=${MEDIAMTX_RTCP_PORT}
       - CONTAINER_NAME=${CONTAINER_NAME}
     ports:
-      - "9554:${MEDIAMTX_RTSP_PORT}"    # RTSP
-      - "9322:8888"                      # HLS
-      - "9000:8000/udp"                  # RTP
-      - "9001:8001/udp"                  # RTCP
-      - "9080:8080"                      # Stream Control UI
+      - "9554:${MEDIAMTX_RTSP_PORT}"       # RTSP
+      - "9322:${MEDIAMTX_HLS_PORT}"        # HLS
+      - "9000:${MEDIAMTX_RTP_PORT}/udp"    # RTP
+      - "9001:${MEDIAMTX_RTCP_PORT}/udp"   # RTCP
+      - "9080:${STREAM_API_PORT}"          # Stream Control UI
     networks:
       - octo-cx-network
 
