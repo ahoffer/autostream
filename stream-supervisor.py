@@ -23,6 +23,7 @@ RTSP_PORT = int(os.getenv("MEDIAMTX_RTSP_PORT", "8554"))
 HLS_PORT = int(os.getenv("MEDIAMTX_HLS_PORT", "8888"))
 API_PORT = int(os.getenv("STREAM_API_PORT", "8080"))
 LOG_LEVEL = os.getenv("LOG_LEVEL", "info").lower()
+MAX_VIDEO_BITRATE = os.getenv("MAX_VIDEO_BITRATE", "")
 
 # Get hostname from environment (required)
 HOSTNAME = os.getenv("CONTAINER_NAME")
@@ -40,6 +41,71 @@ stream_loop_counts = {}
 def log(message):
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     print(f"[{timestamp}] {message}", flush=True)
+
+
+def parse_bitrate(bitrate_str):
+    """Parse bitrate string (e.g., '3M', '3000K', '3000000') to bits per second."""
+    if not bitrate_str:
+        return None
+    bitrate_str = bitrate_str.strip().upper()
+    if bitrate_str.endswith('M'):
+        return int(float(bitrate_str[:-1]) * 1_000_000)
+    elif bitrate_str.endswith('K'):
+        return int(float(bitrate_str[:-1]) * 1_000)
+    else:
+        return int(bitrate_str)
+
+
+def get_video_bitrate(video_path):
+    """Get video bitrate in bits per second using ffprobe."""
+    try:
+        # Try stream bitrate first
+        result = subprocess.run(
+            ["ffprobe", "-v", "error", "-select_streams", "v:0",
+             "-show_entries", "stream=bit_rate",
+             "-of", "default=noprint_wrappers=1:nokey=1", str(video_path)],
+            capture_output=True, text=True, timeout=10
+        )
+        bitrate = result.stdout.strip()
+        if bitrate and bitrate != "N/A":
+            return int(bitrate)
+
+        # Fall back to format bitrate
+        result = subprocess.run(
+            ["ffprobe", "-v", "error",
+             "-show_entries", "format=bit_rate",
+             "-of", "default=noprint_wrappers=1:nokey=1", str(video_path)],
+            capture_output=True, text=True, timeout=10
+        )
+        bitrate = result.stdout.strip()
+        if bitrate and bitrate != "N/A":
+            return int(bitrate)
+    except Exception as e:
+        log(f"Error probing bitrate for {video_path}: {e}")
+    return None
+
+
+def get_bitrate_flags(video_path):
+    """Return ffmpeg bitrate flags if video exceeds MAX_VIDEO_BITRATE, else empty string."""
+    if not MAX_VIDEO_BITRATE:
+        return ""
+
+    max_bps = parse_bitrate(MAX_VIDEO_BITRATE)
+    if not max_bps:
+        return ""
+
+    video_bps = get_video_bitrate(video_path)
+    if not video_bps:
+        log(f"Could not detect bitrate for {Path(video_path).name}, no limit applied")
+        return ""
+
+    video_mbps = video_bps / 1_000_000
+    if video_bps > max_bps:
+        log(f"Bitrate {video_mbps:.1f}M exceeds max {MAX_VIDEO_BITRATE}, will transcode with limit")
+        return f"-b:v {MAX_VIDEO_BITRATE} -maxrate {MAX_VIDEO_BITRATE} -bufsize {MAX_VIDEO_BITRATE}"
+    else:
+        log(f"Bitrate {video_mbps:.1f}M within max {MAX_VIDEO_BITRATE}, no limit applied")
+        return ""
 
 
 def sanitize_name(filepath):
@@ -82,7 +148,8 @@ def start_stream(video_path, stream_name, loop_count=-1):
         return False
 
     try:
-        cmd = [STREAM_VIDEO_SCRIPT, str(video_path), stream_name, str(loop_count)]
+        bitrate_flags = get_bitrate_flags(video_path)
+        cmd = [STREAM_VIDEO_SCRIPT, str(video_path), stream_name, str(loop_count), bitrate_flags]
         # Show FFmpeg output only in debug mode
         if LOG_LEVEL == "debug":
             process = subprocess.Popen(cmd)
@@ -415,7 +482,12 @@ def get_video_files():
 
 
 def watch_directory():
-    """Watch directory for changes using polling (works on network filesystems)"""
+    """Watch directory for changes using polling (works on network filesystems).
+    
+    Note: File renames appear as delete + create events (old name removed, new name added).
+    This means a renamed video will stop streaming under the old name and start fresh
+    under the new name.
+    """
     log(f"Watching {VIDEOS_DIR} for changes (polling mode)...")
 
     last_cleanup = time.time()

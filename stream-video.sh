@@ -1,23 +1,14 @@
 #!/bin/sh
-# Wrapper script to stream a video file to MediaMTX via RTSP
-# Usage: stream-video.sh <video-file> <stream-path> [loop-count]
-#   loop-count: -1 for infinite (default), 0 for no loop, N for N additional plays
+# Stream a video file to MediaMTX via RTSP
+# Usage: stream-video.sh <video-file> <stream-path> [loop-count] [bitrate-flags]
 #
-# LOOPING DISCONTINUITY FIX:
-# The source videos have negative DTS (-0.067s) and B-frames. When using
-# -stream_loop -1, each loop restart causes:
-#   - Timestamp jump backward: 12.0s -> 0.0s (violates monotonic time)
-#   - Negative DTS reappears every loop cycle
-#   - B-frame reference dependencies break at loop boundary
-#   - Large GOP (8.3s) causes artifacts to persist
-#
-# This creates visible artifacts (pixelation, tearing).
-# Solution: Transcode with clean GOP structure and regenerated timestamps.
-# Artifacts should clear up after the first loop.
+# Transcodes with clean GOP structure to fix looping artifacts.
+# Bitrate limiting is handled by stream-supervisor.py which passes flags.
 
 VIDEO_FILE="$1"
 STREAM_PATH="$2"
 LOOP_COUNT="${3:--1}"
+BITRATE_FLAGS="$4"
 RTSP_PORT="${MEDIAMTX_RTSP_PORT:-8554}"
 
 exec ffmpeg -re -stream_loop "$LOOP_COUNT" -i "$VIDEO_FILE" \
@@ -25,6 +16,7 @@ exec ffmpeg -re -stream_loop "$LOOP_COUNT" -i "$VIDEO_FILE" \
   -g 30 -keyint_min 30 -sc_threshold 0 \
   -bf 0 \
   -x264-params ref=1 \
+  $BITRATE_FLAGS \
   -c:a aac -b:a 128k \
   -fflags +genpts+igndts \
   -avoid_negative_ts make_zero \

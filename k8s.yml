@@ -24,6 +24,8 @@ spec:
               value: "${MEDIAMTX_HLS_PORT}"
             - name: CONTAINER_NAME
               value: autostream
+            - name: MAX_VIDEO_BITRATE
+              value: "${MAX_VIDEO_BITRATE}"
           ports:
             - containerPort: ${MEDIAMTX_RTSP_PORT}
               protocol: TCP
