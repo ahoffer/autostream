@@ -60,7 +60,7 @@ same settings drive either deployment.
 |----------|-------------|---------|
 | `K8S_NAMESPACE` | Kubernetes namespace for deployment | `octocx` |
 | `CONTAINER_NAME` | Image name and service/hostname used in stream URLs | `autostream` |
-| `VERSION` | Image version tag | `1.0.1` |
+| `VERSION` | Image version tag | `1.0.2` |
 | `MAX_VIDEO_BITRATE` | Cap video bitrate (for example `3M`, `5M`) | `2M` |
 | `MEDIAMTX_RTSP_PORT` | RTSP listener port | `8554` |
 | `MEDIAMTX_HLS_PORT` | HLS HTTP port | `8888` |
