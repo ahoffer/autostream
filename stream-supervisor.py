@@ -108,6 +108,12 @@ def get_bitrate_flags(video_path):
         return ""
 
 
+def is_ignored(path):
+    """Skip hidden files and README* so they don't get streamed as videos."""
+    name = path.name
+    return name.startswith('.') or name.lower().startswith('readme')
+
+
 def sanitize_name(filepath):
     """Convert filename to valid stream name"""
     # Remove extension
@@ -209,7 +215,7 @@ def scan_videos():
         return
 
     for video_path in VIDEOS_DIR.iterdir():
-        if not video_path.is_file() or video_path.name.startswith('.'):
+        if not video_path.is_file() or is_ignored(video_path):
             continue
         stream_name = sanitize_name(video_path)
         available_videos[stream_name] = str(video_path)
@@ -231,8 +237,7 @@ def sync_videos():
 def handle_create(filepath, event_type="added"):
     path = Path(filepath)
 
-    # Skip hidden files
-    if path.name.startswith('.'):
+    if is_ignored(path):
         return
 
     stream_name = sanitize_name(path)
@@ -252,7 +257,7 @@ def handle_delete(filepath, event_type="deleted"):
 
 def handle_modify(filepath):
     path = Path(filepath)
-    if path.name.startswith('.'):
+    if is_ignored(path):
         return
 
     stream_name = sanitize_name(path)
@@ -476,7 +481,7 @@ def get_video_files():
     """Scan directory and return dict of {filename: mtime}"""
     files = {}
     for video_path in VIDEOS_DIR.iterdir():
-        if video_path.is_file() and not video_path.name.startswith('.'):
+        if video_path.is_file() and not is_ignored(video_path):
             files[video_path.name] = video_path.stat().st_mtime
     return files
 

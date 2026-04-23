@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: autostream
-  namespace: octocx
+  namespace: ${K8S_NAMESPACE}
 spec:
   replicas: 1
   selector:
@@ -15,15 +15,21 @@ spec:
     spec:
       containers:
         - name: autostream
-          image: autostream:${VERSION}
+          image: ${CONTAINER_NAME}:${VERSION}
           imagePullPolicy: Never
           env:
             - name: MEDIAMTX_RTSP_PORT
               value: "${MEDIAMTX_RTSP_PORT}"
             - name: MEDIAMTX_HLS_PORT
               value: "${MEDIAMTX_HLS_PORT}"
+            - name: MEDIAMTX_RTP_PORT
+              value: "${MEDIAMTX_RTP_PORT}"
+            - name: MEDIAMTX_RTCP_PORT
+              value: "${MEDIAMTX_RTCP_PORT}"
+            - name: STREAM_API_PORT
+              value: "${STREAM_API_PORT}"
             - name: CONTAINER_NAME
-              value: autostream
+              value: ${CONTAINER_NAME}
             - name: MAX_VIDEO_BITRATE
               value: "${MAX_VIDEO_BITRATE}"
           ports:
@@ -50,14 +56,14 @@ spec:
             name: autostream-config
         - name: videos
           hostPath:
-            path: /mnt/projects/autostream/videos
-            type: Directory
+            path: ${VIDEOS_DIR}
+            type: DirectoryOrCreate
 ---
 apiVersion: v1
 kind: Service
 metadata:
   name: autostream
-  namespace: octocx
+  namespace: ${K8S_NAMESPACE}
 spec:
   selector:
     app: autostream

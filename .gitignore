@@ -1,4 +1,5 @@
-videos
+videos/*
+!videos/README.md
 .idea
 .claude
 .mediamtx.generated.yml

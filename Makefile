@@ -1,6 +1,14 @@
-# Typical flow: down -> build -> push -> up
+# Typical flow: down -> build -> up (k8s) or compose-up (Docker Compose).
+# For k8s deployments, the image must already be available to the cluster's
+# container runtime -- either via a registry or by importing into the node's
+# containerd directly. See README for options.
 
-.PHONY: build push up down compose-up compose-down compose-logs
+# Absolute path to the repo's videos directory; both the Compose bind-mount and
+# the k8s hostPath resolve to this. k8s hostPath cannot be relative.
+VIDEOS_DIR := $(CURDIR)/videos
+export VIDEOS_DIR
+
+.PHONY: build up down compose-up compose-down compose-logs
 
 build:
 	set -a && . ./.env && DOCKER_BUILDKIT=0 docker build \
@@ -10,9 +18,6 @@ build:
 		--build-arg MEDIAMTX_RTCP_PORT=$$MEDIAMTX_RTCP_PORT \
 		--build-arg STREAM_API_PORT=$$STREAM_API_PORT \
 		-t $$CONTAINER_NAME:$$VERSION .
-
-push:
-	set -a && . ./.env && k3s-push-image $$CONTAINER_NAME:$$VERSION
 
 up:
 	set -a && . ./.env && \
