@@ -8,7 +8,10 @@
 VIDEOS_DIR := $(CURDIR)/videos
 export VIDEOS_DIR
 
-.PHONY: build up down compose-up compose-down compose-logs
+.PHONY: build up down compose-up compose-down compose-logs compose-install compose-uninstall
+
+SYSTEMD_UNIT_NAME := autostream.service
+SYSTEMD_UNIT_PATH := /etc/systemd/system/$(SYSTEMD_UNIT_NAME)
 
 build:
 	set -a && . ./.env && DOCKER_BUILDKIT=0 docker build \
@@ -48,3 +51,23 @@ compose-down:
 
 compose-logs:
 	docker compose logs -f
+
+# Install autostream as a systemd service that wraps the docker compose flow.
+# Runs as the invoking user (not root) so docker socket access uses the same
+# group membership the user already has. Re-run to refresh the unit.
+compose-install:
+	@command -v envsubst >/dev/null || { echo "envsubst not found (install gettext-base)"; exit 1; }
+	@command -v systemctl >/dev/null || { echo "systemctl not found"; exit 1; }
+	@MAKE_BIN=$$(command -v make); \
+	[ -n "$$MAKE_BIN" ] || { echo "make not found in PATH"; exit 1; }; \
+	REPO_DIR='$(CURDIR)' SERVICE_USER="$${SUDO_USER:-$$(id -un)}" MAKE_BIN="$$MAKE_BIN" \
+	  envsubst '$$REPO_DIR $$SERVICE_USER $$MAKE_BIN' < autostream.service.tmpl | \
+	  sudo tee $(SYSTEMD_UNIT_PATH) > /dev/null
+	sudo systemctl daemon-reload
+	sudo systemctl enable --now $(SYSTEMD_UNIT_NAME)
+	@echo "Installed $(SYSTEMD_UNIT_NAME). Check: sudo systemctl status $(SYSTEMD_UNIT_NAME)"
+
+compose-uninstall:
+	-sudo systemctl disable --now $(SYSTEMD_UNIT_NAME)
+	sudo rm -f $(SYSTEMD_UNIT_PATH)
+	sudo systemctl daemon-reload

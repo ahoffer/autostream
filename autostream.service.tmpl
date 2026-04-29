@@ -1,0 +1,16 @@
+[Unit]
+Description=Autostream RTSP streaming server (docker compose)
+Requires=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=${REPO_DIR}
+User=${SERVICE_USER}
+ExecStart=${MAKE_BIN} compose-up
+ExecStop=${MAKE_BIN} compose-down
+
+[Install]
+WantedBy=multi-user.target

@@ -6,9 +6,8 @@ ARG MEDIAMTX_RTP_PORT
 ARG MEDIAMTX_RTCP_PORT
 ARG STREAM_API_PORT
 
-# Install Python3 and dependencies for stream supervisor
-RUN apk add --no-cache python3 py3-pip && \
-    pip3 install --no-cache-dir inotify-simple --break-system-packages
+# Install Python3 for the stream supervisor (stdlib only)
+RUN apk add --no-cache python3
 
 # Create non-root user
 RUN addgroup -g 1000 autostream && \
