@@ -11,7 +11,7 @@ import subprocess
 import threading
 import time
 from datetime import datetime
-from http.server import HTTPServer, BaseHTTPRequestHandler
+from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from pathlib import Path
 from urllib.parse import urlparse, parse_qs
 
@@ -472,7 +472,7 @@ class StreamHandler(BaseHTTPRequestHandler):
 
 
 def start_api_server():
-    server = HTTPServer(('0.0.0.0', API_PORT), StreamHandler)  # type: ignore[arg-type]
+    server = ThreadingHTTPServer(('0.0.0.0', API_PORT), StreamHandler)  # type: ignore[arg-type]
     log(f"Stream Control UI: http://localhost:{API_PORT}")
     server.serve_forever()
 
