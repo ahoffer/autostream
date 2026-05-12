@@ -13,10 +13,19 @@ spec:
       labels:
         app: autostream
     spec:
+      securityContext:
+        runAsUser: 1000
+        runAsGroup: 1000
+        runAsNonRoot: true
+        fsGroup: 1000
       containers:
         - name: autostream
           image: ${CONTAINER_NAME}:${VERSION}
           imagePullPolicy: Never
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
           env:
             - name: MEDIAMTX_RTSP_PORT
               value: "${MEDIAMTX_RTSP_PORT}"

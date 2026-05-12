@@ -4,13 +4,13 @@ Stream supervisor: watches /app/videos and manages FFmpeg streaming processes
 Includes HTTP API for stream control
 """
 import json
+import logging
 import os
 import re
 import socket
 import subprocess
 import threading
 import time
-from datetime import datetime
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from pathlib import Path
 from urllib.parse import urlparse, parse_qs
@@ -18,29 +18,36 @@ from urllib.parse import urlparse, parse_qs
 # Note: inotify doesn't work on network filesystems (CIFS/NFS), so we use polling
 
 VIDEOS_DIR = Path("/app/videos")
-STREAM_VIDEO_SCRIPT = "stream-video.sh"
+STREAM_VIDEO_SCRIPT = "/usr/local/bin/stream-video.sh"
+INDEX_HTML_PATH = Path(__file__).resolve().parent / "index.html"
 RTSP_PORT = int(os.getenv("MEDIAMTX_RTSP_PORT", "8554"))
 HLS_PORT = int(os.getenv("MEDIAMTX_HLS_PORT", "8888"))
 API_PORT = int(os.getenv("STREAM_API_PORT", "8080"))
 LOG_LEVEL = os.getenv("LOG_LEVEL", "info").lower()
 MAX_VIDEO_BITRATE = os.getenv("MAX_VIDEO_BITRATE", "")
 
-# Get hostname from environment (required)
+# Poll loop tuning
+POLL_INTERVAL_SEC = 2
+DEBOUNCE_STABLE_POLLS = 2  # ~4s of (mtime, size) stability before committing a change
+
 HOSTNAME = os.getenv("CONTAINER_NAME")
 if not HOSTNAME:
     raise RuntimeError("CONTAINER_NAME environment variable is not set")
 
-# Track running streams: {stream_name: {"process": process, "video_path": path, "loop_count": int}}
-streams = {}
-# Track available videos: {stream_name: video_path}
-available_videos = {}
-# Track last used loop count per stream (persists across stop/start)
-stream_loop_counts = {}
+logging.basicConfig(
+    level=getattr(logging, LOG_LEVEL.upper(), logging.INFO),
+    format="%(asctime)s [%(threadName)s] %(levelname)s %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+)
+log = logging.getLogger("autostream")
 
-
-def log(message):
-    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    print(f"[{timestamp}] {message}", flush=True)
+# Shared state. Mutations and reads MUST hold _state_lock — the API server runs in
+# threads and the poll loop runs in the main thread, both touching these dicts.
+_state_lock = threading.RLock()
+streams = {}                  # stream_name -> {"process": Popen, "video_path": str, "loop_count": int}
+available_videos = {}         # stream_name -> video_path (str)
+stream_loop_counts = {}       # stream_name -> last requested loop_count (persists across stop/start)
+stream_name_to_filename = {}  # stream_name -> filename (basename); reverse map so name collisions don't silently overwrite
 
 
 def parse_bitrate(bitrate_str):
@@ -59,7 +66,6 @@ def parse_bitrate(bitrate_str):
 def get_video_bitrate(video_path):
     """Get video bitrate in bits per second using ffprobe."""
     try:
-        # Try stream bitrate first
         result = subprocess.run(
             ["ffprobe", "-v", "error", "-select_streams", "v:0",
              "-show_entries", "stream=bit_rate",
@@ -70,7 +76,6 @@ def get_video_bitrate(video_path):
         if bitrate and bitrate != "N/A":
             return int(bitrate)
 
-        # Fall back to format bitrate
         result = subprocess.run(
             ["ffprobe", "-v", "error",
              "-show_entries", "format=bit_rate",
@@ -81,7 +86,7 @@ def get_video_bitrate(video_path):
         if bitrate and bitrate != "N/A":
             return int(bitrate)
     except Exception as e:
-        log(f"Error probing bitrate for {video_path}: {e}")
+        log.warning("Error probing bitrate for %s: %s", video_path, e)
     return None
 
 
@@ -96,15 +101,15 @@ def get_bitrate_flags(video_path):
 
     video_bps = get_video_bitrate(video_path)
     if not video_bps:
-        log(f"Could not detect bitrate for {Path(video_path).name}, no limit applied")
+        log.info("Could not detect bitrate for %s, no limit applied", Path(video_path).name)
         return ""
 
     video_mbps = video_bps / 1_000_000
     if video_bps > max_bps:
-        log(f"Bitrate {video_mbps:.1f}M exceeds max {MAX_VIDEO_BITRATE}, will transcode with limit")
+        log.info("Bitrate %.1fM exceeds max %s, will transcode with limit", video_mbps, MAX_VIDEO_BITRATE)
         return f"-b:v {MAX_VIDEO_BITRATE} -maxrate {MAX_VIDEO_BITRATE} -bufsize {MAX_VIDEO_BITRATE}"
     else:
-        log(f"Bitrate {video_mbps:.1f}M within max {MAX_VIDEO_BITRATE}, no limit applied")
+        log.debug("Bitrate %.1fM within max %s, no limit applied", video_mbps, MAX_VIDEO_BITRATE)
         return ""
 
 
@@ -116,27 +121,17 @@ def is_ignored(path):
 
 def sanitize_name(filepath):
     """Convert filename to valid stream name"""
-    # Remove extension
     name = Path(filepath).stem
-
-    # Replace invalid characters with underscore
     name = re.sub(r'[^a-zA-Z0-9_-]', '_', name)
-
-    # Convert to lowercase
     name = name.lower()
-
-    # Collapse multiple underscores/dashes
     name = re.sub(r'_+', '_', name)
     name = re.sub(r'-+', '-', name)
-
-    # Strip leading/trailing underscores/dashes
     name = name.strip('_-')
-
     return name
 
 
 def wait_for_mediamtx():
-    log(f"Waiting for MediaMTX to be available on port {RTSP_PORT}...")
+    log.info("Waiting for MediaMTX to be available on port %d...", RTSP_PORT)
     while True:
         try:
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
@@ -145,114 +140,170 @@ def wait_for_mediamtx():
                 break
         except (ConnectionRefusedError, socket.timeout, OSError):
             time.sleep(1)
-    log("MediaMTX is ready")
+    log.info("MediaMTX is ready")
 
 
 def start_stream(video_path, stream_name, loop_count=-1):
-    if stream_name in streams:
-        log(f"Stream already running: {stream_name}")
-        return False
+    # ffprobe (inside get_bitrate_flags) can take seconds — run before taking the lock
+    # so we don't block API threads waiting on disk I/O.
+    bitrate_flags = get_bitrate_flags(video_path)
 
-    try:
-        bitrate_flags = get_bitrate_flags(video_path)
-        cmd = [STREAM_VIDEO_SCRIPT, str(video_path), stream_name, str(loop_count), bitrate_flags]
-        # Show FFmpeg output only in debug mode
-        if LOG_LEVEL == "debug":
-            process = subprocess.Popen(cmd)
-        else:
-            process = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    with _state_lock:
+        if stream_name in streams:
+            log.warning("Stream already running: %s", stream_name)
+            return False
+
+        try:
+            cmd = [STREAM_VIDEO_SCRIPT, str(video_path), stream_name, str(loop_count), bitrate_flags]
+            if LOG_LEVEL == "debug":
+                process = subprocess.Popen(cmd)
+            else:
+                process = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        except Exception as e:
+            log.error("Failed to start stream %s: %s", stream_name, e)
+            return False
 
         streams[stream_name] = {"process": process, "video_path": str(video_path), "loop_count": loop_count}
         available_videos[stream_name] = str(video_path)
         stream_loop_counts[stream_name] = loop_count
 
-        rtsp_url = f"rtsp://{HOSTNAME}:{RTSP_PORT}/{stream_name}"
-        hls_url = f"http://{HOSTNAME}:{HLS_PORT}/{stream_name}/index.m3u8"
-        log(f"Now playing {rtsp_url} (HLS: {hls_url})")
-        return True
-    except Exception as e:
-        log(f"Failed to start stream {stream_name}: {e}")
-        return False
+    rtsp_url = f"rtsp://{HOSTNAME}:{RTSP_PORT}/{stream_name}"
+    hls_url = f"http://{HOSTNAME}:{HLS_PORT}/{stream_name}/index.m3u8"
+    log.info("Now playing %s (HLS: %s)", rtsp_url, hls_url)
+    return True
 
 
 def stop_stream(stream_name):
-    if stream_name not in streams:
-        log(f"Stream not found: {stream_name}")
-        return False
+    with _state_lock:
+        stream_info = streams.get(stream_name)
+        if stream_info is None:
+            log.warning("Stream not found: %s", stream_name)
+            return False
+        process = stream_info["process"]
+        # Remove from dict before waiting so concurrent /start sees the slot as free
+        # only after the process is actually being terminated.
+        del streams[stream_name]
 
-    stream_info = streams[stream_name]
-    process = stream_info["process"]
     try:
         process.terminate()
         try:
             process.wait(timeout=5)
         except subprocess.TimeoutExpired:
             process.kill()
-            process.wait()
-        log(f"Stopped stream: {stream_name}")
+            try:
+                process.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                # Better to leak a wedged process than to hang the supervisor forever
+                # (can happen on stuck NFS/CIFS reads inside ffmpeg).
+                log.error("Stream %s did not die after SIGKILL; leaking pid %d",
+                          stream_name, process.pid)
+                return True
+        log.info("Stopped stream: %s", stream_name)
     except Exception as e:
-        log(f"Error stopping stream {stream_name}: {e}")
+        log.error("Error stopping stream %s: %s", stream_name, e)
 
-    del streams[stream_name]
     return True
 
 
 def get_stream_status():
     """Get status of all streams"""
     result = []
-    for name, video_path in available_videos.items():
-        is_running = name in streams
-        loop_count = stream_loop_counts.get(name, -1)
-        result.append({"name": name, "video_path": video_path, "running": is_running, "loop_count": loop_count,
-            "rtsp_url": f"rtsp://{HOSTNAME}:{RTSP_PORT}/{name}"})
+    with _state_lock:
+        for name, video_path in available_videos.items():
+            running_info = streams.get(name)
+            is_running = running_info is not None
+            # Live value when running, last-requested value otherwise.
+            if is_running:
+                loop_count = running_info["loop_count"]
+            else:
+                loop_count = stream_loop_counts.get(name, -1)
+            result.append({
+                "name": name,
+                "video_path": video_path,
+                "running": is_running,
+                "loop_count": loop_count,
+                "rtsp_url": f"rtsp://{HOSTNAME}:{RTSP_PORT}/{name}",
+                "hls_url": f"http://{HOSTNAME}:{HLS_PORT}/{name}/index.m3u8",
+            })
     return result
 
 
+def _claim_slot(stream_name, filename, video_path):
+    """Register (or refresh) a stream_name -> filename binding.
+
+    Returns True if the binding belongs to this filename after the call,
+    False if there was a collision with a different file (caller should skip).
+    Must be called under _state_lock.
+    """
+    owner = stream_name_to_filename.get(stream_name)
+    if owner is not None and owner != filename:
+        log.warning("Stream name collision: %s already owned by %r; skipping %r",
+                    stream_name, owner, filename)
+        return False
+    stream_name_to_filename[stream_name] = filename
+    available_videos[stream_name] = video_path
+    return True
+
+
 def scan_videos():
-    """Scan video directory and populate available_videos"""
+    """Scan video directory and populate available_videos."""
     if not VIDEOS_DIR.exists():
-        log(f"Directory does not exist: {VIDEOS_DIR}")
+        log.error("Directory does not exist: %s", VIDEOS_DIR)
         return
 
-    for video_path in VIDEOS_DIR.iterdir():
-        if not video_path.is_file() or is_ignored(video_path):
-            continue
-        stream_name = sanitize_name(video_path)
-        available_videos[stream_name] = str(video_path)
+    with _state_lock:
+        for video_path in VIDEOS_DIR.iterdir():
+            if not video_path.is_file() or is_ignored(video_path):
+                continue
+            stream_name = sanitize_name(video_path)
+            _claim_slot(stream_name, video_path.name, str(video_path))
 
 
 def sync_videos():
     """Scan videos and start all streams"""
-    log(f"Scanning {VIDEOS_DIR} for video files...")
+    log.info("Scanning %s for video files...", VIDEOS_DIR)
     scan_videos()
 
+    with _state_lock:
+        targets = list(available_videos.items())
+
     count = 0
-    for stream_name, video_path in available_videos.items():
+    for stream_name, video_path in targets:
         if start_stream(video_path, stream_name):
             count += 1
 
-    log(f"Initial sync complete: {count} streams started")
+    log.info("Initial sync complete: %d streams started", count)
 
 
-def handle_create(filepath, event_type="added"):
+def handle_create(filepath):
     path = Path(filepath)
-
     if is_ignored(path):
         return
 
     stream_name = sanitize_name(path)
-    available_videos[stream_name] = str(path)
-    log(f"Video {event_type}: {path.name}")
+    with _state_lock:
+        if not _claim_slot(stream_name, path.name, str(path)):
+            return
+    log.info("Video added: %s", path.name)
     start_stream(path, stream_name)
 
 
-def handle_delete(filepath, event_type="deleted"):
+def handle_delete(filepath):
     path = Path(filepath)
     stream_name = sanitize_name(path)
-    log(f"Video {event_type}: {path.name}")
+
+    with _state_lock:
+        owner = stream_name_to_filename.get(stream_name)
+        if owner != path.name:
+            # Slot belongs to a different file (or never existed) — don't touch it.
+            log.debug("Ignoring delete of %s; slot %s owned by %r", path.name, stream_name, owner)
+            return
+
+    log.info("Video removed: %s", path.name)
     stop_stream(stream_name)
-    if stream_name in available_videos:
-        del available_videos[stream_name]
+    with _state_lock:
+        stream_name_to_filename.pop(stream_name, None)
+        available_videos.pop(stream_name, None)
 
 
 def handle_modify(filepath):
@@ -261,141 +312,56 @@ def handle_modify(filepath):
         return
 
     stream_name = sanitize_name(path)
-    available_videos[stream_name] = str(path)
-    log(f"Video updated: {path.name}")
-    if stream_name in streams:
+    with _state_lock:
+        if not _claim_slot(stream_name, path.name, str(path)):
+            return
+        loop_count = stream_loop_counts.get(stream_name, -1)
+        running = stream_name in streams
+
+    log.info("Video updated: %s", path.name)
+    if running:
         stop_stream(stream_name)
-    loop_count = stream_loop_counts.get(stream_name, -1)
     start_stream(path, stream_name, loop_count)
 
 
 def cleanup_dead_processes():
-    dead_streams = []
-    for stream_name, info in streams.items():
-        if info["process"].poll() is not None:
-            log(f"Process ended: {stream_name}")
-            dead_streams.append(stream_name)
+    # Snapshot under the lock, then poll() (which is non-blocking) outside.
+    with _state_lock:
+        snapshot = [(name, info["process"]) for name, info in streams.items()]
 
-    for stream_name in dead_streams:
-        del streams[stream_name]
-        video_path = available_videos.get(stream_name)
+    dead = []
+    for stream_name, process in snapshot:
+        if process.poll() is not None:
+            log.info("Process ended: %s (exit code %s)", stream_name, process.returncode)
+            dead.append((stream_name, process))
+
+    for stream_name, process in dead:
+        with _state_lock:
+            current = streams.get(stream_name)
+            # If a concurrent /start replaced our entry with a fresh process,
+            # don't orphan it — leave the new process alone.
+            if current is None or current["process"] is not process:
+                continue
+            del streams[stream_name]
+            video_path = available_videos.get(stream_name)
+            loop_count = stream_loop_counts.get(stream_name, -1)
+
         if not video_path:
             continue
         try:
             if not Path(video_path).exists():
-                log(f"Cannot restart stream {stream_name}: file missing")
+                log.warning("Cannot restart stream %s: file missing", stream_name)
                 continue
         except OSError as e:
-            log(f"Cannot restart stream {stream_name}: {e}")
+            log.warning("Cannot restart stream %s: %s", stream_name, e)
             continue
-        loop_count = stream_loop_counts.get(stream_name, -1)
         if not start_stream(video_path, stream_name, loop_count):
-            log(f"Failed to restart stream: {stream_name}")
-
-
-HTML_PAGE = """<!DOCTYPE html>
-<html>
-<head>
-    <title>Stream Control</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <style>
-        * { box-sizing: border-box; }
-        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-               max-width: 800px; margin: 0 auto; padding: 20px; background: #1a1a2e; color: #eee; }
-        h1 { color: #00d4ff; }
-        .stream { background: #16213e; border-radius: 8px; padding: 15px; margin: 10px 0;
-                  display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
-        .stream-name { font-weight: bold; font-size: 1.1em; flex: 1; min-width: 150px; }
-        .stream-status { padding: 4px 12px; border-radius: 12px; font-size: 0.85em; }
-        .running { background: #00c853; color: #000; }
-        .stopped { background: #ff5252; color: #fff; }
-        .controls { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
-        button { padding: 8px 16px; border: none; border-radius: 4px; cursor: pointer;
-                 font-size: 0.9em; transition: opacity 0.2s; }
-        button:hover { opacity: 0.8; }
-        button:disabled { opacity: 0.5; cursor: not-allowed; }
-        .btn-start { background: #00c853; color: #000; }
-        .btn-stop { background: #ff5252; color: #fff; }
-        select { padding: 8px; border-radius: 4px; background: #0f3460; color: #fff; border: 1px solid #00d4ff; }
-        .rtsp-url { font-size: 0.8em; color: #888; width: 100%; margin-top: 5px; }
-        .refresh { background: #00d4ff; color: #000; margin-bottom: 15px; }
-    </style>
-</head>
-<body>
-    <h1>Stream Control</h1>
-    <div style="margin-bottom: 15px;">
-        <button class="btn-stop" onclick="stopAll()">Stop All</button>
-        <button class="btn-start" onclick="startAll()">Start All</button>
-    </div>
-    <div id="streams"></div>
-    <script>
-        async function loadStreams() {
-            const container = document.getElementById('streams');
-            try {
-                const res = await fetch('/api/streams');
-                const streams = await res.json();
-                if (!streams.length) {
-                    container.innerHTML = '<p>No streams found</p>';
-                    return;
-                }
-                container.innerHTML = streams.map(s => `
-                <div class="stream">
-                    <span class="stream-name">${s.name}</span>
-                    <span class="stream-status ${s.running ? 'running' : 'stopped'}">
-                        ${s.running ? 'Running' : 'Stopped'}
-                    </span>
-                    <div class="controls">
-                        <select id="loop-${s.name}">
-                            <option value="-1" ${s.loop_count === -1 ? 'selected' : ''}>Loop: Infinite</option>
-                            <option value="0" ${s.loop_count === 0 ? 'selected' : ''}>Play: 1x</option>
-                            <option value="1" ${s.loop_count === 1 ? 'selected' : ''}>Play: 2x</option>
-                            <option value="2" ${s.loop_count === 2 ? 'selected' : ''}>Play: 3x</option>
-                            <option value="4" ${s.loop_count === 4 ? 'selected' : ''}>Play: 5x</option>
-                            <option value="9" ${s.loop_count === 9 ? 'selected' : ''}>Play: 10x</option>
-                        </select>
-                        <button class="btn-start" onclick="startStream('${s.name}')" ${s.running ? 'disabled' : ''}>Start</button>
-                        <button class="btn-stop" onclick="stopStream('${s.name}')" ${!s.running ? 'disabled' : ''}>Stop</button>
-                    </div>
-                    <div class="rtsp-url">${s.rtsp_url}</div>
-                </div>
-            `).join('');
-            } catch (err) {
-                container.innerHTML = '<p style="color:#ff5252">Error loading streams: ' + err.message + '</p>';
-            }
-        }
-
-        async function startStream(name) {
-            const loopCount = document.getElementById('loop-' + name).value;
-            await fetch('/api/streams/' + name + '/start?loop=' + loopCount, {method: 'POST'});
-            loadStreams();
-        }
-
-        async function stopStream(name) {
-            await fetch('/api/streams/' + name + '/stop', {method: 'POST'});
-            loadStreams();
-        }
-
-        async function stopAll() {
-            await fetch('/api/streams/stop-all', {method: 'POST'});
-            loadStreams();
-        }
-
-        async function startAll() {
-            await fetch('/api/streams/start-all', {method: 'POST'});
-            loadStreams();
-        }
-
-        loadStreams();
-        setInterval(loadStreams, 5000);
-    </script>
-</body>
-</html>
-"""
+            log.error("Failed to restart stream: %s", stream_name)
 
 
 class StreamHandler(BaseHTTPRequestHandler):
     def log_message(self, format, *args):
-        pass  # Suppress default logging
+        pass  # Suppress default access logging; we have our own.
 
     def send_json(self, data, status=200):
         self.send_response(status)
@@ -413,7 +379,12 @@ class StreamHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         parsed = urlparse(self.path)
         if parsed.path == '/' or parsed.path == '/index.html':
-            self.send_html(HTML_PAGE)
+            try:
+                html = INDEX_HTML_PATH.read_text(encoding='utf-8')
+            except OSError as e:
+                self.send_json({"error": f"index.html unavailable: {e}"}, 500)
+                return
+            self.send_html(html)
         elif parsed.path == '/api/streams':
             self.send_json(get_stream_status())
         else:
@@ -427,31 +398,36 @@ class StreamHandler(BaseHTTPRequestHandler):
             stream_name = path_parts[2]
             action = path_parts[3] if len(path_parts) > 3 else None
 
-            # Handle stop-all and start-all
             if stream_name == 'stop-all':
-                for name in list(streams.keys()):
+                with _state_lock:
+                    names = list(streams.keys())
+                for name in names:
                     stop_stream(name)
                 self.send_json({"success": True})
                 return
 
             if stream_name == 'start-all':
-                for name, video_path in available_videos.items():
-                    if name not in streams:
-                        loop_count = stream_loop_counts.get(name, -1)
-                        start_stream(video_path, name, loop_count)
+                with _state_lock:
+                    candidates = [(name, vp) for name, vp in available_videos.items()
+                                  if name not in streams]
+                    loops = {name: stream_loop_counts.get(name, -1) for name, _ in candidates}
+                for name, video_path in candidates:
+                    start_stream(video_path, name, loops[name])
                 self.send_json({"success": True})
                 return
 
             if action == 'start':
-                if stream_name not in available_videos:
+                with _state_lock:
+                    video_path = available_videos.get(stream_name)
+                    running = stream_name in streams
+                if video_path is None:
                     self.send_json({"error": "Stream not found"}, 404)
                     return
                 query = parse_qs(parsed.query)
                 loop_count = int(query.get('loop', ['-1'])[0])
-                # Stop first if already running
-                if stream_name in streams:
+                if running:
                     stop_stream(stream_name)
-                success = start_stream(available_videos[stream_name], stream_name, loop_count)
+                success = start_stream(video_path, stream_name, loop_count)
                 self.send_json({"success": success})
 
             elif action == 'stop':
@@ -472,82 +448,114 @@ class StreamHandler(BaseHTTPRequestHandler):
 
 
 def start_api_server():
-    server = ThreadingHTTPServer(('0.0.0.0', API_PORT), StreamHandler)  # type: ignore[arg-type]
-    log(f"Stream Control UI: http://localhost:{API_PORT}")
-    server.serve_forever()
+    try:
+        server = ThreadingHTTPServer(('0.0.0.0', API_PORT), StreamHandler)  # type: ignore[arg-type]
+        log.info("Stream Control UI: http://localhost:%d", API_PORT)
+        server.serve_forever()
+    except Exception as e:
+        # The control UI is a primary feature; silent half-death (supervisor alive,
+        # UI gone) is worse than a hard exit that systemd/compose can restart.
+        log.critical("API server failed: %s", e)
+        os._exit(1)
 
 
 def get_video_files():
-    """Scan directory and return dict of {filename: mtime}"""
+    """Return {filename: (mtime, size)} for all non-ignored files in VIDEOS_DIR."""
     files = {}
     for video_path in VIDEOS_DIR.iterdir():
-        if video_path.is_file() and not is_ignored(video_path):
-            files[video_path.name] = video_path.stat().st_mtime
+        if not video_path.is_file() or is_ignored(video_path):
+            continue
+        stat = video_path.stat()
+        files[video_path.name] = (stat.st_mtime, stat.st_size)
     return files
 
 
 def watch_directory():
     """Watch directory for changes using polling (works on network filesystems).
-    
-    Note: File renames appear as delete + create events (old name removed, new name added).
-    This means a renamed video will stop streaming under the old name and start fresh
-    under the new name.
+
+    Changed/new files are debounced: we wait for (mtime, size) to be stable for
+    DEBOUNCE_STABLE_POLLS consecutive polls before acting, so a long file copy
+    doesn't trigger a storm of stop+start cycles.
+
+    Deletions are processed before creates/modifies in each tick so that a
+    rename (delete-then-create with the same stream_name) frees the slot before
+    the new file tries to claim it.
     """
-    log(f"Watching {VIDEOS_DIR} for changes (polling mode)...")
+    log.info("Watching %s for changes (polling mode)...", VIDEOS_DIR)
 
     last_cleanup = time.time()
     try:
         known_files = get_video_files()
     except Exception as e:
-        log(f"Error scanning directory: {e}")
+        log.error("Error scanning directory: %s", e)
         known_files = {}
 
+    pending = {}  # filename -> {"mtime": float, "size": int, "stable_polls": int}
+
     while True:
-        time.sleep(2)  # Poll every 2 seconds
+        time.sleep(POLL_INTERVAL_SEC)
 
         try:
             current_files = get_video_files()
-
-            # Check for new files
-            for filename in current_files:
-                if filename not in known_files:
-                    filepath = VIDEOS_DIR / filename
-                    handle_create(filepath, "added")
-                elif current_files[filename] != known_files.get(filename):
-                    filepath = VIDEOS_DIR / filename
-                    handle_modify(filepath)
-
-            # Check for deleted files
-            for filename in list(known_files.keys()):
-                if filename not in current_files:
-                    filepath = VIDEOS_DIR / filename
-                    handle_delete(filepath, "removed")
-
-            known_files = current_files
-
         except Exception as e:
-            log(f"Error scanning directory: {e}")
+            log.error("Error scanning directory: %s", e)
+            current_files = None
 
-        # Periodic cleanup every 30 seconds
+        if current_files is not None:
+            # Drop pending entries for files that vanished mid-debounce.
+            for filename in list(pending.keys()):
+                if filename not in current_files:
+                    del pending[filename]
+
+            # Detect deletions (no debounce — gone is gone).
+            deletions = [f for f in known_files if f not in current_files]
+
+            # Detect adds/modifies through the debounce buffer.
+            ready_creates = []
+            ready_modifies = []
+            for filename, current in current_files.items():
+                prev = known_files.get(filename)
+                if prev == current:
+                    pending.pop(filename, None)
+                    continue
+                state = pending.get(filename)
+                if state is None or (state["mtime"], state["size"]) != current:
+                    pending[filename] = {"mtime": current[0], "size": current[1], "stable_polls": 0}
+                else:
+                    state["stable_polls"] += 1
+                    if state["stable_polls"] >= DEBOUNCE_STABLE_POLLS:
+                        if prev is None:
+                            ready_creates.append(filename)
+                        else:
+                            ready_modifies.append(filename)
+                        known_files[filename] = current
+                        del pending[filename]
+
+            # Process deletions first so renames into a now-free slot work.
+            for filename in deletions:
+                handle_delete(VIDEOS_DIR / filename)
+                known_files.pop(filename, None)
+
+            for filename in ready_creates:
+                handle_create(VIDEOS_DIR / filename)
+            for filename in ready_modifies:
+                handle_modify(VIDEOS_DIR / filename)
+
         if time.time() - last_cleanup > 30:
             cleanup_dead_processes()
             last_cleanup = time.time()
 
 
 def main():
-    log("Stream supervisor starting...")
+    threading.current_thread().name = "MainThread"
+    log.info("Stream supervisor starting...")
 
-    # Wait for MediaMTX
     wait_for_mediamtx()
 
-    # Start API server in background thread
-    api_thread = threading.Thread(target=start_api_server, daemon=True)
+    api_thread = threading.Thread(target=start_api_server, name="APIServer", daemon=True)
     api_thread.start()
 
-    # Initial sync
     sync_videos()
-
-    # Watch for changes
     watch_directory()
 
 

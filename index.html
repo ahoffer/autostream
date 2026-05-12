@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Stream Control</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <style>
+        * { box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+               max-width: 800px; margin: 0 auto; padding: 20px; background: #1a1a2e; color: #eee; }
+        h1 { color: #00d4ff; }
+        .stream { background: #16213e; border-radius: 8px; padding: 15px; margin: 10px 0;
+                  display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+        .stream-name { font-weight: bold; font-size: 1.1em; flex: 1; min-width: 150px; }
+        .stream-status { padding: 4px 12px; border-radius: 12px; font-size: 0.85em; }
+        .running { background: #00c853; color: #000; }
+        .stopped { background: #ff5252; color: #fff; }
+        .controls { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+        button { padding: 8px 16px; border: none; border-radius: 4px; cursor: pointer;
+                 font-size: 0.9em; transition: opacity 0.2s; }
+        button:hover { opacity: 0.8; }
+        button:disabled { opacity: 0.5; cursor: not-allowed; }
+        .btn-start { background: #00c853; color: #000; }
+        .btn-stop { background: #ff5252; color: #fff; }
+        select { padding: 8px; border-radius: 4px; background: #0f3460; color: #fff; border: 1px solid #00d4ff; }
+        .urls { width: 100%; margin-top: 5px; display: flex; flex-direction: column; gap: 3px; }
+        .url-row { display: flex; align-items: center; gap: 6px; font-size: 0.8em; color: #888; }
+        .url-label { color: #00d4ff; font-weight: bold; min-width: 36px; }
+        .url-text { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; word-break: break-all; }
+        .copy-btn { background: transparent; border: none; color: #888; cursor: pointer; padding: 2px 4px;
+                    border-radius: 3px; display: inline-flex; align-items: center; }
+        .copy-btn:hover { color: #00d4ff; background: rgba(0, 212, 255, 0.1); }
+        .copy-btn.copied { color: #00c853; }
+        .copy-btn.copy-failed { color: #ff5252; }
+        .copy-btn svg { width: 14px; height: 14px; }
+        .refresh { background: #00d4ff; color: #000; margin-bottom: 15px; }
+    </style>
+</head>
+<body>
+    <h1>Stream Control</h1>
+    <div style="margin-bottom: 15px;">
+        <button class="btn-stop" onclick="stopAll()">Stop All</button>
+        <button class="btn-start" onclick="startAll()">Start All</button>
+    </div>
+    <div id="streams"></div>
+    <script>
+        async function loadStreams() {
+            const container = document.getElementById('streams');
+            try {
+                const res = await fetch('/api/streams');
+                const streams = await res.json();
+                if (!streams.length) {
+                    container.innerHTML = '<p>No streams found</p>';
+                    return;
+                }
+                const copyIcon = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>`;
+                container.innerHTML = streams.map(s => `
+                <div class="stream">
+                    <span class="stream-name">${s.name}</span>
+                    <span class="stream-status ${s.running ? 'running' : 'stopped'}">
+                        ${s.running ? 'Running' : 'Stopped'}
+                    </span>
+                    <div class="controls">
+                        <select id="loop-${s.name}">
+                            <option value="-1" ${s.loop_count === -1 ? 'selected' : ''}>Loop: Infinite</option>
+                            <option value="0" ${s.loop_count === 0 ? 'selected' : ''}>Play: 1x</option>
+                            <option value="1" ${s.loop_count === 1 ? 'selected' : ''}>Play: 2x</option>
+                            <option value="2" ${s.loop_count === 2 ? 'selected' : ''}>Play: 3x</option>
+                            <option value="4" ${s.loop_count === 4 ? 'selected' : ''}>Play: 5x</option>
+                            <option value="9" ${s.loop_count === 9 ? 'selected' : ''}>Play: 10x</option>
+                        </select>
+                        <button class="btn-start" onclick="startStream('${s.name}')" ${s.running ? 'disabled' : ''}>Start</button>
+                        <button class="btn-stop" onclick="stopStream('${s.name}')" ${!s.running ? 'disabled' : ''}>Stop</button>
+                    </div>
+                    <div class="urls">
+                        <div class="url-row">
+                            <span class="url-label">RTSP</span>
+                            <span class="url-text">${s.rtsp_url}</span>
+                            <button class="copy-btn" title="Copy RTSP URL" onclick='copyUrl(this, ${JSON.stringify(s.rtsp_url)})'>${copyIcon}</button>
+                        </div>
+                        <div class="url-row">
+                            <span class="url-label">HLS</span>
+                            <span class="url-text">${s.hls_url}</span>
+                            <button class="copy-btn" title="Copy HLS URL" onclick='copyUrl(this, ${JSON.stringify(s.hls_url)})'>${copyIcon}</button>
+                        </div>
+                    </div>
+                </div>
+            `).join('');
+            } catch (err) {
+                container.innerHTML = '<p style="color:#ff5252">Error loading streams: ' + err.message + '</p>';
+            }
+        }
+
+        async function copyUrl(btn, text) {
+            const flash = (cls) => {
+                btn.classList.add(cls);
+                setTimeout(() => btn.classList.remove(cls), 1000);
+            };
+            try {
+                if (navigator.clipboard && window.isSecureContext) {
+                    await navigator.clipboard.writeText(text);
+                    flash('copied');
+                    return;
+                }
+                // Fallback for plain-HTTP origins where the Clipboard API is unavailable.
+                const ta = document.createElement('textarea');
+                ta.value = text;
+                ta.setAttribute('readonly', '');
+                ta.style.position = 'fixed';
+                ta.style.top = '0';
+                ta.style.left = '0';
+                ta.style.opacity = '0';
+                document.body.appendChild(ta);
+                ta.focus();
+                ta.select();
+                ta.setSelectionRange(0, text.length);
+                const ok = document.execCommand('copy');
+                document.body.removeChild(ta);
+                if (!ok) throw new Error('execCommand("copy") returned false');
+                flash('copied');
+            } catch (err) {
+                console.error('Copy failed:', err);
+                btn.title = 'Copy failed: ' + err.message;
+                flash('copy-failed');
+            }
+        }
+
+        async function startStream(name) {
+            const loopCount = document.getElementById('loop-' + name).value;
+            await fetch('/api/streams/' + name + '/start?loop=' + loopCount, {method: 'POST'});
+            loadStreams();
+        }
+
+        async function stopStream(name) {
+            await fetch('/api/streams/' + name + '/stop', {method: 'POST'});
+            loadStreams();
+        }
+
+        async function stopAll() {
+            await fetch('/api/streams/stop-all', {method: 'POST'});
+            loadStreams();
+        }
+
+        async function startAll() {
+            await fetch('/api/streams/start-all', {method: 'POST'});
+            loadStreams();
+        }
+
+        loadStreams();
+        setInterval(loadStreams, 5000);
+    </script>
+</body>
+</html>
