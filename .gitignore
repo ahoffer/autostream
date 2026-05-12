@@ -3,3 +3,6 @@ videos/*
 .idea
 .claude
 .mediamtx.generated.yml
+__pycache__/
+*.pyc
+*.tar
