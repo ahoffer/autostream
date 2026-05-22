@@ -54,6 +54,24 @@ down:  ## Tear down the Kubernetes deployment
 # Docker Compose targets
 compose-up:  ## Start via docker compose
 	set -a && . ./.env && envsubst < mediamtx.yml > .mediamtx.generated.yml
+	@# If an existing container is pinned to a network ID that no longer
+	@# exists (for example the external network was recreated), `docker
+	@# compose up` tries to start it against the dead ID and fails. Detect
+	@# that drift and drop the container so compose can recreate it.
+	@set -a && . ./.env && \
+	if docker inspect "$$CONTAINER_NAME" >/dev/null 2>&1; then \
+		docker inspect "$$CONTAINER_NAME" \
+		  --format '{{range $$n, $$v := .NetworkSettings.Networks}}{{$$n}} {{$$v.NetworkID}}{{"\n"}}{{end}}' \
+		  | while read -r net id; do \
+		      [ -z "$$net" ] && continue; \
+		      cur=$$(docker network inspect "$$net" --format '{{.Id}}' 2>/dev/null || true); \
+		      if [ "$$cur" != "$$id" ]; then \
+		          echo "Removing $$CONTAINER_NAME: network $$net id drifted ($$id -> $${cur:-missing})"; \
+		          docker rm -f "$$CONTAINER_NAME" >/dev/null; \
+		          break; \
+		      fi; \
+		    done; \
+	fi
 	docker compose up -d
 
 compose-down:  ## Stop the docker compose stack
