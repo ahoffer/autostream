@@ -38,8 +38,8 @@
 <body>
     <h1>Stream Control</h1>
     <div style="margin-bottom: 15px;">
-        <button class="btn-start" onclick="startAll()">Start All</button>
         <button class="btn-stop" onclick="stopAll()">Stop All</button>
+        <button class="btn-start" onclick="startAll()">Start All</button>
     </div>
     <div id="streams"></div>
     <script>
@@ -68,8 +68,8 @@
                             <option value="4" ${s.loop_count === 4 ? 'selected' : ''}>Play: 5x</option>
                             <option value="9" ${s.loop_count === 9 ? 'selected' : ''}>Play: 10x</option>
                         </select>
-                        <button class="btn-start" onclick="startStream('${s.name}')" ${s.running ? 'disabled' : ''}>Start</button>
                         <button class="btn-stop" onclick="stopStream('${s.name}')" ${!s.running ? 'disabled' : ''}>Stop</button>
+                        <button class="btn-start" onclick="startStream('${s.name}')" ${s.running ? 'disabled' : ''}>Start</button>
                     </div>
                     <div class="urls">
                         <div class="url-row">
