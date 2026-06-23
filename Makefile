@@ -53,12 +53,17 @@ down:  ## Tear down the Kubernetes deployment
 
 # Docker Compose targets
 compose-up:  ## Start via docker compose
-	set -a && . ./.env && envsubst < mediamtx.yml > .mediamtx.generated.yml
-	@# If an existing container is pinned to a network ID that no longer
-	@# exists (for example the external network was recreated), `docker
-	@# compose up` tries to start it against the dead ID and fails. Detect
-	@# that drift and drop the container so compose can recreate it.
+	@# Render the config and force a recreate only when it actually changed:
+	@# mediamtx reads its config at startup, and the single-file bind mount
+	@# won't make a running container pick up edits on its own. Also drop the
+	@# container if its attached external-network id has drifted (for example
+	@# the external network was recreated), so compose can recreate it instead
+	@# of failing against a dead id.
 	@set -a && . ./.env && \
+	tmp=$$(mktemp); envsubst < mediamtx.yml > "$$tmp"; \
+	if [ ! -f .mediamtx.generated.yml ] || ! cmp -s "$$tmp" .mediamtx.generated.yml; then \
+		recreate=--force-recreate; else recreate=; fi; \
+	mv "$$tmp" .mediamtx.generated.yml; \
 	if docker inspect "$$CONTAINER_NAME" >/dev/null 2>&1; then \
 		docker inspect "$$CONTAINER_NAME" \
 		  --format '{{range $$n, $$v := .NetworkSettings.Networks}}{{$$n}} {{$$v.NetworkID}}{{"\n"}}{{end}}' \
@@ -67,12 +72,11 @@ compose-up:  ## Start via docker compose
 		      cur=$$(docker network inspect "$$net" --format '{{.Id}}' 2>/dev/null || true); \
 		      if [ "$$cur" != "$$id" ]; then \
 		          echo "Removing $$CONTAINER_NAME: network $$net id drifted ($$id -> $${cur:-missing})"; \
-		          docker rm -f "$$CONTAINER_NAME" >/dev/null; \
-		          break; \
+		          docker rm -f "$$CONTAINER_NAME" >/dev/null; break; \
 		      fi; \
 		    done; \
-	fi
-	docker compose up -d
+	fi; \
+	docker compose up -d $$recreate
 
 compose-down:  ## Stop the docker compose stack
 	docker compose down
