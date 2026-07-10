@@ -26,6 +26,13 @@ API_PORT = int(os.getenv("STREAM_API_PORT", "8080"))
 LOG_LEVEL = os.getenv("LOG_LEVEL", "info").lower()
 MAX_VIDEO_BITRATE = os.getenv("MAX_VIDEO_BITRATE", "")
 
+# UDP MPEG-TS output carries KLV/data streams that RTSP/HLS (via MediaMTX) drop.
+# Each stream is pushed to OUTPUT_HOST on its own port (UDP_BASE_PORT + slot).
+# Set OUTPUT_HOST to a reachable consumer or a multicast group; the loopback
+# default just means "nothing listens" until it is configured.
+OUTPUT_HOST = os.getenv("OUTPUT_HOST", "127.0.0.1")
+UDP_BASE_PORT = int(os.getenv("UDP_BASE_PORT", "20000"))
+
 # Poll loop tuning
 POLL_INTERVAL_SEC = 2
 DEBOUNCE_STABLE_POLLS = 2  # ~4s of (mtime, size) stability before committing a change
@@ -48,6 +55,46 @@ streams = {}                  # stream_name -> {"process": Popen, "video_path": 
 available_videos = {}         # stream_name -> video_path (str)
 stream_loop_counts = {}       # stream_name -> last requested loop_count (persists across stop/start)
 stream_name_to_filename = {}  # stream_name -> filename (basename); reverse map so name collisions don't silently overwrite
+stream_udp_ports = {}         # stream_name -> UDP port for the KLV MPEG-TS feed
+_next_udp_port = UDP_BASE_PORT  # next port to hand out; protected by _state_lock
+_output_host_warned = False   # so we log the "unresolved OUTPUT_HOST" warning once
+
+
+def output_host_reachable():
+    """Return True if OUTPUT_HOST resolves, so the UDP/KLV output can be added.
+
+    ffmpeg aborts the whole process (taking the RTSP output down with it) if the
+    UDP destination host is unresolvable. So when the consumer (for example the
+    cx-search video-streaming service) is not on the network, we drop the UDP
+    output and stream RTSP/HLS only rather than breaking playback. A numeric IP
+    or multicast group always resolves, so this only trips on a missing hostname.
+    """
+    global _output_host_warned
+    try:
+        socket.gethostbyname(OUTPUT_HOST)
+        _output_host_warned = False
+        return True
+    except OSError:
+        if not _output_host_warned:
+            log.warning("OUTPUT_HOST %r does not resolve; streaming RTSP/HLS only, "
+                        "no KLV/UDP feed until it becomes reachable", OUTPUT_HOST)
+            _output_host_warned = True
+        return False
+
+
+def _udp_port_for(stream_name):
+    """Return the stream's UDP port, assigning the next free one on first use.
+
+    Ports are stable for the process lifetime so a stopped/started stream keeps
+    the same udp:// URL. Must be called while holding _state_lock.
+    """
+    global _next_udp_port
+    port = stream_udp_ports.get(stream_name)
+    if port is None:
+        port = _next_udp_port
+        _next_udp_port += 1
+        stream_udp_ports[stream_name] = port
+    return port
 
 
 def parse_bitrate(bitrate_str):
@@ -63,30 +110,42 @@ def parse_bitrate(bitrate_str):
         return int(bitrate_str)
 
 
-def get_video_bitrate(video_path):
-    """Get video bitrate in bits per second using ffprobe."""
-    try:
-        result = subprocess.run(
-            ["ffprobe", "-v", "error", "-select_streams", "v:0",
-             "-show_entries", "stream=bit_rate",
-             "-of", "default=noprint_wrappers=1:nokey=1", str(video_path)],
-            capture_output=True, text=True, timeout=10
-        )
-        bitrate = result.stdout.strip()
-        if bitrate and bitrate != "N/A":
-            return int(bitrate)
+def _first_int(text):
+    """First integer-valued line in ffprobe output, or None.
 
-        result = subprocess.run(
-            ["ffprobe", "-v", "error",
-             "-show_entries", "format=bit_rate",
-             "-of", "default=noprint_wrappers=1:nokey=1", str(video_path)],
-            capture_output=True, text=True, timeout=10
-        )
-        bitrate = result.stdout.strip()
-        if bitrate and bitrate != "N/A":
-            return int(bitrate)
-    except Exception as e:
-        log.warning("Error probing bitrate for %s: %s", video_path, e)
+    ffprobe reports "N/A" (sometimes more than one line of it) when a bitrate is
+    unknown, so we can't just int() the whole output — pick the first real number.
+    """
+    for line in text.splitlines():
+        line = line.strip()
+        if line.isdigit():
+            return int(line)
+    return None
+
+
+def get_video_bitrate(video_path):
+    """Return the video bitrate in bits per second via ffprobe, or None.
+
+    Tries the video stream first, then the container format. An "N/A" (unknown
+    bitrate, common for MPEG-TS) is not an error — it just falls through to None.
+    """
+    queries = (
+        ["-select_streams", "v:0", "-show_entries", "stream=bit_rate"],
+        ["-show_entries", "format=bit_rate"],
+    )
+    for query in queries:
+        try:
+            result = subprocess.run(
+                ["ffprobe", "-v", "error", *query,
+                 "-of", "default=noprint_wrappers=1:nokey=1", str(video_path)],
+                capture_output=True, text=True, timeout=10,
+            )
+        except (subprocess.SubprocessError, OSError) as e:
+            log.warning("Error probing bitrate for %s: %s", Path(video_path).name, e)
+            return None
+        bitrate = _first_int(result.stdout)
+        if bitrate is not None:
+            return bitrate
     return None
 
 
@@ -144,17 +203,20 @@ def wait_for_mediamtx():
 
 
 def start_stream(video_path, stream_name, loop_count=-1):
-    # ffprobe (inside get_bitrate_flags) can take seconds — run before taking the lock
-    # so we don't block API threads waiting on disk I/O.
+    # ffprobe (inside get_bitrate_flags) and the DNS lookup can take time — run
+    # both before taking the lock so we don't block API threads on I/O.
     bitrate_flags = get_bitrate_flags(video_path)
+    output_reachable = output_host_reachable()
 
     with _state_lock:
         if stream_name in streams:
             log.warning("Stream already running: %s", stream_name)
             return False
 
+        udp_port = _udp_port_for(stream_name)
+        udp_target = f"{OUTPUT_HOST}:{udp_port}" if output_reachable else ""
         try:
-            cmd = [STREAM_VIDEO_SCRIPT, str(video_path), stream_name, str(loop_count), bitrate_flags]
+            cmd = [STREAM_VIDEO_SCRIPT, str(video_path), stream_name, str(loop_count), bitrate_flags, udp_target]
             if LOG_LEVEL == "debug":
                 process = subprocess.Popen(cmd)
             else:
@@ -169,7 +231,8 @@ def start_stream(video_path, stream_name, loop_count=-1):
 
     rtsp_url = f"rtsp://{HOSTNAME}:{RTSP_PORT}/{stream_name}"
     hls_url = f"http://{HOSTNAME}:{HLS_PORT}/{stream_name}/index.m3u8"
-    log.info("Now playing %s (HLS: %s)", rtsp_url, hls_url)
+    udp_url = f"udp://{udp_target}" if udp_target else "disabled (OUTPUT_HOST unresolved)"
+    log.info("Now playing %s (HLS: %s, UDP+KLV: %s)", rtsp_url, hls_url, udp_url)
     return True
 
 
@@ -224,6 +287,7 @@ def get_stream_status():
                 "loop_count": loop_count,
                 "rtsp_url": f"rtsp://{HOSTNAME}:{RTSP_PORT}/{name}",
                 "hls_url": f"http://{HOSTNAME}:{HLS_PORT}/{name}/index.m3u8",
+                "udp_url": f"udp://{OUTPUT_HOST}:{stream_udp_ports.get(name)}",
             })
     return result
 
@@ -242,6 +306,7 @@ def _claim_slot(stream_name, filename, video_path):
         return False
     stream_name_to_filename[stream_name] = filename
     available_videos[stream_name] = video_path
+    _udp_port_for(stream_name)  # reserve a stable UDP port so status always has one
     return True
 
 

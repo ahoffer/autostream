@@ -1,6 +1,9 @@
 # Autostream
 
-Automatic RTSP video streaming server with web-based stream control and hot-reload file discovery.
+Automatic video streaming server with web-based stream control and hot-reload
+file discovery. Each video is published three ways at once: RTSP and HLS (through
+MediaMTX, for playback) and MPEG-TS over UDP (which preserves KLV/MISB timed
+metadata that RTSP and HLS cannot carry).
 
 ## Quickstart
 
@@ -37,8 +40,32 @@ Inside a Kubernetes cluster, videos are reachable through the `autostream`
 Service on the ports configured in `.env`:
 - **RTSP**: `rtsp://autostream:${MEDIAMTX_RTSP_PORT}/<stream-name>` (default `8554`)
 - **HLS**: `http://autostream:${MEDIAMTX_HLS_PORT}/<stream-name>/index.m3u8` (default `8888`)
+- **UDP (KLV)**: `udp://${OUTPUT_HOST}:<port>` — MPEG-TS with KLV/data streams
+  preserved. Each stream gets its own port starting at `${UDP_BASE_PORT}`; the
+  exact port per stream is shown in the control UI and the `/api/streams` output.
 
 For Docker Compose access from the host, see "Port Mappings" below.
+
+### KLV / MISB metadata
+
+RTSP and HLS go through MediaMTX, whose track model only carries H.264/AAC — KLV
+timed-metadata data streams are dropped (ffmpeg's RTP muxer cannot carry them
+either). To preserve KLV, autostream also stream-copies the data streams into an
+MPEG-TS feed pushed over **UDP**, the standard MISB/STANAG-4609 transport.
+
+In the octo-cx stack, `OUTPUT_HOST` defaults to the cx-search **video-streaming**
+service (on `octo-cx-network`), which listens on `udp://0.0.0.0:<port>`, decodes
+the KLV, and publishes it to the AMQP `stream.klv` topic that cx-edge consumes
+for geolocation. Add each feed to cx-search like any other stream, using the
+`udp://0.0.0.0:<port>` the UI/API reports for it — there is no separate
+registration step beyond adding the stream.
+
+UDP is push, not pull. If `OUTPUT_HOST` does not resolve (for example the
+cx-search stack isn't running), autostream logs a warning and streams RTSP/HLS
+only rather than failing — the KLV feed simply starts once the consumer is
+reachable and the stream restarts. For standalone use, set `OUTPUT_HOST` to any
+reachable consumer or a multicast group like `239.0.0.1`. Verify a feed with, for
+example, `ffprobe udp://<host>:<port>` — the KLV stream appears as `Data: klv (KLVA)`.
 
 **Example:** If you add `sailboat.mp4` to the `videos/` directory:
 ```
@@ -62,6 +89,8 @@ same settings drive either deployment.
 | `CONTAINER_NAME` | Image name and service/hostname used in stream URLs | `autostream` |
 | `VERSION` | Image version tag | `1.0.3` |
 | `MAX_VIDEO_BITRATE` | Cap video bitrate (for example `3M`, `5M`) | `2M` |
+| `OUTPUT_HOST` | Host/service the KLV UDP feeds are pushed to (cx-search `video-streaming`, or an IP/multicast group) | `video-streaming` |
+| `UDP_BASE_PORT` | First UDP port; each stream gets the next one (within video-streaming's `40000-40100`) | `40000` |
 | `MEDIAMTX_RTSP_PORT` | RTSP listener port | `8554` |
 | `MEDIAMTX_HLS_PORT` | HLS HTTP port | `8888` |
 | `MEDIAMTX_RTP_PORT` | RTP UDP port | `8000` |

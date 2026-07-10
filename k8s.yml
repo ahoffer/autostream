@@ -41,6 +41,10 @@ spec:
               value: ${CONTAINER_NAME}
             - name: MAX_VIDEO_BITRATE
               value: "${MAX_VIDEO_BITRATE}"
+            - name: OUTPUT_HOST
+              value: "${OUTPUT_HOST}"
+            - name: UDP_BASE_PORT
+              value: "${UDP_BASE_PORT}"
           ports:
             - containerPort: ${MEDIAMTX_RTSP_PORT}
               protocol: TCP

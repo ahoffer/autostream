@@ -82,6 +82,11 @@
                             <span class="url-text">${s.hls_url}</span>
                             <button class="copy-btn" title="Copy HLS URL" onclick='copyUrl(this, ${JSON.stringify(s.hls_url)})'>${copyIcon}</button>
                         </div>
+                        <div class="url-row">
+                            <span class="url-label" title="MPEG-TS/UDP feed that preserves KLV metadata">UDP</span>
+                            <span class="url-text">${s.udp_url}</span>
+                            <button class="copy-btn" title="Copy UDP URL" onclick='copyUrl(this, ${JSON.stringify(s.udp_url)})'>${copyIcon}</button>
+                        </div>
                     </div>
                 </div>
             `).join('');
