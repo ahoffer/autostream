@@ -6,8 +6,9 @@ ARG MEDIAMTX_RTP_PORT
 ARG MEDIAMTX_RTCP_PORT
 ARG STREAM_API_PORT
 
-# Install Python3 for the stream supervisor (stdlib only)
-RUN apk add --no-cache python3
+# Install Python3 for the stream supervisor (stdlib only) and envsubst for
+# rendering the Compose-mounted MediaMTX template at container startup.
+RUN apk add --no-cache python3 gettext
 
 # Create non-root user
 RUN addgroup -g 1000 autostream && \

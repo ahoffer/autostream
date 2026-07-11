@@ -2,7 +2,7 @@ videos/*
 !videos/README.md
 .idea
 .claude
-.mediamtx.generated.yml
+.generated/
 __pycache__/
 *.pyc
 *.tar

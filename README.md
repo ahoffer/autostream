@@ -12,39 +12,32 @@ metadata that RTSP and HLS cannot carry).
    cp your-video.mp4 videos/
    ```
 
-2. **Build and deploy**:
-
-   Docker Compose (standalone):
+2. **Build and deploy** via Docker Compose:
    ```bash
    make build       # Only needed once, or after code changes
    make compose-up
-   ```
-
-   Kubernetes (see "Kubernetes Setup" below for the image-availability step):
-   ```bash
-   make build
-   make up
    ```
 
 ## How It Works
 
 Autostream automatically:
 - **Scans** the `videos/` directory on startup
-- **Starts streaming** each video file via RTSP (infinite loop by default)
+- **Starts streaming** each video file via RTSP/HLS (through MediaMTX) and
+  KLV-preserving MPEG-TS/UDP, looping infinitely by default
 - **Watches** for new files added at runtime
 - **Removes streams** when files are deleted
 
 ## Stream URLs
 
-Inside a Kubernetes cluster, videos are reachable through the `autostream`
-Service on the ports configured in `.env`:
+Other containers on `octo-cx-network` reach each stream through the `autostream`
+service on the ports configured in `.env`:
 - **RTSP**: `rtsp://autostream:${MEDIAMTX_RTSP_PORT}/<stream-name>` (default `8554`)
 - **HLS**: `http://autostream:${MEDIAMTX_HLS_PORT}/<stream-name>/index.m3u8` (default `8888`)
 - **UDP (KLV)**: `udp://${OUTPUT_HOST}:<port>` — MPEG-TS with KLV/data streams
   preserved. Each stream gets its own port starting at `${UDP_BASE_PORT}`; the
   exact port per stream is shown in the control UI and the `/api/streams` output.
 
-For Docker Compose access from the host, see "Port Mappings" below.
+For access from the host, see "Port Mappings" below.
 
 ### KLV / MISB metadata
 
@@ -80,14 +73,13 @@ Stream names are sanitized from filenames:
 
 Edit `.env` file:
 
-Both `docker-compose.yml` and `k8s.yml` read from `.env` via `envsubst`, so the
-same settings drive either deployment.
+Docker Compose reads `.env` directly, and the container renders the MediaMTX
+template at startup.
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `K8S_NAMESPACE` | Kubernetes namespace for deployment | `octocx` |
 | `CONTAINER_NAME` | Image name and service/hostname used in stream URLs | `autostream` |
-| `VERSION` | Image version tag | `1.0.3` |
+| `VERSION` | Image version tag | `2.0.0` (see `.env`) |
 | `MAX_VIDEO_BITRATE` | Cap video bitrate (for example `3M`, `5M`) | `2M` |
 | `OUTPUT_HOST` | Host/service the KLV UDP feeds are pushed to (cx-search `video-streaming`, or an IP/multicast group) | `video-streaming` |
 | `UDP_BASE_PORT` | First UDP port; each stream gets the next one (within video-streaming's `40000-40100`) | `40000` |
@@ -95,17 +87,21 @@ same settings drive either deployment.
 | `MEDIAMTX_HLS_PORT` | HLS HTTP port | `8888` |
 | `MEDIAMTX_RTP_PORT` | RTP UDP port | `8000` |
 | `MEDIAMTX_RTCP_PORT` | RTCP UDP port | `8001` |
+| `MEDIAMTX_API_PORT` | MediaMTX API port | `9997` |
 | `STREAM_API_PORT` | Stream control UI/API port | `8080` |
 
 ## Commands
 
 ```bash
-make build        # Build container image with docker
-make up           # Deploy to Kubernetes (uses K8S_NAMESPACE from .env)
-make down         # Remove from Kubernetes
-make compose-up   # Deploy via Docker Compose
-make compose-down # Tear down the Docker Compose stack
-make compose-logs # Tail Docker Compose logs
+make build             # Build the container image (build args from .env)
+make compose-up        # Start via Docker Compose
+make compose-down      # Stop the Docker Compose stack
+make compose-logs      # Tail Docker Compose logs
+make clean             # Remove generated config cache and saved image tarballs
+
+# systemd service (optional; runs the stack on boot)
+make systemd-install   # Build the image, then install the systemd unit
+make systemd-uninstall # Remove the systemd unit
 ```
 
 ## Docker Compose
@@ -126,6 +122,10 @@ make compose-logs
 make compose-down
 ```
 
+Plain `docker compose up -d` also works after the image is built; `make
+compose-up` adds config-change detection so template or `.env` edits recreate the
+container when needed.
+
 **Note:** Docker Compose uses an external network `octo-cx-network`. Create it first if it doesn't exist:
 ```bash
 docker network create octo-cx-network
@@ -145,58 +145,6 @@ Access streams at:
 - **RTSP**: `rtsp://localhost:9554/<stream-name>`
 - **HLS**: `http://localhost:9322/<stream-name>/index.m3u8`
 - **Web UI**: `http://localhost:9080`
-
-## Kubernetes Setup
-
-The Deployment, Service, and ConfigMap are all created in `$K8S_NAMESPACE`. The
-`videos/` directory in this repo is mounted into the pod via `hostPath`, which
-means the cluster node must be able to see the repo's `videos/` directory. On a
-single-node cluster where you develop and deploy on the same host, this works
-out of the box. For multi-node clusters, replicate the directory to each node
-or switch to a different volume type (NFS, PVC, etc.).
-
-### Image availability
-
-`k8s.yml` sets `imagePullPolicy: Never`, so the image must already be present in
-the cluster node's container runtime. Many Kubernetes distributions (k3s, RKE2,
-kind, minikube) ship an embedded containerd that does not share images with the
-host's Docker daemon, so an extra step is required:
-
-- **Registry** (works on any cluster): push the image to a registry the cluster
-  can pull from, update `image:` in `k8s.yml` to that reference, and change
-  `imagePullPolicy` to `IfNotPresent`.
-- **Direct containerd import** (no registry required):
-  ```bash
-  # k3s
-  docker save $CONTAINER_NAME:$VERSION | sudo k3s ctr images import -
-
-  # RKE2
-  docker save $CONTAINER_NAME:$VERSION | \
-    sudo /var/lib/rancher/rke2/bin/ctr -a /run/k3s/containerd/containerd.sock \
-    -n k8s.io images import -
-
-  # kind
-  kind load docker-image $CONTAINER_NAME:$VERSION
-
-  # minikube
-  minikube image load $CONTAINER_NAME:$VERSION
-  ```
-
-### Redeploying code changes
-
-```bash
-make build             # Build the image
-# ...make image available to the cluster (see above)...
-make down && make up   # Redeploy
-```
-
-### External access
-
-`k8s.yml` creates a **ClusterIP** Service, so streams are only reachable from
-inside the cluster. To expose them outside, either set `spec.type: NodePort`
-(ports in the 30000–32767 range by default) or add `hostNetwork: true` to the
-pod spec (binds the container ports directly on the node). RTSP and RTP/RTCP
-are not HTTP, so most HTTP ingress controllers cannot proxy them directly.
 
 ## Supported Formats
 

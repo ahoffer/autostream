@@ -2,7 +2,7 @@ services:
   autostream:
     image: ${CONTAINER_NAME}:${VERSION}
     volumes:
-      - ./.mediamtx.generated.yml:/app/mediamtx.yml
+      - ./mediamtx.yml:/app/mediamtx.yml.template:ro
       - ./videos:/app/videos:ro
     container_name: ${CONTAINER_NAME}
     hostname: ${CONTAINER_NAME}
@@ -13,6 +13,8 @@ services:
       - MEDIAMTX_HLS_PORT=${MEDIAMTX_HLS_PORT}
       - MEDIAMTX_RTP_PORT=${MEDIAMTX_RTP_PORT}
       - MEDIAMTX_RTCP_PORT=${MEDIAMTX_RTCP_PORT}
+      - MEDIAMTX_API_PORT=${MEDIAMTX_API_PORT}
+      - STREAM_API_PORT=${STREAM_API_PORT}
       - CONTAINER_NAME=${CONTAINER_NAME}
       - MAX_VIDEO_BITRATE=${MAX_VIDEO_BITRATE}
       - OUTPUT_HOST=${OUTPUT_HOST}

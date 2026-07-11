@@ -1,24 +1,25 @@
-# Typical flow: down -> build -> up (k8s) or compose-up (Docker Compose).
-# For k8s deployments, the image must already be available to the cluster's
-# container runtime -- either via a registry or by importing into the node's
-# containerd directly. See README for options.
+# Typical flow: build -> compose-up. Install the systemd unit (systemd-install)
+# to run the stack on boot.
 
-# Absolute path to the repo's videos directory; both the Compose bind-mount and
-# the k8s hostPath resolve to this. k8s hostPath cannot be relative.
-VIDEOS_DIR := $(CURDIR)/videos
-export VIDEOS_DIR
-
-.PHONY: help build save load up down compose-up compose-down compose-logs compose-install compose-uninstall
+.PHONY: help build compose-up compose-down compose-logs clean systemd-install systemd-uninstall
 
 .DEFAULT_GOAL := help
 
-SYSTEMD_UNIT_NAME := autostream.service
-SYSTEMD_UNIT_PATH := /etc/systemd/system/$(SYSTEMD_UNIT_NAME)
+# Rendered mediamtx config cache. compose-up fills in the ports from .env via
+# envsubst so it can force-recreate the container only when the effective config
+# changes. docker-compose.yml mounts the checked-in template instead, so direct
+# `docker compose up` does not depend on this generated file existing.
+GENERATED_CONFIG := .generated/mediamtx.yml
 
 help:  ## List available targets
 	@awk 'BEGIN {FS = ":.*## "} /^[a-zA-Z0-9_-]+:.*## / {printf "  %-20s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 
+# ---- Docker / Compose ----
+
 build:  ## Build the container image
+	@# DOCKER_BUILDKIT=0 forces the legacy builder on purpose: this host has no
+	@# buildx component, so the default BuildKit path fails with "buildx is
+	@# missing or broken". Drop the override only once buildx is installed.
 	set -a && . ./.env && DOCKER_BUILDKIT=0 docker build \
 		--build-arg MEDIAMTX_RTSP_PORT=$$MEDIAMTX_RTSP_PORT \
 		--build-arg MEDIAMTX_HLS_PORT=$$MEDIAMTX_HLS_PORT \
@@ -27,43 +28,22 @@ build:  ## Build the container image
 		--build-arg STREAM_API_PORT=$$STREAM_API_PORT \
 		-t $$CONTAINER_NAME:$$VERSION .
 
-save:  ## Save the image to a tar file
-	set -a && . ./.env && docker save -o $$CONTAINER_NAME-$$VERSION.tar $$CONTAINER_NAME:$$VERSION
-
-load:  ## Load the tar file into the docker image cache
-	set -a && . ./.env && docker load -i $$CONTAINER_NAME-$$VERSION.tar
-
-up:  ## Deploy to Kubernetes
-	set -a && . ./.env && \
-	TMP_MEDIAMTX=$$(mktemp) && \
-	envsubst < mediamtx.yml > $$TMP_MEDIAMTX && \
-	kubectl create configmap autostream-config --from-file=mediamtx.yml=$$TMP_MEDIAMTX -n $$K8S_NAMESPACE --dry-run=client -o yaml | kubectl apply -f - && \
-	rm -f $$TMP_MEDIAMTX
-	set -a && . ./.env && envsubst < k8s.yml | kubectl apply -f -
-
-down:  ## Tear down the Kubernetes deployment
-	set -a && . ./.env && envsubst < k8s.yml | kubectl delete -f - --ignore-not-found --wait=true --timeout=30s || true
-	@# Force delete any pods stuck in Terminating state
-	@stuck_pods=$$(kubectl get pods -n $$K8S_NAMESPACE -l app=autostream -o jsonpath='{.items[?(@.metadata.deletionTimestamp)].metadata.name}'); \
-	if [ -n "$$stuck_pods" ]; then \
-		echo "Force deleting stuck pods: $$stuck_pods"; \
-		kubectl delete pods -n $$K8S_NAMESPACE -l app=autostream --force --grace-period=0; \
-	fi
-	kubectl delete configmap autostream-config -n $$K8S_NAMESPACE --ignore-not-found
-
-# Docker Compose targets
 compose-up:  ## Start via docker compose
-	@# Render the config and force a recreate only when it actually changed:
-	@# mediamtx reads its config at startup, and the single-file bind mount
-	@# won't make a running container pick up edits on its own. Also drop the
-	@# container if its attached external-network id has drifted (for example
-	@# the external network was recreated), so compose can recreate it instead
-	@# of failing against a dead id.
+	@# mediamtx reads its config only at startup, and the single-file bind mount
+	@# won't make a running container pick up edits, so render the config and
+	@# force a recreate only when it actually changed. Also drop the container if
+	@# its attached external-network id has drifted (for example the external
+	@# network was recreated), so compose can recreate it instead of failing
+	@# against a dead id.
 	@set -a && . ./.env && \
+	mkdir -p $(dir $(GENERATED_CONFIG)); \
 	tmp=$$(mktemp); envsubst < mediamtx.yml > "$$tmp"; \
-	if [ ! -f .mediamtx.generated.yml ] || ! cmp -s "$$tmp" .mediamtx.generated.yml; then \
+	if [ -d $(GENERATED_CONFIG) ]; then \
+		rmdir $(GENERATED_CONFIG) || { rm -f "$$tmp"; echo "$(GENERATED_CONFIG) is a directory and is not empty"; exit 1; }; \
+	fi; \
+	if [ ! -f $(GENERATED_CONFIG) ] || ! cmp -s "$$tmp" $(GENERATED_CONFIG); then \
 		recreate=--force-recreate; else recreate=; fi; \
-	mv "$$tmp" .mediamtx.generated.yml; \
+	mv "$$tmp" $(GENERATED_CONFIG); \
 	if docker inspect "$$CONTAINER_NAME" >/dev/null 2>&1; then \
 		docker inspect "$$CONTAINER_NAME" \
 		  --format '{{range $$n, $$v := .NetworkSettings.Networks}}{{$$n}} {{$$v.NetworkID}}{{"\n"}}{{end}}' \
@@ -80,15 +60,23 @@ compose-up:  ## Start via docker compose
 
 compose-down:  ## Stop the docker compose stack
 	docker compose down
-	rm -f .mediamtx.generated.yml
 
 compose-logs:  ## Tail docker compose logs
 	docker compose logs -f
 
+clean:  ## Remove generated config cache and saved image tarballs
+	rm -f *.tar
+	rm -rf $(dir $(GENERATED_CONFIG))
+
+# ---- systemd service ----
 # Install autostream as a systemd service that wraps the docker compose flow.
 # Runs as the invoking user (not root) so docker socket access uses the same
 # group membership the user already has. Re-run to refresh the unit.
-compose-install:  ## Install the systemd unit that wraps docker compose
+
+SYSTEMD_UNIT_NAME := autostream.service
+SYSTEMD_UNIT_PATH := /etc/systemd/system/$(SYSTEMD_UNIT_NAME)
+
+systemd-install: build  ## Build the image, then install the systemd unit
 	@command -v envsubst >/dev/null || { echo "envsubst not found (install gettext-base)"; exit 1; }
 	@command -v systemctl >/dev/null || { echo "systemctl not found"; exit 1; }
 	@MAKE_BIN=$$(command -v make); \
@@ -100,7 +88,7 @@ compose-install:  ## Install the systemd unit that wraps docker compose
 	sudo systemctl enable --now $(SYSTEMD_UNIT_NAME)
 	@echo "Installed $(SYSTEMD_UNIT_NAME). Check: sudo systemctl status $(SYSTEMD_UNIT_NAME)"
 
-compose-uninstall:  ## Remove the systemd unit
+systemd-uninstall:  ## Remove the systemd unit
 	-sudo systemctl disable --now $(SYSTEMD_UNIT_NAME)
 	sudo rm -f $(SYSTEMD_UNIT_PATH)
 	sudo systemctl daemon-reload
