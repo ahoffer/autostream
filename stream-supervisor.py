@@ -60,6 +60,33 @@ _next_udp_port = UDP_BASE_PORT  # next port to hand out; protected by _state_loc
 _output_host_warned = False   # so we log the "unresolved OUTPUT_HOST" warning once
 
 
+def stream_urls(stream_name):
+    """Return the copyable endpoint URLs for a stream.
+
+    Must be called while holding _state_lock so the UDP port assignment is
+    stable and visible in status/log output before the stream starts.
+    """
+    udp_port = _udp_port_for(stream_name)
+    return {
+        "rtsp": f"rtsp://{HOSTNAME}:{RTSP_PORT}/{stream_name}",
+        "hls": f"http://{HOSTNAME}:{HLS_PORT}/{stream_name}/index.m3u8",
+        "udp": f"udp://{OUTPUT_HOST}:{udp_port}",
+    }
+
+
+def log_stream_urls():
+    """Log one copyable endpoint URL per line."""
+    with _state_lock:
+        names = sorted(available_videos)
+        rows = []
+        for name in names:
+            urls = stream_urls(name)
+            rows.extend((urls["rtsp"], urls["hls"], urls["udp"]))
+
+    for url in rows:
+        print(url, flush=True)
+
+
 def output_host_reachable():
     """Return True if OUTPUT_HOST resolves, so the UDP/KLV output can be added.
 
@@ -160,12 +187,13 @@ def get_bitrate_flags(video_path):
 
     video_bps = get_video_bitrate(video_path)
     if not video_bps:
-        log.info("Could not detect bitrate for %s, no limit applied", Path(video_path).name)
+        log.debug("Could not detect bitrate for %s, no limit applied", Path(video_path).name)
         return ""
 
     video_mbps = video_bps / 1_000_000
     if video_bps > max_bps:
-        log.info("Bitrate %.1fM exceeds max %s, will transcode with limit", video_mbps, MAX_VIDEO_BITRATE)
+        log.debug("Bitrate %.1fM exceeds max %s for %s; applying cap",
+                  video_mbps, MAX_VIDEO_BITRATE, Path(video_path).name)
         return f"-b:v {MAX_VIDEO_BITRATE} -maxrate {MAX_VIDEO_BITRATE} -bufsize {MAX_VIDEO_BITRATE}"
     else:
         log.debug("Bitrate %.1fM within max %s, no limit applied", video_mbps, MAX_VIDEO_BITRATE)
@@ -202,7 +230,7 @@ def wait_for_mediamtx():
     log.info("MediaMTX is ready")
 
 
-def start_stream(video_path, stream_name, loop_count=-1):
+def start_stream(video_path, stream_name, loop_count=-1, log_start=True):
     # ffprobe (inside get_bitrate_flags) and the DNS lookup can take time — run
     # both before taking the lock so we don't block API threads on I/O.
     bitrate_flags = get_bitrate_flags(video_path)
@@ -213,8 +241,8 @@ def start_stream(video_path, stream_name, loop_count=-1):
             log.warning("Stream already running: %s", stream_name)
             return False
 
-        udp_port = _udp_port_for(stream_name)
-        udp_target = f"{OUTPUT_HOST}:{udp_port}" if output_reachable else ""
+        urls = stream_urls(stream_name)
+        udp_target = urls["udp"].removeprefix("udp://") if output_reachable else ""
         try:
             cmd = [STREAM_VIDEO_SCRIPT, str(video_path), stream_name, str(loop_count), bitrate_flags, udp_target]
             if LOG_LEVEL == "debug":
@@ -225,14 +253,18 @@ def start_stream(video_path, stream_name, loop_count=-1):
             log.error("Failed to start stream %s: %s", stream_name, e)
             return False
 
-        streams[stream_name] = {"process": process, "video_path": str(video_path), "loop_count": loop_count}
+        streams[stream_name] = {
+            "process": process,
+            "video_path": str(video_path),
+            "loop_count": loop_count,
+            "udp_enabled": output_reachable,
+        }
         available_videos[stream_name] = str(video_path)
         stream_loop_counts[stream_name] = loop_count
 
-    rtsp_url = f"rtsp://{HOSTNAME}:{RTSP_PORT}/{stream_name}"
-    hls_url = f"http://{HOSTNAME}:{HLS_PORT}/{stream_name}/index.m3u8"
-    udp_url = f"udp://{udp_target}" if udp_target else "disabled (OUTPUT_HOST unresolved)"
-    log.info("Now playing %s (HLS: %s, UDP+KLV: %s)", rtsp_url, hls_url, udp_url)
+    if log_start:
+        udp_status = "UDP active" if udp_target else "UDP disabled"
+        log.info("Started stream: %s (%s)", stream_name, udp_status)
     return True
 
 
@@ -280,14 +312,16 @@ def get_stream_status():
                 loop_count = running_info["loop_count"]
             else:
                 loop_count = stream_loop_counts.get(name, -1)
+            urls = stream_urls(name)
             result.append({
                 "name": name,
                 "video_path": video_path,
                 "running": is_running,
                 "loop_count": loop_count,
-                "rtsp_url": f"rtsp://{HOSTNAME}:{RTSP_PORT}/{name}",
-                "hls_url": f"http://{HOSTNAME}:{HLS_PORT}/{name}/index.m3u8",
-                "udp_url": f"udp://{OUTPUT_HOST}:{stream_udp_ports.get(name)}",
+                "rtsp_url": urls["rtsp"],
+                "hls_url": urls["hls"],
+                "udp_url": urls["udp"],
+                "udp_enabled": is_running and running_info.get("udp_enabled", False),
             })
     return result
 
@@ -334,10 +368,11 @@ def sync_videos():
 
     count = 0
     for stream_name, video_path in targets:
-        if start_stream(video_path, stream_name):
+        if start_stream(video_path, stream_name, log_start=False):
             count += 1
 
     log.info("Initial sync complete: %d streams started", count)
+    log_stream_urls()
 
 
 def handle_create(filepath):
@@ -397,9 +432,17 @@ def cleanup_dead_processes():
     dead = []
     for stream_name, process in snapshot:
         if process.poll() is not None:
-            log.info("Process ended: %s (exit code %s)", stream_name, process.returncode)
             dead.append((stream_name, process))
 
+    if dead:
+        by_exit_code = {}
+        for stream_name, process in dead:
+            by_exit_code.setdefault(process.returncode, []).append(stream_name)
+        for exit_code, stream_names in by_exit_code.items():
+            log.info("Processes ended (exit code %s): %s",
+                     exit_code, ", ".join(sorted(stream_names)))
+
+    restarted = []
     for stream_name, process in dead:
         with _state_lock:
             current = streams.get(stream_name)
@@ -420,8 +463,13 @@ def cleanup_dead_processes():
         except OSError as e:
             log.warning("Cannot restart stream %s: %s", stream_name, e)
             continue
-        if not start_stream(video_path, stream_name, loop_count):
+        if not start_stream(video_path, stream_name, loop_count, log_start=False):
             log.error("Failed to restart stream: %s", stream_name)
+            continue
+        restarted.append(stream_name)
+
+    if restarted:
+        log.info("Restarted streams: %s", ", ".join(sorted(restarted)))
 
 
 class StreamHandler(BaseHTTPRequestHandler):

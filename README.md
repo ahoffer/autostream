@@ -53,6 +53,11 @@ for geolocation. Add each feed to cx-search like any other stream, using the
 `udp://0.0.0.0:<port>` the UI/API reports for it — there is no separate
 registration step beyond adding the stream.
 
+`video-streaming` is the service that actually ingests video/KLV UDP streams. It
+exposes `40000-40100/udp` for those feeds. The `redirect` service exposes HTTP
+`5577/tcp`; its logs show TAK-style UDP redirect rules such as multicast/unicast
+forwarding. It is not the video/KLV ingest pipeline.
+
 UDP is push, not pull. If `OUTPUT_HOST` does not resolve (for example the
 cx-search stack isn't running), autostream logs a warning and streams RTSP/HLS
 only rather than failing — the KLV feed simply starts once the consumer is
