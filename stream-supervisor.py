@@ -75,13 +75,13 @@ def stream_urls(stream_name):
 
 
 def log_stream_urls():
-    """Log one copyable endpoint URL per line."""
+    """Log one copyable endpoint URL per line, keyed by stream name."""
     with _state_lock:
         names = sorted(available_videos)
         rows = []
         for name in names:
             urls = stream_urls(name)
-            rows.extend((urls["rtsp"], urls["hls"], urls["udp"]))
+            rows.extend(f"{name}={url}" for url in urls.values())
 
     for url in rows:
         print(url, flush=True)
@@ -238,7 +238,8 @@ def start_stream(video_path, stream_name, loop_count=-1, log_start=True):
 
     with _state_lock:
         if stream_name in streams:
-            log.warning("Stream already running: %s", stream_name)
+            status = "stopping" if streams[stream_name].get("stopping", False) else "running"
+            log.warning("Stream already %s: %s", status, stream_name)
             return False
 
         urls = stream_urls(stream_name)
@@ -258,13 +259,15 @@ def start_stream(video_path, stream_name, loop_count=-1, log_start=True):
             "video_path": str(video_path),
             "loop_count": loop_count,
             "udp_enabled": output_reachable,
+            "stopping": False,
         }
         available_videos[stream_name] = str(video_path)
         stream_loop_counts[stream_name] = loop_count
 
     if log_start:
         udp_status = "UDP active" if udp_target else "UDP disabled"
-        log.info("Started stream: %s (%s)", stream_name, udp_status)
+        log.info("Started stream: %s video=%s udp=%s udp_url=%s",
+                 stream_name, json.dumps(Path(video_path).name), udp_status, urls["udp"])
     return True
 
 
@@ -275,24 +278,32 @@ def stop_stream(stream_name):
             log.warning("Stream not found: %s", stream_name)
             return False
         process = stream_info["process"]
-        # Remove from dict before waiting so concurrent /start sees the slot as free
-        # only after the process is actually being terminated.
-        del streams[stream_name]
+        should_terminate = not stream_info.get("stopping", False)
+        stream_info["stopping"] = True
 
     try:
-        process.terminate()
+        if should_terminate:
+            process.terminate()
         try:
             process.wait(timeout=5)
         except subprocess.TimeoutExpired:
+            if not should_terminate:
+                log.warning("Stream still stopping: %s", stream_name)
+                return True
             process.kill()
             try:
                 process.wait(timeout=5)
             except subprocess.TimeoutExpired:
                 # Better to leak a wedged process than to hang the supervisor forever
-                # (can happen on stuck NFS/CIFS reads inside ffmpeg).
+                # (can happen on stuck NFS/CIFS reads inside ffmpeg). Keep the stream
+                # slot blocked so a second ffmpeg process can't reuse the same output.
                 log.error("Stream %s did not die after SIGKILL; leaking pid %d",
                           stream_name, process.pid)
                 return True
+        with _state_lock:
+            current = streams.get(stream_name)
+            if current is not None and current["process"] is process:
+                del streams[stream_name]
         log.info("Stopped stream: %s", stream_name)
     except Exception as e:
         log.error("Error stopping stream %s: %s", stream_name, e)
@@ -306,9 +317,10 @@ def get_stream_status():
     with _state_lock:
         for name, video_path in available_videos.items():
             running_info = streams.get(name)
-            is_running = running_info is not None
+            is_stopping = running_info is not None and running_info.get("stopping", False)
+            is_running = running_info is not None and not is_stopping
             # Live value when running, last-requested value otherwise.
-            if is_running:
+            if running_info is not None:
                 loop_count = running_info["loop_count"]
             else:
                 loop_count = stream_loop_counts.get(name, -1)
@@ -317,6 +329,7 @@ def get_stream_status():
                 "name": name,
                 "video_path": video_path,
                 "running": is_running,
+                "stopping": is_stopping,
                 "loop_count": loop_count,
                 "rtsp_url": urls["rtsp"],
                 "hls_url": urls["hls"],
@@ -356,6 +369,28 @@ def scan_videos():
                 continue
             stream_name = sanitize_name(video_path)
             _claim_slot(stream_name, video_path.name, str(video_path))
+
+
+def claim_existing_file_for_stream(stream_name):
+    """Claim a previously skipped colliding file after the owner disappears."""
+    try:
+        candidates = sorted(VIDEOS_DIR.iterdir(), key=lambda path: path.name)
+    except OSError as e:
+        log.warning("Cannot scan for replacement stream %s: %s", stream_name, e)
+        return None
+
+    with _state_lock:
+        if stream_name in stream_name_to_filename:
+            return None
+        for path in candidates:
+            try:
+                if not path.is_file() or is_ignored(path):
+                    continue
+            except OSError:
+                continue
+            if sanitize_name(path) == stream_name and _claim_slot(stream_name, path.name, str(path)):
+                return path
+    return None
 
 
 def sync_videos():
@@ -404,6 +439,12 @@ def handle_delete(filepath):
     with _state_lock:
         stream_name_to_filename.pop(stream_name, None)
         available_videos.pop(stream_name, None)
+        stream_loop_counts.pop(stream_name, None)
+
+    replacement = claim_existing_file_for_stream(stream_name)
+    if replacement is not None:
+        log.info("Video added: %s", replacement.name)
+        start_stream(replacement, stream_name)
 
 
 def handle_modify(filepath):
@@ -416,12 +457,13 @@ def handle_modify(filepath):
         if not _claim_slot(stream_name, path.name, str(path)):
             return
         loop_count = stream_loop_counts.get(stream_name, -1)
-        running = stream_name in streams
+        running_info = streams.get(stream_name)
+        running = running_info is not None and not running_info.get("stopping", False)
 
     log.info("Video updated: %s", path.name)
     if running:
         stop_stream(stream_name)
-    start_stream(path, stream_name, loop_count)
+        start_stream(path, stream_name, loop_count)
 
 
 def cleanup_dead_processes():
@@ -450,9 +492,17 @@ def cleanup_dead_processes():
             # don't orphan it — leave the new process alone.
             if current is None or current["process"] is not process:
                 continue
+            stopping = current.get("stopping", False)
+            loop_count = current["loop_count"]
             del streams[stream_name]
             video_path = available_videos.get(stream_name)
-            loop_count = stream_loop_counts.get(stream_name, -1)
+
+        if stopping:
+            continue
+
+        if loop_count != -1 and process.returncode == 0:
+            log.info("Stream completed: %s", stream_name)
+            continue
 
         if not video_path:
             continue
@@ -537,7 +587,14 @@ class StreamHandler(BaseHTTPRequestHandler):
                     self.send_json({"error": "Stream not found"}, 404)
                     return
                 query = parse_qs(parsed.query)
-                loop_count = int(query.get('loop', ['-1'])[0])
+                try:
+                    loop_count = int(query.get('loop', ['-1'])[0])
+                except (TypeError, ValueError):
+                    self.send_json({"error": "Invalid loop count"}, 400)
+                    return
+                if loop_count < -1:
+                    self.send_json({"error": "Invalid loop count"}, 400)
+                    return
                 if running:
                     stop_stream(stream_name)
                 success = start_stream(video_path, stream_name, loop_count)
