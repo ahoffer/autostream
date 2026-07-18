@@ -325,6 +325,16 @@ def get_stream_status():
             else:
                 loop_count = stream_loop_counts.get(name, -1)
             urls = stream_urls(name)
+            # udp_enabled tracks whether we are actually pushing the feed right now,
+            # not just that the stream is running. udp_reason explains an inactive
+            # feed so the UI can say why instead of advertising a dead endpoint.
+            udp_active = is_running and running_info.get("udp_enabled", False)
+            if udp_active:
+                udp_reason = None
+            elif not is_running:
+                udp_reason = "stream stopped"
+            else:
+                udp_reason = f"{OUTPUT_HOST} unreachable"
             result.append({
                 "name": name,
                 "video_path": video_path,
@@ -334,7 +344,8 @@ def get_stream_status():
                 "rtsp_url": urls["rtsp"],
                 "hls_url": urls["hls"],
                 "udp_url": urls["udp"],
-                "udp_enabled": is_running and running_info.get("udp_enabled", False),
+                "udp_enabled": udp_active,
+                "udp_reason": udp_reason,
             })
     return result
 
@@ -520,6 +531,25 @@ def cleanup_dead_processes():
 
     if restarted:
         log.info("Restarted streams: %s", ", ".join(sorted(restarted)))
+
+
+def recover_udp_outputs():
+    """Restart running streams whose UDP feed is off, once OUTPUT_HOST resolves again.
+
+    output_host_reachable() is only consulted at stream start, so a stream that
+    came up before the consumer was on the network stays RTSP/HLS-only until
+    restarted. Restarting re-runs that check and wires the UDP output back in.
+    """
+    with _state_lock:
+        pending = [n for n, i in streams.items()
+                   if not i.get("udp_enabled") and not i.get("stopping")]
+    if not pending or not output_host_reachable():
+        return
+    for name in pending:
+        video_path = available_videos.get(name)
+        if video_path:
+            stop_stream(name)
+            start_stream(video_path, name, stream_loop_counts.get(name, -1))
 
 
 class StreamHandler(BaseHTTPRequestHandler):
@@ -710,6 +740,8 @@ def watch_directory():
                 handle_create(VIDEOS_DIR / filename)
             for filename in ready_modifies:
                 handle_modify(VIDEOS_DIR / filename)
+
+        recover_udp_outputs()
 
         if time.time() - last_cleanup > 30:
             cleanup_dead_processes()

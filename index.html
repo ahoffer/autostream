@@ -32,6 +32,8 @@
         .copy-btn.copied { color: #00c853; }
         .copy-btn.copy-failed { color: #ff5252; }
         .copy-btn svg { width: 14px; height: 14px; }
+        .url-row.inactive .url-text { opacity: 0.45; text-decoration: line-through; }
+        .udp-reason { color: #ffb74d; font-style: italic; }
         .refresh { background: #00d4ff; color: #000; margin-bottom: 15px; }
     </style>
 </head>
@@ -82,11 +84,17 @@
                             <span class="url-text">${s.hls_url}</span>
                             <button class="copy-btn" title="Copy HLS URL" onclick='copyUrl(this, ${JSON.stringify(s.hls_url)})'>${copyIcon}</button>
                         </div>
+                        ${s.udp_enabled ? `
                         <div class="url-row">
                             <span class="url-label" title="MPEG-TS/UDP feed that preserves KLV metadata">UDP</span>
                             <span class="url-text">${s.udp_url}</span>
                             <button class="copy-btn" title="Copy UDP URL" onclick='copyUrl(this, ${JSON.stringify(s.udp_url)})'>${copyIcon}</button>
-                        </div>
+                        </div>` : `
+                        <div class="url-row inactive">
+                            <span class="url-label" title="MPEG-TS/UDP feed that preserves KLV metadata">UDP</span>
+                            <span class="url-text">${s.udp_url}</span>
+                            <span class="udp-reason">inactive${s.udp_reason ? ' — ' + s.udp_reason : ''}</span>
+                        </div>`}
                     </div>
                 </div>
             `).join('');
