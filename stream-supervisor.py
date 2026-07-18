@@ -3,6 +3,8 @@
 Stream supervisor: watches /app/videos and manages FFmpeg streaming processes
 Includes HTTP API for stream control
 """
+from __future__ import annotations
+
 import json
 import logging
 import os
@@ -11,6 +13,7 @@ import socket
 import subprocess
 import threading
 import time
+from dataclasses import dataclass
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from pathlib import Path
 from urllib.parse import urlparse, parse_qs
@@ -48,44 +51,64 @@ logging.basicConfig(
 )
 log = logging.getLogger("autostream")
 
+@dataclass
+class Stream:
+    """One video file's stream slot: its identity, its endpoints, and its process.
+
+    A slot exists for as long as the file is present in VIDEOS_DIR, so "known
+    but not currently streaming" is process is None rather than a separate
+    collection. filename is the on-disk basename the slot belongs to, kept so a
+    second file sanitizing to the same name can't silently take the slot over.
+    loop_count is the last requested value and deliberately outlives the
+    process, so a stop/start keeps the user's choice.
+    """
+    name: str
+    filename: str
+    video_path: str
+    udp_port: int
+    loop_count: int = -1
+    process: subprocess.Popen | None = None
+    udp_enabled: bool = False
+    stopping: bool = False
+
+    @property
+    def running(self):
+        """True while the stream is up and has not been asked to stop."""
+        return self.process is not None and not self.stopping
+
+    def urls(self):
+        """Return the copyable endpoint URLs for this stream."""
+        return {
+            "rtsp": f"rtsp://{HOSTNAME}:{RTSP_PORT}/{self.name}",
+            "hls": f"http://{HOSTNAME}:{HLS_PORT}/{self.name}/index.m3u8",
+            "udp": f"udp://{OUTPUT_HOST}:{self.udp_port}",
+        }
+
+
 # Shared state. Mutations and reads MUST hold _state_lock — the API server runs in
-# threads and the poll loop runs in the main thread, both touching these dicts.
+# threads and the poll loop runs in the main thread, both touching this state.
 _state_lock = threading.RLock()
-streams = {}                  # stream_name -> {"process": Popen, "video_path": str, "loop_count": int}
-available_videos = {}         # stream_name -> video_path (str)
-stream_loop_counts = {}       # stream_name -> last requested loop_count (persists across stop/start)
-stream_name_to_filename = {}  # stream_name -> filename (basename); reverse map so name collisions don't silently overwrite
-stream_udp_ports = {}         # stream_name -> UDP port for the KLV MPEG-TS feed
+streams_by_name = {}          # stream_name -> Stream, one entry per video file present
+
+# UDP port allocator. Separate from Stream on purpose: an assignment lasts for the
+# whole process lifetime, outliving the slot, so a video that is removed and put
+# back keeps the udp:// URL a downstream consumer already registered.
+_udp_ports = {}               # stream_name -> UDP port for the KLV MPEG-TS feed
 _next_udp_port = UDP_BASE_PORT  # next port to hand out; protected by _state_lock
+
 _output_host_warned = False   # so we log the "unresolved OUTPUT_HOST" warning once
 _output_reachable = False     # cached OUTPUT_HOST reachability; the poll loop refreshes it so the status API never blocks on DNS
-
-
-def stream_urls(stream_name):
-    """Return the copyable endpoint URLs for a stream.
-
-    Must be called while holding _state_lock so the UDP port assignment is
-    stable and visible in status/log output before the stream starts.
-    """
-    udp_port = _udp_port_for(stream_name)
-    return {
-        "rtsp": f"rtsp://{HOSTNAME}:{RTSP_PORT}/{stream_name}",
-        "hls": f"http://{HOSTNAME}:{HLS_PORT}/{stream_name}/index.m3u8",
-        "udp": f"udp://{OUTPUT_HOST}:{udp_port}",
-    }
 
 
 def log_stream_urls():
     """Log one copyable endpoint URL per line, keyed by stream name."""
     with _state_lock:
-        names = sorted(available_videos)
-        rows = []
-        for name in names:
-            urls = stream_urls(name)
-            rows.extend(f"{name}={url}" for url in urls.values())
+        rows = [f"{stream.name}={url}"
+                for stream in sorted(streams_by_name.values(), key=lambda s: s.name)
+                for url in stream.urls().values()]
 
-    for url in rows:
-        print(url, flush=True)
+    for row in rows:
+        print(row, flush=True)
 
 
 def output_host_reachable():
@@ -127,11 +150,11 @@ def _udp_port_for(stream_name):
     the same udp:// URL. Must be called while holding _state_lock.
     """
     global _next_udp_port
-    port = stream_udp_ports.get(stream_name)
+    port = _udp_ports.get(stream_name)
     if port is None:
         port = _next_udp_port
         _next_udp_port += 1
-        stream_udp_ports[stream_name] = port
+        _udp_ports[stream_name] = port
     return port
 
 
@@ -241,22 +264,37 @@ def wait_for_mediamtx():
     log.info("MediaMTX is ready")
 
 
-def start_stream(video_path, stream_name, loop_count=-1, log_start=True):
+def start_stream(stream_name, loop_count=None, log_start=True):
+    """Start a claimed stream slot. loop_count None keeps the last requested value."""
+    with _state_lock:
+        stream = streams_by_name.get(stream_name)
+        if stream is None:
+            log.warning("Cannot start unclaimed stream: %s", stream_name)
+            return False
+        if stream.process is not None:
+            log.warning("Stream already %s: %s",
+                        "stopping" if stream.stopping else "running", stream_name)
+            return False
+        video_path = stream.video_path
+        udp_url = stream.urls()["udp"]
+        if loop_count is None:
+            loop_count = stream.loop_count
+
     # ffprobe (inside get_bitrate_flags) and the DNS lookup can take time — run
-    # both before taking the lock so we don't block API threads on I/O.
+    # both outside the lock so we don't stall other threads on I/O.
     bitrate_flags = get_bitrate_flags(video_path)
     output_reachable = output_host_reachable()
+    udp_target = udp_url.removeprefix("udp://") if output_reachable else ""
 
     with _state_lock:
-        if stream_name in streams:
-            status = "stopping" if streams[stream_name].get("stopping", False) else "running"
-            log.warning("Stream already %s: %s", status, stream_name)
+        stream = streams_by_name.get(stream_name)
+        if stream is None or stream.process is not None:
+            # Another thread claimed or started the slot while we were probing.
+            log.warning("Stream changed while starting: %s", stream_name)
             return False
 
-        urls = stream_urls(stream_name)
-        udp_target = urls["udp"].removeprefix("udp://") if output_reachable else ""
         try:
-            cmd = [STREAM_VIDEO_SCRIPT, str(video_path), stream_name, str(loop_count), bitrate_flags, udp_target]
+            cmd = [STREAM_VIDEO_SCRIPT, video_path, stream_name, str(loop_count), bitrate_flags, udp_target]
             if LOG_LEVEL == "debug":
                 process = subprocess.Popen(cmd)
             else:
@@ -265,32 +303,27 @@ def start_stream(video_path, stream_name, loop_count=-1, log_start=True):
             log.error("Failed to start stream %s: %s", stream_name, e)
             return False
 
-        streams[stream_name] = {
-            "process": process,
-            "video_path": str(video_path),
-            "loop_count": loop_count,
-            "udp_enabled": output_reachable,
-            "stopping": False,
-        }
-        available_videos[stream_name] = str(video_path)
-        stream_loop_counts[stream_name] = loop_count
+        stream.process = process
+        stream.loop_count = loop_count
+        stream.udp_enabled = output_reachable
+        stream.stopping = False
 
     if log_start:
         udp_status = "UDP active" if udp_target else "UDP disabled"
         log.info("Started stream: %s video=%s udp=%s udp_url=%s",
-                 stream_name, json.dumps(Path(video_path).name), udp_status, urls["udp"])
+                 stream_name, json.dumps(Path(video_path).name), udp_status, udp_url)
     return True
 
 
 def stop_stream(stream_name):
     with _state_lock:
-        stream_info = streams.get(stream_name)
-        if stream_info is None:
-            log.warning("Stream not found: %s", stream_name)
+        stream = streams_by_name.get(stream_name)
+        if stream is None or stream.process is None:
+            log.warning("Stream not running: %s", stream_name)
             return False
-        process = stream_info["process"]
-        should_terminate = not stream_info.get("stopping", False)
-        stream_info["stopping"] = True
+        process = stream.process
+        should_terminate = not stream.stopping
+        stream.stopping = True
 
     try:
         if should_terminate:
@@ -312,9 +345,11 @@ def stop_stream(stream_name):
                           stream_name, process.pid)
                 return True
         with _state_lock:
-            current = streams.get(stream_name)
-            if current is not None and current["process"] is process:
-                del streams[stream_name]
+            current = streams_by_name.get(stream_name)
+            if current is not None and current.process is process:
+                current.process = None
+                current.udp_enabled = False
+                current.stopping = False
         log.info("Stopped stream: %s", stream_name)
     except Exception as e:
         log.error("Error stopping stream %s: %s", stream_name, e)
@@ -330,34 +365,26 @@ def get_stream_status():
     # pushing UDP into the void otherwise, so the start-time flag alone would lie.
     reachable = _output_reachable
     with _state_lock:
-        for name, video_path in available_videos.items():
-            running_info = streams.get(name)
-            is_stopping = running_info is not None and running_info.get("stopping", False)
-            is_running = running_info is not None and not is_stopping
-            # Live value when running, last-requested value otherwise.
-            if running_info is not None:
-                loop_count = running_info["loop_count"]
-            else:
-                loop_count = stream_loop_counts.get(name, -1)
-            urls = stream_urls(name)
+        for stream in streams_by_name.values():
+            urls = stream.urls()
             # udp_enabled means the feed is really live: the stream is running, it
             # launched with a UDP output, and the consumer resolves right now.
             # udp_reason explains an inactive feed so the UI can say why.
-            udp_active = is_running and running_info.get("udp_enabled", False) and reachable
+            udp_active = stream.running and stream.udp_enabled and reachable
             if udp_active:
                 udp_reason = None
-            elif not is_running:
+            elif not stream.running:
                 udp_reason = "stream stopped"
             elif not reachable:
                 udp_reason = f"{OUTPUT_HOST} unreachable"
             else:
                 udp_reason = "starting"
             result.append({
-                "name": name,
-                "video_path": video_path,
-                "running": is_running,
-                "stopping": is_stopping,
-                "loop_count": loop_count,
+                "name": stream.name,
+                "video_path": stream.video_path,
+                "running": stream.running,
+                "stopping": stream.stopping,
+                "loop_count": stream.loop_count,
                 "rtsp_url": urls["rtsp"],
                 "hls_url": urls["hls"],
                 "udp_url": urls["udp"],
@@ -367,55 +394,68 @@ def get_stream_status():
     return result
 
 
-def _claim_slot(stream_name, filename, video_path):
-    """Register (or refresh) a stream_name -> filename binding.
+def iter_video_files():
+    """Yield the streamable files in VIDEOS_DIR, ordered by name.
 
-    Returns True if the binding belongs to this filename after the call,
-    False if there was a collision with a different file (caller should skip).
+    Hidden files and READMEs are skipped, as are entries that vanish mid-scan —
+    the next poll picks those up as deletions.
+    """
+    for path in sorted(VIDEOS_DIR.iterdir(), key=lambda path: path.name):
+        try:
+            if not path.is_file() or is_ignored(path):
+                continue
+        except OSError:
+            continue
+        yield path
+
+
+def _claim_slot(stream_name, filename, video_path):
+    """Register (or refresh) the slot binding stream_name to filename.
+
+    Returns True if the slot belongs to this filename after the call, False if
+    there was a collision with a different file (caller should skip).
     Must be called under _state_lock.
     """
-    owner = stream_name_to_filename.get(stream_name)
-    if owner is not None and owner != filename:
+    stream = streams_by_name.get(stream_name)
+    if stream is None:
+        streams_by_name[stream_name] = Stream(
+            name=stream_name,
+            filename=filename,
+            video_path=video_path,
+            udp_port=_udp_port_for(stream_name),
+        )
+        return True
+    if stream.filename != filename:
         log.warning("Stream name collision: %s already owned by %r; skipping %r",
-                    stream_name, owner, filename)
+                    stream_name, stream.filename, filename)
         return False
-    stream_name_to_filename[stream_name] = filename
-    available_videos[stream_name] = video_path
-    _udp_port_for(stream_name)  # reserve a stable UDP port so status always has one
+    stream.video_path = video_path
     return True
 
 
 def scan_videos():
-    """Scan video directory and populate available_videos."""
+    """Scan the video directory and claim a stream slot for every file found."""
     if not VIDEOS_DIR.exists():
         log.error("Directory does not exist: %s", VIDEOS_DIR)
         return
 
     with _state_lock:
-        for video_path in VIDEOS_DIR.iterdir():
-            if not video_path.is_file() or is_ignored(video_path):
-                continue
-            stream_name = sanitize_name(video_path)
-            _claim_slot(stream_name, video_path.name, str(video_path))
+        for video_path in iter_video_files():
+            _claim_slot(sanitize_name(video_path), video_path.name, str(video_path))
 
 
 def claim_existing_file_for_stream(stream_name):
     """Claim a previously skipped colliding file after the owner disappears."""
     try:
-        candidates = sorted(VIDEOS_DIR.iterdir(), key=lambda path: path.name)
+        candidates = list(iter_video_files())
     except OSError as e:
         log.warning("Cannot scan for replacement stream %s: %s", stream_name, e)
         return None
 
     with _state_lock:
-        if stream_name in stream_name_to_filename:
+        if stream_name in streams_by_name:
             return None
         for path in candidates:
-            try:
-                if not path.is_file() or is_ignored(path):
-                    continue
-            except OSError:
-                continue
             if sanitize_name(path) == stream_name and _claim_slot(stream_name, path.name, str(path)):
                 return path
     return None
@@ -427,11 +467,11 @@ def sync_videos():
     scan_videos()
 
     with _state_lock:
-        targets = list(available_videos.items())
+        targets = list(streams_by_name)
 
     count = 0
-    for stream_name, video_path in targets:
-        if start_stream(video_path, stream_name, log_start=False):
+    for stream_name in targets:
+        if start_stream(stream_name, log_start=False):
             count += 1
 
     log.info("Initial sync complete: %d streams started", count)
@@ -448,7 +488,7 @@ def handle_create(filepath):
         if not _claim_slot(stream_name, path.name, str(path)):
             return
     log.info("Video added: %s", path.name)
-    start_stream(path, stream_name)
+    start_stream(stream_name)
 
 
 def handle_delete(filepath):
@@ -456,23 +496,24 @@ def handle_delete(filepath):
     stream_name = sanitize_name(path)
 
     with _state_lock:
-        owner = stream_name_to_filename.get(stream_name)
-        if owner != path.name:
+        stream = streams_by_name.get(stream_name)
+        if stream is None or stream.filename != path.name:
             # Slot belongs to a different file (or never existed) — don't touch it.
+            owner = stream.filename if stream is not None else None
             log.debug("Ignoring delete of %s; slot %s owned by %r", path.name, stream_name, owner)
             return
+        was_running = stream.process is not None
 
     log.info("Video removed: %s", path.name)
-    stop_stream(stream_name)
+    if was_running:
+        stop_stream(stream_name)
     with _state_lock:
-        stream_name_to_filename.pop(stream_name, None)
-        available_videos.pop(stream_name, None)
-        stream_loop_counts.pop(stream_name, None)
+        streams_by_name.pop(stream_name, None)
 
     replacement = claim_existing_file_for_stream(stream_name)
     if replacement is not None:
         log.info("Video added: %s", replacement.name)
-        start_stream(replacement, stream_name)
+        start_stream(stream_name)
 
 
 def handle_modify(filepath):
@@ -484,20 +525,18 @@ def handle_modify(filepath):
     with _state_lock:
         if not _claim_slot(stream_name, path.name, str(path)):
             return
-        loop_count = stream_loop_counts.get(stream_name, -1)
-        running_info = streams.get(stream_name)
-        running = running_info is not None and not running_info.get("stopping", False)
+        running = streams_by_name[stream_name].running
 
     log.info("Video updated: %s", path.name)
     if running:
         stop_stream(stream_name)
-        start_stream(path, stream_name, loop_count)
+        start_stream(stream_name)
 
 
 def cleanup_dead_processes():
     # Snapshot under the lock, then poll() (which is non-blocking) outside.
     with _state_lock:
-        snapshot = [(name, info["process"]) for name, info in streams.items()]
+        snapshot = [(s.name, s.process) for s in streams_by_name.values() if s.process is not None]
 
     dead = []
     for stream_name, process in snapshot:
@@ -515,15 +554,17 @@ def cleanup_dead_processes():
     restarted = []
     for stream_name, process in dead:
         with _state_lock:
-            current = streams.get(stream_name)
+            current = streams_by_name.get(stream_name)
             # If a concurrent /start replaced our entry with a fresh process,
             # don't orphan it — leave the new process alone.
-            if current is None or current["process"] is not process:
+            if current is None or current.process is not process:
                 continue
-            stopping = current.get("stopping", False)
-            loop_count = current["loop_count"]
-            del streams[stream_name]
-            video_path = available_videos.get(stream_name)
+            stopping = current.stopping
+            loop_count = current.loop_count
+            video_path = current.video_path
+            current.process = None
+            current.udp_enabled = False
+            current.stopping = False
 
         if stopping:
             continue
@@ -532,8 +573,6 @@ def cleanup_dead_processes():
             log.info("Stream completed: %s", stream_name)
             continue
 
-        if not video_path:
-            continue
         try:
             if not Path(video_path).exists():
                 log.warning("Cannot restart stream %s: file missing", stream_name)
@@ -541,7 +580,7 @@ def cleanup_dead_processes():
         except OSError as e:
             log.warning("Cannot restart stream %s: %s", stream_name, e)
             continue
-        if not start_stream(video_path, stream_name, loop_count, log_start=False):
+        if not start_stream(stream_name, loop_count, log_start=False):
             log.error("Failed to restart stream: %s", stream_name)
             continue
         restarted.append(stream_name)
@@ -557,16 +596,13 @@ def recover_udp_outputs():
     came up before the consumer was on the network stays RTSP/HLS-only until
     restarted. Restarting re-runs that check and wires the UDP output back in.
     """
-    with _state_lock:
-        pending = [n for n, i in streams.items()
-                   if not i.get("udp_enabled") and not i.get("stopping")]
-    if not pending or not _output_reachable:
+    if not _output_reachable:
         return
+    with _state_lock:
+        pending = [s.name for s in streams_by_name.values() if s.running and not s.udp_enabled]
     for name in pending:
-        video_path = available_videos.get(name)
-        if video_path:
-            stop_stream(name)
-            start_stream(video_path, name, stream_loop_counts.get(name, -1))
+        stop_stream(name)
+        start_stream(name)
 
 
 class StreamHandler(BaseHTTPRequestHandler):
@@ -610,7 +646,7 @@ class StreamHandler(BaseHTTPRequestHandler):
 
             if stream_name == 'stop-all':
                 with _state_lock:
-                    names = list(streams.keys())
+                    names = [s.name for s in streams_by_name.values() if s.process is not None]
                 for name in names:
                     stop_stream(name)
                 self.send_json({"success": True})
@@ -618,19 +654,17 @@ class StreamHandler(BaseHTTPRequestHandler):
 
             if stream_name == 'start-all':
                 with _state_lock:
-                    candidates = [(name, vp) for name, vp in available_videos.items()
-                                  if name not in streams]
-                    loops = {name: stream_loop_counts.get(name, -1) for name, _ in candidates}
-                for name, video_path in candidates:
-                    start_stream(video_path, name, loops[name])
+                    candidates = [s.name for s in streams_by_name.values() if s.process is None]
+                for name in candidates:
+                    start_stream(name)
                 self.send_json({"success": True})
                 return
 
             if action == 'start':
                 with _state_lock:
-                    video_path = available_videos.get(stream_name)
-                    running = stream_name in streams
-                if video_path is None:
+                    stream = streams_by_name.get(stream_name)
+                    running = stream is not None and stream.process is not None
+                if stream is None:
                     self.send_json({"error": "Stream not found"}, 404)
                     return
                 query = parse_qs(parsed.query)
@@ -644,7 +678,7 @@ class StreamHandler(BaseHTTPRequestHandler):
                     return
                 if running:
                     stop_stream(stream_name)
-                success = start_stream(video_path, stream_name, loop_count)
+                success = start_stream(stream_name, loop_count)
                 self.send_json({"success": success})
 
             elif action == 'stop':
@@ -677,22 +711,67 @@ def start_api_server():
 
 
 def get_video_files():
-    """Return {filename: (mtime, size)} for all non-ignored files in VIDEOS_DIR."""
+    """Return {filename: (mtime, size)} for all streamable files in VIDEOS_DIR."""
     files = {}
-    for video_path in VIDEOS_DIR.iterdir():
-        if not video_path.is_file() or is_ignored(video_path):
-            continue
-        stat = video_path.stat()
+    for video_path in iter_video_files():
+        try:
+            stat = video_path.stat()
+        except OSError:
+            continue  # vanished between the scan and the stat; next poll sees the delete
         files[video_path.name] = (stat.st_mtime, stat.st_size)
     return files
 
 
+class FileChangeDebouncer:
+    """Turns successive directory snapshots into create/modify/delete events.
+
+    A file being copied in changes on every poll, so a create or modify is only
+    reported once its (mtime, size) has held steady for DEBOUNCE_STABLE_POLLS
+    consecutive polls — otherwise a long copy triggers a storm of stop+start
+    cycles. Deletions are reported immediately; gone is gone.
+    """
+
+    def __init__(self, known_files):
+        self._known = dict(known_files)
+        self._pending = {}  # filename -> (snapshot, consecutive stable polls)
+
+    def poll(self, current_files):
+        """Return (creates, modifies, deletions) for this snapshot."""
+        deletions = [name for name in self._known if name not in current_files]
+        for name in deletions:
+            del self._known[name]
+
+        # Forget files that vanished mid-debounce.
+        for name in list(self._pending):
+            if name not in current_files:
+                del self._pending[name]
+
+        creates, modifies = [], []
+        for name, current in current_files.items():
+            previous = self._known.get(name)
+            if previous == current:
+                self._pending.pop(name, None)
+                continue
+            snapshot, stable_polls = self._pending.get(name, (None, 0))
+            if snapshot != current:
+                self._pending[name] = (current, 0)
+                continue
+            stable_polls += 1
+            if stable_polls < DEBOUNCE_STABLE_POLLS:
+                self._pending[name] = (current, stable_polls)
+                continue
+            if previous is None:
+                creates.append(name)
+            else:
+                modifies.append(name)
+            self._known[name] = current
+            del self._pending[name]
+
+        return creates, modifies, deletions
+
+
 def watch_directory():
     """Watch directory for changes using polling (works on network filesystems).
-
-    Changed/new files are debounced: we wait for (mtime, size) to be stable for
-    DEBOUNCE_STABLE_POLLS consecutive polls before acting, so a long file copy
-    doesn't trigger a storm of stop+start cycles.
 
     Deletions are processed before creates/modifies in each tick so that a
     rename (delete-then-create with the same stream_name) frees the slot before
@@ -708,7 +787,7 @@ def watch_directory():
         log.error("Error scanning directory: %s", e)
         known_files = {}
 
-    pending = {}  # filename -> {"mtime": float, "size": int, "stable_polls": int}
+    debouncer = FileChangeDebouncer(known_files)
 
     while True:
         time.sleep(POLL_INTERVAL_SEC)
@@ -720,43 +799,13 @@ def watch_directory():
             current_files = None
 
         if current_files is not None:
-            # Drop pending entries for files that vanished mid-debounce.
-            for filename in list(pending.keys()):
-                if filename not in current_files:
-                    del pending[filename]
-
-            # Detect deletions (no debounce — gone is gone).
-            deletions = [f for f in known_files if f not in current_files]
-
-            # Detect adds/modifies through the debounce buffer.
-            ready_creates = []
-            ready_modifies = []
-            for filename, current in current_files.items():
-                prev = known_files.get(filename)
-                if prev == current:
-                    pending.pop(filename, None)
-                    continue
-                state = pending.get(filename)
-                if state is None or (state["mtime"], state["size"]) != current:
-                    pending[filename] = {"mtime": current[0], "size": current[1], "stable_polls": 0}
-                else:
-                    state["stable_polls"] += 1
-                    if state["stable_polls"] >= DEBOUNCE_STABLE_POLLS:
-                        if prev is None:
-                            ready_creates.append(filename)
-                        else:
-                            ready_modifies.append(filename)
-                        known_files[filename] = current
-                        del pending[filename]
-
+            creates, modifies, deletions = debouncer.poll(current_files)
             # Process deletions first so renames into a now-free slot work.
             for filename in deletions:
                 handle_delete(VIDEOS_DIR / filename)
-                known_files.pop(filename, None)
-
-            for filename in ready_creates:
+            for filename in creates:
                 handle_create(VIDEOS_DIR / filename)
-            for filename in ready_modifies:
+            for filename in modifies:
                 handle_modify(VIDEOS_DIR / filename)
 
         refresh_output_reachable()

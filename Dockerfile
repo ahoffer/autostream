@@ -25,9 +25,6 @@ COPY stream-supervisor.py /app/stream-supervisor.py
 COPY index.html /app/index.html
 COPY entrypoint.sh /app/entrypoint.sh
 
-# Copy mediamtx.yml to app directory so it can be modified by non-root user
-RUN cp /mediamtx.yml /app/mediamtx.yml
-
 # All app files and dirs owned by autostream (UID/GID 1000); stream-video.sh
 # stays root-owned but world-executable.
 RUN chown -R autostream:autostream /app && \
