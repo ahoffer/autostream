@@ -58,6 +58,7 @@ stream_name_to_filename = {}  # stream_name -> filename (basename); reverse map 
 stream_udp_ports = {}         # stream_name -> UDP port for the KLV MPEG-TS feed
 _next_udp_port = UDP_BASE_PORT  # next port to hand out; protected by _state_lock
 _output_host_warned = False   # so we log the "unresolved OUTPUT_HOST" warning once
+_output_reachable = False     # cached OUTPUT_HOST reachability; the poll loop refreshes it so the status API never blocks on DNS
 
 
 def stream_urls(stream_name):
@@ -107,6 +108,16 @@ def output_host_reachable():
                         "no KLV/UDP feed until it becomes reachable", OUTPUT_HOST)
             _output_host_warned = True
         return False
+
+
+def refresh_output_reachable():
+    """Cache OUTPUT_HOST reachability so status reads never block on a DNS lookup.
+
+    gethostbyname blocks for the resolver timeout when the host is down, so it
+    must stay off the request path. The poll loop calls this every tick.
+    """
+    global _output_reachable
+    _output_reachable = output_host_reachable()
 
 
 def _udp_port_for(stream_name):
@@ -314,6 +325,10 @@ def stop_stream(stream_name):
 def get_stream_status():
     """Get status of all streams"""
     result = []
+    # Cached reachability (the poll loop refreshes it; never DNS on the API path).
+    # A running feed reads active only while the consumer resolves — ffmpeg keeps
+    # pushing UDP into the void otherwise, so the start-time flag alone would lie.
+    reachable = _output_reachable
     with _state_lock:
         for name, video_path in available_videos.items():
             running_info = streams.get(name)
@@ -325,16 +340,18 @@ def get_stream_status():
             else:
                 loop_count = stream_loop_counts.get(name, -1)
             urls = stream_urls(name)
-            # udp_enabled tracks whether we are actually pushing the feed right now,
-            # not just that the stream is running. udp_reason explains an inactive
-            # feed so the UI can say why instead of advertising a dead endpoint.
-            udp_active = is_running and running_info.get("udp_enabled", False)
+            # udp_enabled means the feed is really live: the stream is running, it
+            # launched with a UDP output, and the consumer resolves right now.
+            # udp_reason explains an inactive feed so the UI can say why.
+            udp_active = is_running and running_info.get("udp_enabled", False) and reachable
             if udp_active:
                 udp_reason = None
             elif not is_running:
                 udp_reason = "stream stopped"
-            else:
+            elif not reachable:
                 udp_reason = f"{OUTPUT_HOST} unreachable"
+            else:
+                udp_reason = "starting"
             result.append({
                 "name": name,
                 "video_path": video_path,
@@ -543,7 +560,7 @@ def recover_udp_outputs():
     with _state_lock:
         pending = [n for n, i in streams.items()
                    if not i.get("udp_enabled") and not i.get("stopping")]
-    if not pending or not output_host_reachable():
+    if not pending or not _output_reachable:
         return
     for name in pending:
         video_path = available_videos.get(name)
@@ -684,6 +701,7 @@ def watch_directory():
     log.info("Watching %s for changes (polling mode)...", VIDEOS_DIR)
 
     last_cleanup = time.time()
+    refresh_output_reachable()
     try:
         known_files = get_video_files()
     except Exception as e:
@@ -741,6 +759,7 @@ def watch_directory():
             for filename in ready_modifies:
                 handle_modify(VIDEOS_DIR / filename)
 
+        refresh_output_reachable()
         recover_udp_outputs()
 
         if time.time() - last_cleanup > 30:
