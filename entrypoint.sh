@@ -23,9 +23,22 @@ export MTX_HLSADDRESS=":${MEDIAMTX_HLS_PORT:?MEDIAMTX_HLS_PORT is not set}"
 
 # Start MediaMTX in background
 /mediamtx "$MEDIAMTX_CONFIG" &
+MEDIAMTX_PID=$!
 
 # Start stream supervisor in background
 python3 /app/stream-supervisor.py &
+SUPERVISOR_PID=$!
 
-# Wait for all background processes to terminate
-wait
+# Both children are vital: playback needs mediamtx, discovery and control need
+# the supervisor. Exit as soon as either one dies so the container dies with it
+# and the compose restart policy rebuilds the whole stack. A plain `wait` would
+# return only after both exited, leaving the container "Up" and half-dead.
+# BusyBox ash has no `wait -n`, so poll the two pids instead.
+while kill -0 "$MEDIAMTX_PID" 2>/dev/null && kill -0 "$SUPERVISOR_PID" 2>/dev/null; do
+  sleep 2
+done
+
+echo "entrypoint: a vital process exited; stopping the container" >&2
+kill -TERM "$MEDIAMTX_PID" "$SUPERVISOR_PID" 2>/dev/null
+wait "$MEDIAMTX_PID" "$SUPERVISOR_PID" 2>/dev/null
+exit 1
