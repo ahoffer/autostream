@@ -95,6 +95,7 @@ truth and there are no in-code fallbacks. The Default column shows the shipped
 | `MEDIAMTX_RTP_PORT` | RTP UDP port | `8000` |
 | `MEDIAMTX_RTCP_PORT` | RTCP UDP port | `8001` |
 | `STREAM_API_PORT` | Stream control UI/API port | `8080` |
+| `LOG_LEVEL` | Supervisor log level; `debug` also shows ffmpeg output | `info` |
 
 ## Commands
 

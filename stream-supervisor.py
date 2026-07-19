@@ -39,7 +39,7 @@ INDEX_HTML_PATH = Path(__file__).resolve().parent / "index.html"
 RTSP_PORT = int(require_env("MEDIAMTX_RTSP_PORT"))
 HLS_PORT = int(require_env("MEDIAMTX_HLS_PORT"))
 API_PORT = int(require_env("STREAM_API_PORT"))
-LOG_LEVEL = os.getenv("LOG_LEVEL", "info").lower()
+LOG_LEVEL = require_env("LOG_LEVEL").lower()
 MAX_VIDEO_BITRATE = os.getenv("MAX_VIDEO_BITRATE", "")  # empty disables the cap
 
 # UDP MPEG-TS output carries KLV/data streams that RTSP/HLS (via MediaMTX) drop.
