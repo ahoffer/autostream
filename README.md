@@ -53,10 +53,8 @@ for geolocation. Add each feed to cx-search like any other stream, using the
 `udp://0.0.0.0:<port>` the UI/API reports for it — there is no separate
 registration step beyond adding the stream.
 
-`video-streaming` is the service that actually ingests video/KLV UDP streams. It
-exposes `40000-40100/udp` for those feeds. The `redirect` service exposes HTTP
-`5577/tcp`; its logs show TAK-style UDP redirect rules such as multicast/unicast
-forwarding. It is not the video/KLV ingest pipeline.
+`video-streaming` is the cx-search service that ingests video/KLV UDP feeds on
+`40000-40100/udp`; see that stack's docs for details.
 
 UDP is push, not pull. If `OUTPUT_HOST` does not resolve (for example the
 cx-search stack isn't running), autostream logs a warning and streams RTSP/HLS
@@ -113,22 +111,6 @@ make systemd-uninstall # Remove the systemd unit
 
 ## Docker Compose
 
-For local development or standalone deployment:
-
-```bash
-# Build the image
-make build
-
-# Start the service (processes config from .env)
-make compose-up
-
-# View logs
-make compose-logs
-
-# Stop the service
-make compose-down
-```
-
 Plain `docker compose up -d` also works after the image is built; `make
 compose-up` adds config-change detection so `mediamtx.yml` edits recreate the
 container when needed.
@@ -155,4 +137,7 @@ Access streams at:
 
 ## Supported Formats
 
-Any video format supported by FFmpeg: MP4, MKV, AVI, MOV, WEBM, FLV, TS, etc.
+Every file in `videos/` gets a stream except hidden files and READMEs — there
+is no format allowlist. FFmpeg must be able to decode the file (MP4, MKV, AVI,
+MOV, WEBM, FLV, TS, and so on); a non-video file gets a stream slot whose
+ffmpeg process fails and is retried periodically.
