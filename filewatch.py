@@ -20,30 +20,6 @@ POLL_INTERVAL_SEC = 2
 DEBOUNCE_STABLE_POLLS = 2  # ~4s of (mtime, size) stability before committing a change
 
 
-def snapshot_stats(directory, ignore):
-    """Return this tick's directory state, or None if the directory is unreadable.
-
-    Non-files and entries rejected by the ignore predicate are skipped, as are
-    entries that vanish mid-scan — the next poll picks those up as deletions.
-    Scans in name order so events for simultaneous files arrive deterministically.
-    """
-    # filename -> (mtime, size): keyed by name for O(1) diffing between ticks.
-    files = {}
-    try:
-        for path in sorted(directory.iterdir(), key=lambda entry: entry.name):
-            try:
-                if not path.is_file() or ignore(path):
-                    continue
-                stat = path.stat()
-            except OSError:
-                continue  # vanished between the scan and the stat; next poll sees the delete
-            files[path.name] = (stat.st_mtime, stat.st_size)
-    except OSError as error:
-        log.error("Cannot read %s: %s", directory, error)
-        return None
-    return files
-
-
 class FileChangeDebouncer:
     """Turns successive directory snapshots into create/modify/delete events.
 
@@ -101,12 +77,27 @@ def watch(directory, ignore, poll_interval=POLL_INTERVAL_SEC, stable_polls=DEBOU
     Never returns. A batch is yielded every tick even when nothing changed, so
     the caller can piggyback periodic work on the poll cadence. An unreadable
     directory yields an empty batch rather than fabricating deletions.
+
+    Non-files and entries rejected by the ignore predicate are skipped, as are
+    entries that vanish mid-scan — the next poll picks those up as deletions.
+    Scans in name order so events for simultaneous files arrive deterministically.
     """
     log.info("Watching %s for changes (polling mode)...", directory)
     debouncer = FileChangeDebouncer(stable_polls)
     while True:
-        files = snapshot_stats(directory, ignore)
-        if files is None:
+        # filename -> (mtime, size): keyed by name for O(1) diffing between ticks.
+        files = {}
+        try:
+            for path in sorted(directory.iterdir(), key=lambda entry: entry.name):
+                try:
+                    if not path.is_file() or ignore(path):
+                        continue
+                    stat = path.stat()
+                except OSError:
+                    continue  # vanished between the scan and the stat; next poll sees the delete
+                files[path.name] = (stat.st_mtime, stat.st_size)
+        except OSError as error:
+            log.error("Cannot read %s: %s", directory, error)
             yield [], [], []
         else:
             yield debouncer.poll(files)
