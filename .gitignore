@@ -1,8 +1,6 @@
 videos/*
-!videos/README.md
 .idea
 .claude
 .generated/
 __pycache__/
 *.pyc
-*.tar

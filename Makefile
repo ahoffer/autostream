@@ -52,8 +52,7 @@ compose-down:  ## Stop the docker compose stack
 compose-logs:  ## Tail docker compose logs
 	docker compose logs -f
 
-clean:  ## Remove generated config cache and saved image tarballs
-	rm -f *.tar
+clean:  ## Remove the config cache
 	rm -rf $(dir $(CONFIG_CACHE))
 
 # ---- systemd service ----

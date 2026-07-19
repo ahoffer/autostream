@@ -101,7 +101,7 @@ make build             # Build the container image
 make compose-up        # Start via Docker Compose
 make compose-down      # Stop the Docker Compose stack
 make compose-logs      # Tail Docker Compose logs
-make clean             # Remove generated config cache and saved image tarballs
+make clean             # Remove the config cache
 
 # systemd service (optional; runs the stack on boot)
 make systemd-install   # Build the image, then install the systemd unit
