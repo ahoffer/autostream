@@ -86,6 +86,24 @@ class Stream:
         """True while the stream is up and has not been asked to stop."""
         return self.process is not None and not self.stopping
 
+    @property
+    def occupied(self):
+        """True while a process owns this slot, including one still stopping."""
+        return self.process is not None
+
+    def mark_started(self, process, loop_count, udp_enabled):
+        """Transition the slot to running under a freshly launched process."""
+        self.process = process
+        self.loop_count = loop_count
+        self.udp_enabled = udp_enabled
+        self.stopping = False
+
+    def clear_process(self):
+        """Transition the slot back to idle once its process is gone."""
+        self.process = None
+        self.udp_enabled = False
+        self.stopping = False
+
     def urls(self):
         """Return the copyable endpoint URLs for this stream."""
         return {
@@ -285,7 +303,7 @@ def start_stream(stream_name, loop_count=None, log_start=True):
         if stream is None:
             log.warning("Cannot start unclaimed stream: %s", stream_name)
             return False
-        if stream.process is not None:
+        if stream.occupied:
             log.warning("Stream already %s: %s",
                         "stopping" if stream.stopping else "running", stream_name)
             return False
@@ -302,7 +320,7 @@ def start_stream(stream_name, loop_count=None, log_start=True):
 
     with _state_lock:
         stream = streams_by_name.get(stream_name)
-        if stream is None or stream.process is not None:
+        if stream is None or stream.occupied:
             # Another thread claimed or started the slot while we were probing.
             log.warning("Stream changed while starting: %s", stream_name)
             return False
@@ -317,10 +335,7 @@ def start_stream(stream_name, loop_count=None, log_start=True):
             log.error("Failed to start stream %s: %s", stream_name, e)
             return False
 
-        stream.process = process
-        stream.loop_count = loop_count
-        stream.udp_enabled = output_reachable
-        stream.stopping = False
+        stream.mark_started(process, loop_count, udp_enabled=output_reachable)
 
     if log_start:
         udp_status = "UDP active" if udp_target else "UDP disabled"
@@ -332,7 +347,7 @@ def start_stream(stream_name, loop_count=None, log_start=True):
 def stop_stream(stream_name):
     with _state_lock:
         stream = streams_by_name.get(stream_name)
-        if stream is None or stream.process is None:
+        if stream is None or not stream.occupied:
             log.warning("Stream not running: %s", stream_name)
             return False
         process = stream.process
@@ -361,9 +376,7 @@ def stop_stream(stream_name):
         with _state_lock:
             current = streams_by_name.get(stream_name)
             if current is not None and current.process is process:
-                current.process = None
-                current.udp_enabled = False
-                current.stopping = False
+                current.clear_process()
         log.info("Stopped stream: %s", stream_name)
     except Exception as e:
         log.error("Error stopping stream %s: %s", stream_name, e)
@@ -497,10 +510,10 @@ def handle_delete(filepath):
             owner = stream.filename if stream is not None else None
             log.debug("Ignoring delete of %s; slot %s owned by %r", path.name, stream_name, owner)
             return
-        was_running = stream.process is not None
+        was_occupied = stream.occupied
 
     log.info("Video removed: %s", path.name)
-    if was_running:
+    if was_occupied:
         stop_stream(stream_name)
     with _state_lock:
         streams_by_name.pop(stream_name, None)
@@ -526,7 +539,7 @@ def handle_modify(filepath):
 def cleanup_dead_processes():
     # Snapshot under the lock, then poll() (which is non-blocking) outside.
     with _state_lock:
-        snapshot = [(s.name, s.process) for s in streams_by_name.values() if s.process is not None]
+        snapshot = [(s.name, s.process) for s in streams_by_name.values() if s.occupied]
 
     dead = []
     for stream_name, process in snapshot:
@@ -552,9 +565,7 @@ def cleanup_dead_processes():
             stopping = current.stopping
             loop_count = current.loop_count
             video_path = current.video_path
-            current.process = None
-            current.udp_enabled = False
-            current.stopping = False
+            current.clear_process()
 
         if stopping:
             continue
@@ -635,7 +646,7 @@ class StreamHandler(BaseHTTPRequestHandler):
 
             if stream_name == 'stop-all':
                 with _state_lock:
-                    names = [s.name for s in streams_by_name.values() if s.process is not None]
+                    names = [s.name for s in streams_by_name.values() if s.occupied]
                 for name in names:
                     stop_stream(name)
                 self.send_json({"success": True})
@@ -643,7 +654,7 @@ class StreamHandler(BaseHTTPRequestHandler):
 
             if stream_name == 'start-all':
                 with _state_lock:
-                    candidates = [s.name for s in streams_by_name.values() if s.process is None]
+                    candidates = [s.name for s in streams_by_name.values() if not s.occupied]
                 for name in candidates:
                     start_stream(name)
                 self.send_json({"success": True})
@@ -652,7 +663,7 @@ class StreamHandler(BaseHTTPRequestHandler):
             if action == 'start':
                 with _state_lock:
                     stream = streams_by_name.get(stream_name)
-                    running = stream is not None and stream.process is not None
+                    occupied = stream is not None and stream.occupied
                 if stream is None:
                     self.send_json({"error": "Stream not found"}, 404)
                     return
@@ -665,7 +676,7 @@ class StreamHandler(BaseHTTPRequestHandler):
                 if loop_count < -1:
                     self.send_json({"error": "Invalid loop count"}, 400)
                     return
-                if running:
+                if occupied:
                     stop_stream(stream_name)
                 success = start_stream(stream_name, loop_count)
                 self.send_json({"success": success})
