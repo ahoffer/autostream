@@ -706,10 +706,11 @@ def snapshot_video_stats():
 class FileChangeDebouncer:
     """Turns successive directory snapshots into create/modify/delete events.
 
-    A file being copied in changes on every poll, so a create or modify is only
-    reported once its (mtime, size) has held steady for DEBOUNCE_STABLE_POLLS
-    consecutive polls — otherwise a long copy triggers a storm of stop+start
-    cycles. Deletions are reported immediately; gone is gone.
+    Copying a video into VIDEOS_DIR takes far longer than one poll, so acting
+    immediately would start streaming a truncated file and then restart it on
+    every tick as the copy grows. A create or modify is therefore only reported
+    once its (mtime, size) has held steady for DEBOUNCE_STABLE_POLLS
+    consecutive polls. Deletions are reported immediately; gone is gone.
     """
 
     def __init__(self, known_files):
