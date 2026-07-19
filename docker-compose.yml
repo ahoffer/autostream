@@ -19,6 +19,7 @@ services:
       - MAX_VIDEO_BITRATE=${MAX_VIDEO_BITRATE}
       - OUTPUT_HOST=${OUTPUT_HOST}
       - UDP_BASE_PORT=${UDP_BASE_PORT}
+      - UDP_LAST_PORT=${UDP_LAST_PORT}
     ports:
       - "9554:${MEDIAMTX_RTSP_PORT}"       # RTSP
       - "9322:${MEDIAMTX_HLS_PORT}"        # HLS

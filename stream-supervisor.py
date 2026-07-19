@@ -61,6 +61,10 @@ MAX_VIDEO_BPS = parse_bitrate(MAX_VIDEO_BITRATE)  # malformed values fail here, 
 # OUTPUT_HOST is a reachable consumer or a multicast group.
 OUTPUT_HOST = require_env("OUTPUT_HOST")
 UDP_BASE_PORT = int(require_env("UDP_BASE_PORT"))
+UDP_LAST_PORT = int(require_env("UDP_LAST_PORT"))
+if UDP_LAST_PORT < UDP_BASE_PORT:
+    raise RuntimeError(
+        f"UDP_LAST_PORT ({UDP_LAST_PORT}) is below UDP_BASE_PORT ({UDP_BASE_PORT})")
 
 HOSTNAME = require_env("CONTAINER_NAME")
 
@@ -80,12 +84,13 @@ class Stream:
     collection. filename is the on-disk basename the slot belongs to, kept so a
     second file sanitizing to the same name can't silently take the slot over.
     loop_count is the last requested value and deliberately outlives the
-    process, so a stop/start keeps the user's choice.
+    process, so a stop/start keeps the user's choice. udp_port is None when the
+    configured range was already used up, which means RTSP/HLS only.
     """
     name: str
     filename: str
     video_path: str
-    udp_port: int
+    udp_port: int | None
     loop_count: int = -1
     process: subprocess.Popen | None = None
     udp_enabled: bool = False
@@ -115,11 +120,14 @@ class Stream:
         self.stopping = False
 
     def urls(self):
-        """Return the copyable endpoint URLs for this stream."""
+        """Return the copyable endpoint URLs for this stream.
+
+        The udp entry is None when the slot has no port from the range.
+        """
         return {
             "rtsp": f"rtsp://{HOSTNAME}:{RTSP_PORT}/{self.name}",
             "hls": f"http://{HOSTNAME}:{HLS_PORT}/{self.name}/index.m3u8",
-            "udp": f"udp://{OUTPUT_HOST}:{self.udp_port}",
+            "udp": f"udp://{OUTPUT_HOST}:{self.udp_port}" if self.udp_port else None,
         }
 
 
@@ -167,12 +175,23 @@ def refresh_output_reachable():
 def _udp_port_for(stream_name):
     """Return the stream's UDP port, assigning the next free one on first use.
 
+    Returns None once the configured range is used up; the caller streams
+    RTSP/HLS only, the same degraded mode an unreachable OUTPUT_HOST produces.
+
     Ports are stable for the process lifetime so a stopped/started stream keeps
-    the same udp:// URL. Must be called while holding _state_lock.
+    the same udp:// URL. That means an assignment is never released, so a run
+    that cycles through more than the range holds will exhaust it — the range is
+    a contract with the downstream consumer, and quietly reusing a port a
+    consumer still has registered would be worse than running without one.
+    Must be called while holding _state_lock.
     """
     global _next_udp_port
     port = _udp_ports.get(stream_name)
     if port is None:
+        if _next_udp_port > UDP_LAST_PORT:
+            log.warning("UDP port range %d-%d is used up; %s streams RTSP/HLS only",
+                        UDP_BASE_PORT, UDP_LAST_PORT, stream_name)
+            return None
         port = _next_udp_port
         _next_udp_port += 1
         _udp_ports[stream_name] = port
@@ -291,8 +310,10 @@ def start_stream(stream_name, loop_count=None, log_start=True):
     # ffprobe (inside get_bitrate_cap) can take time — run it outside the lock
     # so we don't stall other threads on I/O.
     bitrate_cap = get_bitrate_cap(video_path)
-    output_reachable = _output_reachable
-    udp_target = f"{OUTPUT_HOST}:{udp_port}" if output_reachable else ""
+    # No port from the range is the same outcome as an unreachable consumer:
+    # publish RTSP/HLS and leave the KLV feed off.
+    udp_enabled = _output_reachable and udp_port is not None
+    udp_target = f"{OUTPUT_HOST}:{udp_port}" if udp_enabled else ""
 
     with _state_lock:
         stream = streams_by_name.get(stream_name)
@@ -311,12 +332,12 @@ def start_stream(stream_name, loop_count=None, log_start=True):
             log.error("Failed to start stream %s: %s", stream_name, e)
             return False
 
-        stream.mark_started(process, loop_count, udp_enabled=output_reachable)
+        stream.mark_started(process, loop_count, udp_enabled=udp_enabled)
 
     if log_start:
         udp_status = "UDP active" if udp_target else "UDP disabled"
-        log.info("Started stream: %s video=%s udp=%s udp_url=udp://%s:%d",
-                 stream_name, json.dumps(Path(video_path).name), udp_status, OUTPUT_HOST, udp_port)
+        log.info("Started stream: %s video=%r udp=%s udp_url=%s",
+                 stream_name, Path(video_path).name, udp_status, stream.urls()["udp"])
     return True
 
 
@@ -386,6 +407,9 @@ def get_stream_status():
             udp_active = stream.running and stream.udp_enabled and reachable
             if udp_active:
                 udp_reason = None
+            elif stream.udp_port is None:
+                # Permanent for this slot, so report it ahead of the transient reasons.
+                udp_reason = f"no free UDP port in {UDP_BASE_PORT}-{UDP_LAST_PORT}"
             elif not stream.running:
                 udp_reason = "stream stopped"
             elif not reachable:
@@ -534,11 +558,15 @@ def recover_udp_outputs():
     Reachability is only sampled when a stream starts, so one that came up
     before the consumer was on the network stays RTSP/HLS-only until restarted.
     Restarting re-samples the cache and wires the UDP output back in.
+
+    Slots with no port from the range are skipped: restarting them would never
+    turn the feed on, so they would be relaunched on every poll forever.
     """
     if not _output_reachable:
         return
     with _state_lock:
-        pending = [s.name for s in streams_by_name.values() if s.running and not s.udp_enabled]
+        pending = [s.name for s in streams_by_name.values()
+                   if s.running and not s.udp_enabled and s.udp_port is not None]
     for name in pending:
         restart_stream(name)
 

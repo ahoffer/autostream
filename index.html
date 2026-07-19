@@ -92,7 +92,7 @@
                         </div>
                         <div class="url-row${s.udp_active ? '' : ' inactive'}">
                             <span class="url-label" title="MPEG-TS/UDP feed that preserves KLV metadata">UDP</span>
-                            <span class="url-text">${s.udp_url}</span>
+                            <span class="url-text">${s.udp_url ?? 'none assigned'}</span>
                             ${s.udp_active
                                 ? `<button class="copy-btn" title="Copy UDP URL" onclick='copyUrl(this, ${JSON.stringify(s.udp_url)})'>${copyIcon}</button>`
                                 : `<span class="udp-reason">inactive${s.udp_reason ? ' — ' + s.udp_reason : ''}</span>`}

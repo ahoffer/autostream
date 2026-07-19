@@ -34,8 +34,12 @@ service on the ports configured in `.env`:
 - **RTSP**: `rtsp://autostream:${MEDIAMTX_RTSP_PORT}/<stream-name>` (default `8554`)
 - **HLS**: `http://autostream:${MEDIAMTX_HLS_PORT}/<stream-name>/index.m3u8` (default `8888`)
 - **UDP (KLV)**: `udp://${OUTPUT_HOST}:<port>` — MPEG-TS with KLV/data streams
-  preserved. Each stream gets its own port starting at `${UDP_BASE_PORT}`; the
-  exact port per stream is shown in the control UI and the `/api/streams` output.
+  preserved. Each stream gets its own port from `${UDP_BASE_PORT}` through
+  `${UDP_LAST_PORT}`; the exact port per stream is shown in the control UI and
+  the `/api/streams` output. A port stays assigned for the life of the
+  supervisor so a consumer's registration keeps working across restarts, so a
+  run that cycles through more videos than the range holds will use it up —
+  later streams then publish RTSP/HLS only and say so in the UI.
 
 For access from the host, see "Port Mappings" below.
 
@@ -87,7 +91,8 @@ truth and there are no in-code fallbacks. The Default column shows the shipped
 | `VERSION` | Image version tag | `2.0.0` (see `.env`) |
 | `MAX_VIDEO_BITRATE` | Cap video bitrate (for example `3M`, `5M`) | `2M` |
 | `OUTPUT_HOST` | Host/service the KLV UDP feeds are pushed to (cx-search `video-streaming`, or an IP/multicast group) | `video-streaming` |
-| `UDP_BASE_PORT` | First UDP port; each stream gets the next one (within video-streaming's `40000-40100`) | `40000` |
+| `UDP_BASE_PORT` | First UDP port; each stream gets the next one | `40000` |
+| `UDP_LAST_PORT` | Last UDP port; streams arriving after the range is used up run RTSP/HLS only | `40100` |
 | `MEDIAMTX_RTSP_PORT` | RTSP listener port | `8554` |
 | `MEDIAMTX_HLS_PORT` | HLS HTTP port | `8888` |
 | `MEDIAMTX_RTP_PORT` | RTP UDP port | `8000` |
