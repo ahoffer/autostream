@@ -2,7 +2,7 @@
 # Stream a video file to MediaMTX (RTSP + HLS) and, when a UDP target is given,
 # also as MPEG-TS over UDP with KLV/data streams preserved.
 #
-# Usage: stream-video.sh <video-file> <stream-path> [loop-count] [bitrate-flags] [udp-target]
+# Usage: stream-video.sh <video-file> <stream-path> [loop-count] [bitrate-cap] [udp-target]
 #
 # Two outputs are produced from one ffmpeg process:
 #   1. RTSP -> MediaMTX (which also republishes it as HLS). This is the human /
@@ -11,12 +11,13 @@
 #      data/KLV copied through untouched. This is the metadata-preserving feed.
 #
 # Video is transcoded to a clean GOP structure to fix looping artifacts and to
-# honor the bitrate cap; bitrate flags come from stream-supervisor.py.
+# honor the bitrate cap; stream-supervisor.py decides whether a cap applies and
+# passes just the value (for example "2M"), empty for none.
 
 VIDEO_FILE="$1"
 STREAM_PATH="$2"
 LOOP_COUNT="${3:--1}"
-BITRATE_FLAGS="$4"
+BITRATE_CAP="$4"
 UDP_TARGET="$5"          # host:port for the KLV MPEG-TS/UDP feed; empty = RTSP only
 RTSP_PORT="${MEDIAMTX_RTSP_PORT:?MEDIAMTX_RTSP_PORT is not set}"
 
@@ -25,8 +26,13 @@ VIDEO_OPTS="-c:v libx264 -preset ultrafast -tune zerolatency -g 30 -keyint_min 3
 AUDIO_OPTS="-c:a aac -b:a 128k"
 TS_FIX="-fflags +genpts+igndts -avoid_negative_ts make_zero -max_muxing_queue_size 1024"
 
+BITRATE_OPTS=""
+if [ -n "$BITRATE_CAP" ]; then
+  BITRATE_OPTS="-b:v $BITRATE_CAP -maxrate $BITRATE_CAP -bufsize $BITRATE_CAP"
+fi
+
 # Output 1: RTSP -> MediaMTX. Only video+audio (RTP has no KLV payload).
-set -- -map 0:v? -map 0:a? $VIDEO_OPTS $BITRATE_FLAGS $AUDIO_OPTS $TS_FIX -vsync cfr \
+set -- -map 0:v? -map 0:a? $VIDEO_OPTS $BITRATE_OPTS $AUDIO_OPTS $TS_FIX -vsync cfr \
        -f rtsp "rtsp://localhost:${RTSP_PORT}/$STREAM_PATH"
 
 # Output 2 (optional): MPEG-TS/UDP with all streams; data/KLV copied verbatim.
@@ -34,7 +40,7 @@ set -- -map 0:v? -map 0:a? $VIDEO_OPTS $BITRATE_FLAGS $AUDIO_OPTS $TS_FIX -vsync
 # The setts bitstream filter keeps the copied data DTS monotonic after the video
 # is re-timed by the transcode (the \, escapes the comma inside max()).
 if [ -n "$UDP_TARGET" ]; then
-  set -- "$@" -map 0 -copy_unknown $VIDEO_OPTS $BITRATE_FLAGS $AUDIO_OPTS -c:d copy \
+  set -- "$@" -map 0 -copy_unknown $VIDEO_OPTS $BITRATE_OPTS $AUDIO_OPTS -c:d copy \
          -max_interleave_delta 1000 -bsf:d "setts=dts=max(DTS\,PREV_OUTDTS)" \
          $TS_FIX -f mpegts "udp://${UDP_TARGET}?pkt_size=1316"
 fi

@@ -220,8 +220,12 @@ def get_video_bitrate(video_path):
     return None
 
 
-def get_bitrate_flags(video_path):
-    """Return ffmpeg bitrate flags if video exceeds MAX_VIDEO_BITRATE, else empty string."""
+def get_bitrate_cap(video_path):
+    """Return MAX_VIDEO_BITRATE if the video exceeds it, else empty string.
+
+    The cap value is expanded into concrete ffmpeg flags by stream-video.sh,
+    which owns all encode syntax.
+    """
     if not MAX_VIDEO_BITRATE:
         return ""
 
@@ -238,7 +242,7 @@ def get_bitrate_flags(video_path):
     if video_bps > max_bps:
         log.debug("Bitrate %.1fM exceeds max %s for %s; applying cap",
                   video_mbps, MAX_VIDEO_BITRATE, Path(video_path).name)
-        return f"-b:v {MAX_VIDEO_BITRATE} -maxrate {MAX_VIDEO_BITRATE} -bufsize {MAX_VIDEO_BITRATE}"
+        return MAX_VIDEO_BITRATE
     else:
         log.debug("Bitrate %.1fM within max %s, no limit applied", video_mbps, MAX_VIDEO_BITRATE)
         return ""
@@ -286,15 +290,15 @@ def start_stream(stream_name, loop_count=None, log_start=True):
                         "stopping" if stream.stopping else "running", stream_name)
             return False
         video_path = stream.video_path
-        udp_url = stream.urls()["udp"]
+        udp_port = stream.udp_port
         if loop_count is None:
             loop_count = stream.loop_count
 
-    # ffprobe (inside get_bitrate_flags) and the DNS lookup can take time — run
+    # ffprobe (inside get_bitrate_cap) and the DNS lookup can take time — run
     # both outside the lock so we don't stall other threads on I/O.
-    bitrate_flags = get_bitrate_flags(video_path)
+    bitrate_cap = get_bitrate_cap(video_path)
     output_reachable = output_host_reachable()
-    udp_target = udp_url.removeprefix("udp://") if output_reachable else ""
+    udp_target = f"{OUTPUT_HOST}:{udp_port}" if output_reachable else ""
 
     with _state_lock:
         stream = streams_by_name.get(stream_name)
@@ -304,7 +308,7 @@ def start_stream(stream_name, loop_count=None, log_start=True):
             return False
 
         try:
-            cmd = [STREAM_VIDEO_SCRIPT, video_path, stream_name, str(loop_count), bitrate_flags, udp_target]
+            cmd = [STREAM_VIDEO_SCRIPT, video_path, stream_name, str(loop_count), bitrate_cap, udp_target]
             if LOG_LEVEL == "debug":
                 process = subprocess.Popen(cmd)
             else:
@@ -320,8 +324,8 @@ def start_stream(stream_name, loop_count=None, log_start=True):
 
     if log_start:
         udp_status = "UDP active" if udp_target else "UDP disabled"
-        log.info("Started stream: %s video=%s udp=%s udp_url=%s",
-                 stream_name, json.dumps(Path(video_path).name), udp_status, udp_url)
+        log.info("Started stream: %s video=%s udp=%s udp_url=udp://%s:%d",
+                 stream_name, json.dumps(Path(video_path).name), udp_status, OUTPUT_HOST, udp_port)
     return True
 
 
