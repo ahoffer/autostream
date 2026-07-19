@@ -360,6 +360,19 @@ def stop_stream(stream_name):
     return True
 
 
+def restart_stream(stream_name, loop_count=None):
+    """Relaunch a stream: stop its current process if it has one, then start it.
+
+    loop_count None keeps the last requested value.
+    """
+    with _state_lock:
+        stream = streams_by_name.get(stream_name)
+        occupied = stream is not None and stream.occupied
+    if occupied:
+        stop_stream(stream_name)
+    return start_stream(stream_name, loop_count)
+
+
 def get_stream_status():
     """Get status of all streams"""
     result = []
@@ -459,8 +472,7 @@ def handle_modify(filepath):
 
     log.info("Video updated: %s", path.name)
     if running:
-        stop_stream(stream_name)
-        start_stream(stream_name)
+        restart_stream(stream_name)
 
 
 def cleanup_dead_processes():
@@ -528,8 +540,7 @@ def recover_udp_outputs():
     with _state_lock:
         pending = [s.name for s in streams_by_name.values() if s.running and not s.udp_enabled]
     for name in pending:
-        stop_stream(name)
-        start_stream(name)
+        restart_stream(name)
 
 
 class StreamHandler(BaseHTTPRequestHandler):
@@ -594,7 +605,6 @@ class StreamHandler(BaseHTTPRequestHandler):
         if action == 'start':
             with _state_lock:
                 stream = streams_by_name.get(stream_name)
-                occupied = stream is not None and stream.occupied
             if stream is None:
                 self.send_json({"error": "Stream not found"}, 404)
                 return
@@ -607,9 +617,7 @@ class StreamHandler(BaseHTTPRequestHandler):
             if loop_count < -1:
                 self.send_json({"error": "Invalid loop count"}, 400)
                 return
-            if occupied:
-                stop_stream(stream_name)
-            success = start_stream(stream_name, loop_count)
+            success = restart_stream(stream_name, loop_count)
             self.send_json({"success": success})
         elif action == 'stop':
             success = stop_stream(stream_name)
