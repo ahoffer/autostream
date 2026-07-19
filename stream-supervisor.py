@@ -20,29 +20,39 @@ from urllib.parse import urlparse, parse_qs
 
 # Note: inotify doesn't work on network filesystems (CIFS/NFS), so we use polling
 
+
+def require_env(name):
+    """Return the env var's value, failing at boot if it is missing or empty.
+
+    .env is the single source of truth for config; compose passes every value
+    through, so a missing one is a deployment error, not a case to default.
+    """
+    value = os.getenv(name)
+    if not value:
+        raise RuntimeError(f"{name} environment variable is not set")
+    return value
+
+
 VIDEOS_DIR = Path("/app/videos")
 STREAM_VIDEO_SCRIPT = "/usr/local/bin/stream-video.sh"
 INDEX_HTML_PATH = Path(__file__).resolve().parent / "index.html"
-RTSP_PORT = int(os.getenv("MEDIAMTX_RTSP_PORT", "8554"))
-HLS_PORT = int(os.getenv("MEDIAMTX_HLS_PORT", "8888"))
-API_PORT = int(os.getenv("STREAM_API_PORT", "8080"))
+RTSP_PORT = int(require_env("MEDIAMTX_RTSP_PORT"))
+HLS_PORT = int(require_env("MEDIAMTX_HLS_PORT"))
+API_PORT = int(require_env("STREAM_API_PORT"))
 LOG_LEVEL = os.getenv("LOG_LEVEL", "info").lower()
-MAX_VIDEO_BITRATE = os.getenv("MAX_VIDEO_BITRATE", "")
+MAX_VIDEO_BITRATE = os.getenv("MAX_VIDEO_BITRATE", "")  # empty disables the cap
 
 # UDP MPEG-TS output carries KLV/data streams that RTSP/HLS (via MediaMTX) drop.
 # Each stream is pushed to OUTPUT_HOST on its own port (UDP_BASE_PORT + slot).
-# Set OUTPUT_HOST to a reachable consumer or a multicast group; the loopback
-# default just means "nothing listens" until it is configured.
-OUTPUT_HOST = os.getenv("OUTPUT_HOST", "127.0.0.1")
-UDP_BASE_PORT = int(os.getenv("UDP_BASE_PORT", "20000"))
+# OUTPUT_HOST is a reachable consumer or a multicast group.
+OUTPUT_HOST = require_env("OUTPUT_HOST")
+UDP_BASE_PORT = int(require_env("UDP_BASE_PORT"))
 
 # Poll loop tuning
 POLL_INTERVAL_SEC = 2
 DEBOUNCE_STABLE_POLLS = 2  # ~4s of (mtime, size) stability before committing a change
 
-HOSTNAME = os.getenv("CONTAINER_NAME")
-if not HOSTNAME:
-    raise RuntimeError("CONTAINER_NAME environment variable is not set")
+HOSTNAME = require_env("CONTAINER_NAME")
 
 logging.basicConfig(
     level=getattr(logging, LOG_LEVEL.upper(), logging.INFO),

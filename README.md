@@ -79,7 +79,9 @@ Stream names are sanitized from filenames:
 Edit `.env` file:
 
 Docker Compose reads `.env` directly; `mediamtx.yml` is mounted into the
-container as-is.
+container as-is. Every variable must be set — `.env` is the single source of
+truth and there are no in-code fallbacks. The Default column shows the shipped
+`.env` values.
 
 | Variable | Description | Default |
 |----------|-------------|---------|

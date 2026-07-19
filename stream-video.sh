@@ -18,7 +18,7 @@ STREAM_PATH="$2"
 LOOP_COUNT="${3:--1}"
 BITRATE_FLAGS="$4"
 UDP_TARGET="$5"          # host:port for the KLV MPEG-TS/UDP feed; empty = RTSP only
-RTSP_PORT="${MEDIAMTX_RTSP_PORT:-8554}"
+RTSP_PORT="${MEDIAMTX_RTSP_PORT:?MEDIAMTX_RTSP_PORT is not set}"
 
 # Shared encode settings (see FLAG EXPLANATIONS below). Deliberately space-split.
 VIDEO_OPTS="-c:v libx264 -preset ultrafast -tune zerolatency -g 30 -keyint_min 30 -sc_threshold 0 -bf 0 -x264-params ref=1"
