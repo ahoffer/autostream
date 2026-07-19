@@ -33,6 +33,19 @@ def require_env(name):
     return value
 
 
+def parse_bitrate(bitrate_str):
+    """Parse bitrate string (e.g., '3M', '3000K', '3000000') to bits per second."""
+    if not bitrate_str:
+        return None
+    bitrate_str = bitrate_str.strip().upper()
+    if bitrate_str.endswith('M'):
+        return int(float(bitrate_str[:-1]) * 1_000_000)
+    elif bitrate_str.endswith('K'):
+        return int(float(bitrate_str[:-1]) * 1_000)
+    else:
+        return int(bitrate_str)
+
+
 VIDEOS_DIR = Path("/app/videos")
 STREAM_VIDEO_SCRIPT = "/usr/local/bin/stream-video.sh"
 INDEX_HTML_PATH = Path(__file__).resolve().parent / "index.html"
@@ -41,6 +54,7 @@ HLS_PORT = int(require_env("MEDIAMTX_HLS_PORT"))
 API_PORT = int(require_env("STREAM_API_PORT"))
 LOG_LEVEL = require_env("LOG_LEVEL").lower()
 MAX_VIDEO_BITRATE = os.getenv("MAX_VIDEO_BITRATE", "")  # empty disables the cap
+MAX_VIDEO_BPS = parse_bitrate(MAX_VIDEO_BITRATE)  # malformed values fail here, at boot
 
 # UDP MPEG-TS output carries KLV/data streams that RTSP/HLS (via MediaMTX) drop.
 # Each stream is pushed to OUTPUT_HOST on its own port (UDP_BASE_PORT + slot).
@@ -139,36 +153,30 @@ def log_stream_urls():
         print(row, flush=True)
 
 
-def output_host_reachable():
-    """Return True if OUTPUT_HOST resolves, so the UDP/KLV output can be added.
+def refresh_output_reachable():
+    """Refresh the cached OUTPUT_HOST reachability.
 
     ffmpeg aborts the whole process (taking the RTSP output down with it) if the
     UDP destination host is unresolvable. So when the consumer (for example the
-    cx-search video-streaming service) is not on the network, we drop the UDP
-    output and stream RTSP/HLS only rather than breaking playback. A numeric IP
-    or multicast group always resolves, so this only trips on a missing hostname.
+    cx-search video-streaming service) is not on the network, streams launch
+    RTSP/HLS only rather than breaking playback. A numeric IP or multicast group
+    always resolves, so this only trips on a missing hostname.
+
+    gethostbyname blocks for the resolver timeout when the host is down, so it
+    must stay off the request path: status reads and stream starts sample the
+    cache, and the poll loop refreshes it every tick.
     """
-    global _output_host_warned
+    global _output_reachable, _output_host_warned
     try:
         socket.gethostbyname(OUTPUT_HOST)
         _output_host_warned = False
-        return True
+        _output_reachable = True
     except OSError:
         if not _output_host_warned:
             log.warning("OUTPUT_HOST %r does not resolve; streaming RTSP/HLS only, "
                         "no KLV/UDP feed until it becomes reachable", OUTPUT_HOST)
             _output_host_warned = True
-        return False
-
-
-def refresh_output_reachable():
-    """Cache OUTPUT_HOST reachability so status reads never block on a DNS lookup.
-
-    gethostbyname blocks for the resolver timeout when the host is down, so it
-    must stay off the request path. The poll loop calls this every tick.
-    """
-    global _output_reachable
-    _output_reachable = output_host_reachable()
+        _output_reachable = False
 
 
 def _udp_port_for(stream_name):
@@ -184,19 +192,6 @@ def _udp_port_for(stream_name):
         _next_udp_port += 1
         _udp_ports[stream_name] = port
     return port
-
-
-def parse_bitrate(bitrate_str):
-    """Parse bitrate string (e.g., '3M', '3000K', '3000000') to bits per second."""
-    if not bitrate_str:
-        return None
-    bitrate_str = bitrate_str.strip().upper()
-    if bitrate_str.endswith('M'):
-        return int(float(bitrate_str[:-1]) * 1_000_000)
-    elif bitrate_str.endswith('K'):
-        return int(float(bitrate_str[:-1]) * 1_000)
-    else:
-        return int(bitrate_str)
 
 
 def _first_int(text):
@@ -244,11 +239,7 @@ def get_bitrate_cap(video_path):
     The cap value is expanded into concrete ffmpeg flags by stream-video.sh,
     which owns all encode syntax.
     """
-    if not MAX_VIDEO_BITRATE:
-        return ""
-
-    max_bps = parse_bitrate(MAX_VIDEO_BITRATE)
-    if not max_bps:
+    if not MAX_VIDEO_BPS:
         return ""
 
     video_bps = get_video_bitrate(video_path)
@@ -257,7 +248,7 @@ def get_bitrate_cap(video_path):
         return ""
 
     video_mbps = video_bps / 1_000_000
-    if video_bps > max_bps:
+    if video_bps > MAX_VIDEO_BPS:
         log.debug("Bitrate %.1fM exceeds max %s for %s; applying cap",
                   video_mbps, MAX_VIDEO_BITRATE, Path(video_path).name)
         return MAX_VIDEO_BITRATE
@@ -312,10 +303,10 @@ def start_stream(stream_name, loop_count=None, log_start=True):
         if loop_count is None:
             loop_count = stream.loop_count
 
-    # ffprobe (inside get_bitrate_cap) and the DNS lookup can take time — run
-    # both outside the lock so we don't stall other threads on I/O.
+    # ffprobe (inside get_bitrate_cap) can take time — run it outside the lock
+    # so we don't stall other threads on I/O.
     bitrate_cap = get_bitrate_cap(video_path)
-    output_reachable = output_host_reachable()
+    output_reachable = _output_reachable
     udp_target = f"{OUTPUT_HOST}:{udp_port}" if output_reachable else ""
 
     with _state_lock:
@@ -582,9 +573,9 @@ def cleanup_dead_processes():
 def recover_udp_outputs():
     """Restart running streams whose UDP feed is off, once OUTPUT_HOST resolves again.
 
-    output_host_reachable() is only consulted at stream start, so a stream that
-    came up before the consumer was on the network stays RTSP/HLS-only until
-    restarted. Restarting re-runs that check and wires the UDP output back in.
+    Reachability is only sampled when a stream starts, so one that came up
+    before the consumer was on the network stays RTSP/HLS-only until restarted.
+    Restarting re-samples the cache and wires the UDP output back in.
     """
     if not _output_reachable:
         return
@@ -774,7 +765,6 @@ def watch_directory(initial_files):
     log.info("Watching %s for changes (polling mode)...", VIDEOS_DIR)
 
     last_cleanup = time.time()
-    refresh_output_reachable()
     debouncer = FileChangeDebouncer(initial_files)
 
     while True:
@@ -804,6 +794,7 @@ def main():
     log.info("Stream supervisor starting...")
 
     wait_for_mediamtx()
+    refresh_output_reachable()
 
     api_thread = threading.Thread(target=start_api_server, name="APIServer", daemon=True)
     api_thread.start()
