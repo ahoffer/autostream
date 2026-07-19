@@ -2,16 +2,11 @@
 # Change this value and restart to adjust logging verbosity
 logLevel: error
 
-# Protocol listeners. The ports are MediaMTX's own defaults and mirror .env,
-# which docker-compose.yml (port mappings) and stream-supervisor.py (URLs,
-# readiness check) consume.
-rtspAddress: :8554
-rtpAddress: :8000
-rtcpAddress: :8001
+# Listener ports are deliberately absent: .env owns them, and entrypoint.sh
+# passes them to MediaMTX through its MTX_* config overrides.
 
 # Enable HLS
 hls: yes
-hlsAddress: :8888
 
 # Paths configuration
 # All videos in /app/videos are automatically discovered and streamed

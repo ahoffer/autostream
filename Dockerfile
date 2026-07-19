@@ -28,8 +28,4 @@ RUN chown -R autostream:autostream /app && \
 # (mediamtx, python3, ffmpeg) runs as UID 1000.
 USER autostream:autostream
 
-# RTSP, HLS, control UI, RTP, RTCP — documentation only; compose publishes the
-# real mappings. The values mirror .env and mediamtx.yml.
-EXPOSE 8554 8888 8080 8000/udp 8001/udp
-
 ENTRYPOINT ["/app/entrypoint.sh"]

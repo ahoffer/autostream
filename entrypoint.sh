@@ -13,6 +13,14 @@ if [ ! -f "$MEDIAMTX_CONFIG" ]; then
   exit 1
 fi
 
+# .env owns the listener ports (compose passes them through). Hand them to
+# MediaMTX via its MTX_* config overrides so mediamtx.yml never carries port
+# numbers that can drift out of sync.
+export MTX_RTSPADDRESS=":${MEDIAMTX_RTSP_PORT:?MEDIAMTX_RTSP_PORT is not set}"
+export MTX_RTPADDRESS=":${MEDIAMTX_RTP_PORT:?MEDIAMTX_RTP_PORT is not set}"
+export MTX_RTCPADDRESS=":${MEDIAMTX_RTCP_PORT:?MEDIAMTX_RTCP_PORT is not set}"
+export MTX_HLSADDRESS=":${MEDIAMTX_HLS_PORT:?MEDIAMTX_HLS_PORT is not set}"
+
 # Start MediaMTX in background
 /mediamtx "$MEDIAMTX_CONFIG" &
 
