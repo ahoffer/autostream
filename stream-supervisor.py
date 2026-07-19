@@ -464,7 +464,6 @@ def handle_modify(filepath):
 
 
 def cleanup_dead_processes():
-    # Snapshot under the lock, then poll() (which is non-blocking) outside.
     with _state_lock:
         snapshot = [(s.name, s.process) for s in streams_by_name.values() if s.occupied]
 
@@ -639,10 +638,6 @@ def main():
 
     api_thread = threading.Thread(target=start_api_server, name="APIServer", daemon=True)
     api_thread.start()
-
-    # Files already present at boot arrive as first-batch creates — startup is
-    # not a special case, and a file still mid-copy when we start is debounced
-    # like any other.
     last_cleanup = time.time()
     for creates, modifies, deletions in filewatch.watch(VIDEOS_DIR, is_ignored):
         # Deletions first so a rename (delete + create sharing a stream_name)
