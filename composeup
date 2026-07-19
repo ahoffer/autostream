@@ -20,7 +20,6 @@ recreate=
 if [ ! -f "$CONFIG_CACHE" ] || ! cmp -s mediamtx.yml "$CONFIG_CACHE"; then
   recreate=--force-recreate
 fi
-cp mediamtx.yml "$CONFIG_CACHE"
 
 if docker inspect "$CONTAINER_NAME" >/dev/null 2>&1; then
   docker inspect "$CONTAINER_NAME" \
@@ -37,3 +36,8 @@ if docker inspect "$CONTAINER_NAME" >/dev/null 2>&1; then
 fi
 
 docker compose up -d $recreate
+
+# Record the config only once the stack is actually running on it. Caching it
+# earlier would mark a failed run's config as deployed, so the next run would
+# see no change and skip the recreate, leaving the container on stale config.
+cp mediamtx.yml "$CONFIG_CACHE"
