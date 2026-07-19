@@ -88,12 +88,16 @@ class Stream:
     """
     name: str
     filename: str
-    video_path: str
     udp_port: int | None
     loop_count: int = -1
     process: subprocess.Popen | None = None
     udp_enabled: bool = False
     stopping: bool = False
+
+    @property
+    def video_path(self):
+        """The file this slot streams. Derived, so it can't disagree with filename."""
+        return str(VIDEOS_DIR / self.filename)
 
     @property
     def running(self):
@@ -439,7 +443,6 @@ def get_stream_status():
                 udp_reason = "starting"
             result.append({
                 "name": stream.name,
-                "video_path": stream.video_path,
                 "running": stream.running,
                 "stopping": stream.stopping,
                 "loop_count": stream.loop_count,
@@ -452,7 +455,7 @@ def get_stream_status():
     return result
 
 
-def _claim_slot(stream_name, filename, video_path):
+def _claim_slot(stream_name, filename):
     """Register (or refresh) the slot binding stream_name to filename.
 
     Returns True if the slot belongs to this filename after the call, False if
@@ -464,7 +467,6 @@ def _claim_slot(stream_name, filename, video_path):
         _streams_by_name[stream_name] = Stream(
             name=stream_name,
             filename=filename,
-            video_path=video_path,
             udp_port=_udp_port_for(stream_name),
         )
         return True
@@ -473,7 +475,6 @@ def _claim_slot(stream_name, filename, video_path):
                     "(after removing the owner, touch this file or restart to stream it)",
                     stream_name, stream.filename, filename)
         return False
-    stream.video_path = video_path
     return True
 
 
@@ -481,7 +482,7 @@ def handle_create(filepath):
     path = Path(filepath)
     stream_name = sanitize_name(path)
     with _state_lock:
-        if not _claim_slot(stream_name, path.name, str(path)):
+        if not _claim_slot(stream_name, path.name):
             return
     log.info("Video added: %s", path.name)
     start_stream(stream_name)
@@ -511,7 +512,7 @@ def handle_modify(filepath):
     path = Path(filepath)
     stream_name = sanitize_name(path)
     with _state_lock:
-        if not _claim_slot(stream_name, path.name, str(path)):
+        if not _claim_slot(stream_name, path.name):
             return
         running = _streams_by_name[stream_name].running
 
