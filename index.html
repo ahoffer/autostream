@@ -34,6 +34,8 @@
         .copy-btn svg { width: 14px; height: 14px; }
         .url-row.inactive .url-text { opacity: 0.45; text-decoration: line-through; }
         .udp-reason { color: #ffb74d; font-style: italic; }
+        .error-banner { background: #4a1e1e; border: 1px solid #ff5252; color: #ffb4b4;
+                        border-radius: 4px; padding: 10px 12px; margin-bottom: 15px; font-size: 0.9em; }
     </style>
 </head>
 <body>
@@ -42,6 +44,8 @@
         <button class="btn-stop" onclick="stopAll()">Stop All</button>
         <button class="btn-start" onclick="startAll()">Start All</button>
     </div>
+    <!-- Below the controls so showing it never shifts the buttons under the cursor. -->
+    <div id="error" class="error-banner" hidden></div>
     <div id="streams"></div>
     <script>
         let lastPayload = '';
@@ -138,25 +142,46 @@
             }
         }
 
-        async function startStream(name) {
+        let errorTimer;
+        function showError(message) {
+            const banner = document.getElementById('error');
+            banner.textContent = message;
+            banner.hidden = false;
+            clearTimeout(errorTimer);
+            errorTimer = setTimeout(() => { banner.hidden = true; }, 10000);
+        }
+
+        // Every control goes through here. A refused operation comes back as
+        // {"success": false} with a 200, so checking only the transport would
+        // leave a failed click looking like it worked.
+        async function command(path, description) {
+            try {
+                const res = await fetch(path, {method: 'POST'});
+                const body = await res.json().catch(() => ({}));
+                if (!res.ok) throw new Error(body.error || `HTTP ${res.status}`);
+                if (body.success === false) throw new Error('the supervisor could not complete it; check its log');
+                document.getElementById('error').hidden = true;
+            } catch (err) {
+                showError(`Could not ${description}: ${err.message}`);
+            }
+            loadStreams();
+        }
+
+        function startStream(name) {
             const loopCount = document.getElementById('loop-' + name).value;
-            await fetch('/api/streams/' + name + '/start?loop=' + loopCount, {method: 'POST'});
-            loadStreams();
+            return command(`/api/streams/${name}/start?loop=${loopCount}`, `start ${name}`);
         }
 
-        async function stopStream(name) {
-            await fetch('/api/streams/' + name + '/stop', {method: 'POST'});
-            loadStreams();
+        function stopStream(name) {
+            return command(`/api/streams/${name}/stop`, `stop ${name}`);
         }
 
-        async function stopAll() {
-            await fetch('/api/streams/stop-all', {method: 'POST'});
-            loadStreams();
+        function stopAll() {
+            return command('/api/streams/stop-all', 'stop all streams');
         }
 
-        async function startAll() {
-            await fetch('/api/streams/start-all', {method: 'POST'});
-            loadStreams();
+        function startAll() {
+            return command('/api/streams/start-all', 'start all streams');
         }
 
         loadStreams();
