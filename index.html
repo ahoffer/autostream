@@ -45,11 +45,17 @@
     </div>
     <div id="streams"></div>
     <script>
+        let lastPayload = '';
         async function loadStreams() {
             const container = document.getElementById('streams');
             try {
                 const res = await fetch('/api/streams');
-                const streams = await res.json();
+                const payload = await res.text();
+                // Skip the rewrite when nothing changed: no flicker, and an
+                // unsubmitted loop selection survives the 5s poll.
+                if (payload === lastPayload) return;
+                lastPayload = payload;
+                const streams = JSON.parse(payload);
                 if (!streams.length) {
                     container.innerHTML = '<p>No streams found</p>';
                     return;
@@ -84,17 +90,13 @@
                             <span class="url-text">${s.hls_url}</span>
                             <button class="copy-btn" title="Copy HLS URL" onclick='copyUrl(this, ${JSON.stringify(s.hls_url)})'>${copyIcon}</button>
                         </div>
-                        ${s.udp_active ? `
-                        <div class="url-row">
+                        <div class="url-row${s.udp_active ? '' : ' inactive'}">
                             <span class="url-label" title="MPEG-TS/UDP feed that preserves KLV metadata">UDP</span>
                             <span class="url-text">${s.udp_url}</span>
-                            <button class="copy-btn" title="Copy UDP URL" onclick='copyUrl(this, ${JSON.stringify(s.udp_url)})'>${copyIcon}</button>
-                        </div>` : `
-                        <div class="url-row inactive">
-                            <span class="url-label" title="MPEG-TS/UDP feed that preserves KLV metadata">UDP</span>
-                            <span class="url-text">${s.udp_url}</span>
-                            <span class="udp-reason">inactive${s.udp_reason ? ' — ' + s.udp_reason : ''}</span>
-                        </div>`}
+                            ${s.udp_active
+                                ? `<button class="copy-btn" title="Copy UDP URL" onclick='copyUrl(this, ${JSON.stringify(s.udp_url)})'>${copyIcon}</button>`
+                                : `<span class="udp-reason">inactive${s.udp_reason ? ' — ' + s.udp_reason : ''}</span>`}
+                        </div>
                     </div>
                 </div>
             `).join('');
