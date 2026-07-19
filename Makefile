@@ -19,13 +19,7 @@ build:  ## Build the container image
 	@# DOCKER_BUILDKIT=0 forces the legacy builder on purpose: this host has no
 	@# buildx component, so the default BuildKit path fails with "buildx is
 	@# missing or broken". Drop the override only once buildx is installed.
-	set -a && . ./.env && DOCKER_BUILDKIT=0 docker build \
-		--build-arg MEDIAMTX_RTSP_PORT=$$MEDIAMTX_RTSP_PORT \
-		--build-arg MEDIAMTX_HLS_PORT=$$MEDIAMTX_HLS_PORT \
-		--build-arg MEDIAMTX_RTP_PORT=$$MEDIAMTX_RTP_PORT \
-		--build-arg MEDIAMTX_RTCP_PORT=$$MEDIAMTX_RTCP_PORT \
-		--build-arg STREAM_API_PORT=$$STREAM_API_PORT \
-		-t $$CONTAINER_NAME:$$VERSION .
+	set -a && . ./.env && DOCKER_BUILDKIT=0 docker build -t $$CONTAINER_NAME:$$VERSION .
 
 compose-up:  ## Start via docker compose
 	@# mediamtx reads its config only at startup, and the single-file bind mount

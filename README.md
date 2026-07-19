@@ -97,7 +97,7 @@ container as-is.
 ## Commands
 
 ```bash
-make build             # Build the container image (build args from .env)
+make build             # Build the container image
 make compose-up        # Start via Docker Compose
 make compose-down      # Stop the Docker Compose stack
 make compose-logs      # Tail Docker Compose logs

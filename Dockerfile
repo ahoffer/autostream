@@ -1,11 +1,5 @@
 FROM bluenviron/mediamtx:1.15.3-ffmpeg
 
-ARG MEDIAMTX_RTSP_PORT
-ARG MEDIAMTX_HLS_PORT
-ARG MEDIAMTX_RTP_PORT
-ARG MEDIAMTX_RTCP_PORT
-ARG STREAM_API_PORT
-
 # Install Python3 for the stream supervisor (stdlib only).
 RUN apk add --no-cache python3
 
@@ -33,8 +27,8 @@ RUN chown -R autostream:autostream /app && \
 # (mediamtx, python3, ffmpeg) runs as UID 1000.
 USER autostream:autostream
 
-# Expose MediaMTX + API ports (defaults can be overridden via build args)
-EXPOSE ${MEDIAMTX_RTSP_PORT} ${MEDIAMTX_HLS_PORT} ${STREAM_API_PORT} \
-  ${MEDIAMTX_RTP_PORT}/udp ${MEDIAMTX_RTCP_PORT}/udp
+# RTSP, HLS, control UI, RTP, RTCP — documentation only; compose publishes the
+# real mappings. The values mirror .env and mediamtx.yml.
+EXPOSE 8554 8888 8080 8000/udp 8001/udp
 
 ENTRYPOINT ["/app/entrypoint.sh"]
