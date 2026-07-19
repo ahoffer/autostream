@@ -15,6 +15,7 @@ RUN mkdir -p /app/videos
 
 COPY stream-video.sh /usr/local/bin/stream-video.sh
 COPY stream-supervisor.py /app/stream-supervisor.py
+COPY filewatch.py /app/filewatch.py
 COPY index.html /app/index.html
 COPY entrypoint.sh /app/entrypoint.sh
 

@@ -18,7 +18,7 @@ from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from pathlib import Path
 from urllib.parse import urlparse, parse_qs
 
-# Note: inotify doesn't work on network filesystems (CIFS/NFS), so we use polling
+import filewatch
 
 
 def require_env(name):
@@ -61,10 +61,6 @@ MAX_VIDEO_BPS = parse_bitrate(MAX_VIDEO_BITRATE)  # malformed values fail here, 
 # OUTPUT_HOST is a reachable consumer or a multicast group.
 OUTPUT_HOST = require_env("OUTPUT_HOST")
 UDP_BASE_PORT = int(require_env("UDP_BASE_PORT"))
-
-# Poll loop tuning
-POLL_INTERVAL_SEC = 2
-DEBOUNCE_STABLE_POLLS = 2  # ~4s of (mtime, size) stability before committing a change
 
 HOSTNAME = require_env("CONTAINER_NAME")
 
@@ -140,17 +136,6 @@ _next_udp_port = UDP_BASE_PORT  # next port to hand out; protected by _state_loc
 
 _output_host_warned = False   # so we log the "unresolved OUTPUT_HOST" warning once
 _output_reachable = False     # cached OUTPUT_HOST reachability; the poll loop refreshes it so the status API never blocks on DNS
-
-
-def log_stream_urls():
-    """Log one copyable endpoint URL per line, keyed by stream name."""
-    with _state_lock:
-        rows = [f"{stream.name}={url}"
-                for stream in sorted(streams_by_name.values(), key=lambda s: s.name)
-                for url in stream.urls().values()]
-
-    for row in rows:
-        print(row, flush=True)
 
 
 def refresh_output_reachable():
@@ -409,21 +394,6 @@ def get_stream_status():
     return result
 
 
-def iter_video_files():
-    """Yield the streamable files in VIDEOS_DIR, ordered by name.
-
-    Hidden files and READMEs are skipped, as are entries that vanish mid-scan —
-    the next poll picks those up as deletions.
-    """
-    for path in sorted(VIDEOS_DIR.iterdir(), key=lambda path: path.name):
-        try:
-            if not path.is_file() or is_ignored(path):
-                continue
-        except OSError:
-            continue
-        yield path
-
-
 def _claim_slot(stream_name, filename, video_path):
     """Register (or refresh) the slot binding stream_name to filename.
 
@@ -449,28 +419,8 @@ def _claim_slot(stream_name, filename, video_path):
     return True
 
 
-def start_initial_streams(files):
-    """Claim a slot for every file in the startup snapshot and start them all."""
-    with _state_lock:
-        for filename in files:
-            path = VIDEOS_DIR / filename
-            _claim_slot(sanitize_name(path), filename, str(path))
-        targets = list(streams_by_name)
-
-    count = 0
-    for stream_name in targets:
-        if start_stream(stream_name, log_start=False):
-            count += 1
-
-    log.info("Initial sync complete: %d streams started", count)
-    log_stream_urls()
-
-
 def handle_create(filepath):
     path = Path(filepath)
-    if is_ignored(path):
-        return
-
     stream_name = sanitize_name(path)
     with _state_lock:
         if not _claim_slot(stream_name, path.name, str(path)):
@@ -501,9 +451,6 @@ def handle_delete(filepath):
 
 def handle_modify(filepath):
     path = Path(filepath)
-    if is_ignored(path):
-        return
-
     stream_name = sanitize_name(path)
     with _state_lock:
         if not _claim_slot(stream_name, path.name, str(path)):
@@ -683,113 +630,6 @@ def start_api_server():
         os._exit(1)
 
 
-def snapshot_video_stats():
-    """Return {filename: (mtime, size)} for the streamable files in VIDEOS_DIR.
-
-    Returns None when the directory is unreadable — logged once here so every
-    caller can treat None uniformly as "no information this tick".
-    """
-    files = {}
-    try:
-        for video_path in iter_video_files():
-            try:
-                stat = video_path.stat()
-            except OSError:
-                continue  # vanished between the scan and the stat; next poll sees the delete
-            files[video_path.name] = (stat.st_mtime, stat.st_size)
-    except OSError as e:
-        log.error("Cannot read %s: %s", VIDEOS_DIR, e)
-        return None
-    return files
-
-
-class FileChangeDebouncer:
-    """Turns successive directory snapshots into create/modify/delete events.
-
-    Copying a video into VIDEOS_DIR takes far longer than one poll, so acting
-    immediately would start streaming a truncated file and then restart it on
-    every tick as the copy grows. A create or modify is therefore only reported
-    once its (mtime, size) has held steady for DEBOUNCE_STABLE_POLLS
-    consecutive polls. Deletions are reported immediately; gone is gone.
-    """
-
-    def __init__(self, known_files):
-        self._known = dict(known_files)
-        self._pending = {}  # filename -> (snapshot, consecutive stable polls)
-
-    def poll(self, current_files):
-        """Return (creates, modifies, deletions) for this snapshot."""
-        deletions = [name for name in self._known if name not in current_files]
-        for name in deletions:
-            del self._known[name]
-
-        # Forget files that vanished mid-debounce.
-        for name in list(self._pending):
-            if name not in current_files:
-                del self._pending[name]
-
-        creates, modifies = [], []
-        for name, current in current_files.items():
-            previous = self._known.get(name)
-            if previous == current:
-                self._pending.pop(name, None)
-                continue
-            snapshot, stable_polls = self._pending.get(name, (None, 0))
-            if snapshot != current:
-                self._pending[name] = (current, 0)
-                continue
-            stable_polls += 1
-            if stable_polls < DEBOUNCE_STABLE_POLLS:
-                self._pending[name] = (current, stable_polls)
-                continue
-            if previous is None:
-                creates.append(name)
-            else:
-                modifies.append(name)
-            self._known[name] = current
-            del self._pending[name]
-
-        return creates, modifies, deletions
-
-
-def watch_directory(initial_files):
-    """Watch directory for changes using polling (works on network filesystems).
-
-    initial_files is the same snapshot start_initial_streams claimed slots
-    from, so files present at boot are baselined exactly as claimed — nothing
-    can slip between two competing scans.
-
-    Deletions are processed before creates/modifies in each tick so that a
-    rename (delete-then-create with the same stream_name) frees the slot before
-    the new file tries to claim it.
-    """
-    log.info("Watching %s for changes (polling mode)...", VIDEOS_DIR)
-
-    last_cleanup = time.time()
-    debouncer = FileChangeDebouncer(initial_files)
-
-    while True:
-        time.sleep(POLL_INTERVAL_SEC)
-
-        current_files = snapshot_video_stats()
-        if current_files is not None:
-            creates, modifies, deletions = debouncer.poll(current_files)
-            # Process deletions first so renames into a now-free slot work.
-            for filename in deletions:
-                handle_delete(VIDEOS_DIR / filename)
-            for filename in creates:
-                handle_create(VIDEOS_DIR / filename)
-            for filename in modifies:
-                handle_modify(VIDEOS_DIR / filename)
-
-        refresh_output_reachable()
-        recover_udp_outputs()
-
-        if time.time() - last_cleanup > 30:
-            cleanup_dead_processes()
-            last_cleanup = time.time()
-
-
 def main():
     threading.current_thread().name = "MainThread"
     log.info("Stream supervisor starting...")
@@ -800,10 +640,26 @@ def main():
     api_thread = threading.Thread(target=start_api_server, name="APIServer", daemon=True)
     api_thread.start()
 
-    log.info("Scanning %s for video files...", VIDEOS_DIR)
-    files = snapshot_video_stats() or {}
-    start_initial_streams(files)
-    watch_directory(files)
+    # Files already present at boot arrive as first-batch creates — startup is
+    # not a special case, and a file still mid-copy when we start is debounced
+    # like any other.
+    last_cleanup = time.time()
+    for creates, modifies, deletions in filewatch.watch(VIDEOS_DIR, is_ignored):
+        # Deletions first so a rename (delete + create sharing a stream_name)
+        # frees the slot before the new file tries to claim it.
+        for filename in deletions:
+            handle_delete(VIDEOS_DIR / filename)
+        for filename in creates:
+            handle_create(VIDEOS_DIR / filename)
+        for filename in modifies:
+            handle_modify(VIDEOS_DIR / filename)
+
+        refresh_output_reachable()
+        recover_udp_outputs()
+
+        if time.time() - last_cleanup > 30:
+            cleanup_dead_processes()
+            last_cleanup = time.time()
 
 
 if __name__ == "__main__":
