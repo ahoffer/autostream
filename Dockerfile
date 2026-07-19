@@ -14,7 +14,7 @@ WORKDIR /app
 RUN mkdir -p /app/videos
 
 COPY stream-video.sh /app/stream-video.sh
-COPY stream-supervisor.py /app/stream-supervisor.py
+COPY stream_supervisor.py /app/stream_supervisor.py
 COPY streams.py /app/streams.py
 COPY streamapi.py /app/streamapi.py
 COPY filewatch.py /app/filewatch.py

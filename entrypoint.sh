@@ -26,7 +26,7 @@ export MTX_HLSADDRESS=":${MEDIAMTX_HLS_PORT:?MEDIAMTX_HLS_PORT is not set}"
 MEDIAMTX_PID=$!
 
 # Start stream supervisor in background
-python3 /app/stream-supervisor.py &
+python3 /app/stream_supervisor.py &
 SUPERVISOR_PID=$!
 
 # Both children are vital: playback needs mediamtx, discovery and control need

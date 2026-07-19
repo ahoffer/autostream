@@ -11,7 +11,7 @@
 #      data/KLV copied through untouched. This is the metadata-preserving feed.
 #
 # Video is transcoded to a clean GOP structure to fix looping artifacts and to
-# honor the bitrate cap; stream-supervisor.py decides whether a cap applies and
+# honor the bitrate cap; stream_supervisor.py decides whether a cap applies and
 # passes just the value (for example "2M"), empty for none.
 #
 # Every flag is explained once, in the FLAG EXPLANATIONS table at the bottom.

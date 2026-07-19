@@ -10,7 +10,7 @@ hls: yes
 
 # Paths configuration
 # All videos in /app/videos are automatically discovered and streamed
-# by the stream-supervisor.py process
+# by the stream_supervisor.py process
 paths:
   all:
     source: publisher
