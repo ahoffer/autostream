@@ -426,7 +426,8 @@ def _claim_slot(stream_name, filename, video_path):
         )
         return True
     if stream.filename != filename:
-        log.warning("Stream name collision: %s already owned by %r; skipping %r",
+        log.warning("Stream name collision: %s already owned by %r; skipping %r "
+                    "(after removing the owner, touch this file or restart to stream it)",
                     stream_name, stream.filename, filename)
         return False
     stream.video_path = video_path
@@ -442,23 +443,6 @@ def scan_videos():
     with _state_lock:
         for video_path in iter_video_files():
             _claim_slot(sanitize_name(video_path), video_path.name, str(video_path))
-
-
-def claim_existing_file_for_stream(stream_name):
-    """Claim a previously skipped colliding file after the owner disappears."""
-    try:
-        candidates = list(iter_video_files())
-    except OSError as e:
-        log.warning("Cannot scan for replacement stream %s: %s", stream_name, e)
-        return None
-
-    with _state_lock:
-        if stream_name in streams_by_name:
-            return None
-        for path in candidates:
-            if sanitize_name(path) == stream_name and _claim_slot(stream_name, path.name, str(path)):
-                return path
-    return None
 
 
 def sync_videos():
@@ -509,11 +493,6 @@ def handle_delete(filepath):
         stop_stream(stream_name)
     with _state_lock:
         streams_by_name.pop(stream_name, None)
-
-    replacement = claim_existing_file_for_stream(stream_name)
-    if replacement is not None:
-        log.info("Video added: %s", replacement.name)
-        start_stream(stream_name)
 
 
 def handle_modify(filepath):
