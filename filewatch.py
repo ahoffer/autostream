@@ -2,14 +2,15 @@
 Polling directory watcher.
 
 inotify does not see changes made by other clients on network filesystems
-(CIFS/NFS), so this watcher polls: every tick it snapshots the directory's
+(CIFS/NFS), so this watcher polls: it periodically snapshots the directory's
 (mtime, size) state and diffs successive snapshots into events.
 
-The single entry point is watch(), a generator that yields one debounced
-(creates, modifies, deletions) batch per tick. Files present when the watch
-starts are reported as creates once they pass the same stability check as
-any other file — to the caller, startup looks exactly like someone dropping
-files into an already-watched directory.
+The single entry point is watch(), a generator that yields the debounced
+(creates, modifies, deletions) after every poll — empty lists when nothing
+changed. Files present when the watch starts are reported as creates once
+they pass the same stability check as any other file — to the caller,
+startup looks exactly like someone dropping files into an already-watched
+directory.
 """
 import logging
 import math
@@ -26,7 +27,7 @@ class FileChangeDebouncer:
 
     Copying a file into a watched directory takes far longer than one poll, so
     reporting immediately would hand the caller a truncated file and then a
-    modify event on every tick as the copy grows. The first poll to see a new
+    modify event on every poll as the copy grows. The first poll to see a new
     (mtime, size) registers it as a candidate; each later poll that sees the
     same snapshot confirms it. A create or modify is reported only after
     confirmations_needed consecutive confirmations. Deletions are reported
@@ -74,11 +75,7 @@ class FileChangeDebouncer:
 
 
 def watch(directory, ignore, poll_interval=POLL_INTERVAL_SEC, quiet_period=QUIET_PERIOD):
-    """Yield (creates, modifies, deletions) filename lists, one batch per tick.
-
-    Never returns. A batch is yielded every tick even when nothing changed, so
-    the caller can piggyback periodic work on the poll cadence. An unreadable
-    directory yields an empty batch rather than fabricating deletions.
+    """Yield (creates, modifies, deletions) filename lists after every poll.
 
     quiet_period is in seconds, rounded up to whole polls, so a change is
     reported at most one poll after the file has held steady that long.
@@ -90,7 +87,7 @@ def watch(directory, ignore, poll_interval=POLL_INTERVAL_SEC, quiet_period=QUIET
     log.info("Watching %s for changes (polling mode)...", directory)
     debouncer = FileChangeDebouncer(math.ceil(quiet_period / poll_interval))
     while True:
-        # filename -> (mtime, size): keyed by name for O(1) diffing between ticks.
+        # filename -> (mtime, size): keyed by name for O(1) diffing between polls.
         files = {}
         try:
             for path in sorted(directory.iterdir(), key=lambda entry: entry.name):
