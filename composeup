@@ -1,0 +1,39 @@
+#!/bin/sh
+# Start the stack via docker compose.
+#
+# mediamtx reads its config only at startup, and the single-file bind mount
+# won't make a running container pick up edits, so force a recreate only when
+# mediamtx.yml changed since the last run. Also drop the container if its
+# attached external-network id has drifted (for example the external network
+# was recreated), so compose can recreate it instead of failing against a
+# dead id.
+set -eu
+
+CONFIG_CACHE=.generated/mediamtx.yml
+
+set -a
+. ./.env
+set +a
+
+mkdir -p "$(dirname "$CONFIG_CACHE")"
+recreate=
+if [ ! -f "$CONFIG_CACHE" ] || ! cmp -s mediamtx.yml "$CONFIG_CACHE"; then
+  recreate=--force-recreate
+fi
+cp mediamtx.yml "$CONFIG_CACHE"
+
+if docker inspect "$CONTAINER_NAME" >/dev/null 2>&1; then
+  docker inspect "$CONTAINER_NAME" \
+    --format '{{range $n, $v := .NetworkSettings.Networks}}{{$n}} {{$v.NetworkID}}{{"\n"}}{{end}}' \
+    | while read -r net id; do
+        [ -z "$net" ] && continue
+        cur=$(docker network inspect "$net" --format '{{.Id}}' 2>/dev/null || true)
+        if [ "$cur" != "$id" ]; then
+          echo "Removing $CONTAINER_NAME: network $net id drifted ($id -> ${cur:-missing})"
+          docker rm -f "$CONTAINER_NAME" >/dev/null
+          break
+        fi
+      done
+fi
+
+docker compose up -d $recreate

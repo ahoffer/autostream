@@ -5,10 +5,8 @@
 
 .DEFAULT_GOAL := help
 
-# Copy of the last-applied mediamtx config. compose-up compares against it so
-# it can force-recreate the container only when the config changed. Direct
-# `docker compose up` does not depend on this cache existing.
-CONFIG_CACHE := .generated/mediamtx.yml
+# .generated/ holds composeup's copy of the last-applied mediamtx config, kept
+# so it can force-recreate the container only when the config changed.
 
 help:  ## List available targets
 	@awk 'BEGIN {FS = ":.*## "} /^[a-zA-Z0-9_-]+:.*## / {printf "  %-20s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -21,30 +19,8 @@ build:  ## Build the container image
 	@# missing or broken". Drop the override only once buildx is installed.
 	set -a && . ./.env && DOCKER_BUILDKIT=0 docker build -t $$CONTAINER_NAME:$$VERSION .
 
-compose-up:  ## Start via docker compose
-	@# mediamtx reads its config only at startup, and the single-file bind mount
-	@# won't make a running container pick up edits, so force a recreate only
-	@# when the config actually changed. Also drop the container if its attached
-	@# external-network id has drifted (for example the external network was
-	@# recreated), so compose can recreate it instead of failing against a dead id.
-	@set -a && . ./.env && \
-	mkdir -p $(dir $(CONFIG_CACHE)); \
-	if [ ! -f $(CONFIG_CACHE) ] || ! cmp -s mediamtx.yml $(CONFIG_CACHE); then \
-		recreate=--force-recreate; else recreate=; fi; \
-	cp mediamtx.yml $(CONFIG_CACHE); \
-	if docker inspect "$$CONTAINER_NAME" >/dev/null 2>&1; then \
-		docker inspect "$$CONTAINER_NAME" \
-		  --format '{{range $$n, $$v := .NetworkSettings.Networks}}{{$$n}} {{$$v.NetworkID}}{{"\n"}}{{end}}' \
-		  | while read -r net id; do \
-		      [ -z "$$net" ] && continue; \
-		      cur=$$(docker network inspect "$$net" --format '{{.Id}}' 2>/dev/null || true); \
-		      if [ "$$cur" != "$$id" ]; then \
-		          echo "Removing $$CONTAINER_NAME: network $$net id drifted ($$id -> $${cur:-missing})"; \
-		          docker rm -f "$$CONTAINER_NAME" >/dev/null; break; \
-		      fi; \
-		    done; \
-	fi; \
-	docker compose up -d $$recreate
+compose-up:  ## Start via docker compose (recreates on config change; see composeup)
+	./composeup
 
 compose-down:  ## Stop the docker compose stack
 	docker compose down
@@ -53,7 +29,7 @@ compose-logs:  ## Tail docker compose logs
 	docker compose logs -f
 
 clean:  ## Remove the config cache
-	rm -rf $(dir $(CONFIG_CACHE))
+	rm -rf .generated
 
 # ---- systemd service ----
 # Install autostream as a systemd service that wraps the docker compose flow.
