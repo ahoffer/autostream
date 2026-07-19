@@ -92,7 +92,6 @@ template at startup.
 | `MEDIAMTX_HLS_PORT` | HLS HTTP port | `8888` |
 | `MEDIAMTX_RTP_PORT` | RTP UDP port | `8000` |
 | `MEDIAMTX_RTCP_PORT` | RTCP UDP port | `8001` |
-| `MEDIAMTX_API_PORT` | MediaMTX API port | `9997` |
 | `STREAM_API_PORT` | Stream control UI/API port | `8080` |
 
 ## Commands

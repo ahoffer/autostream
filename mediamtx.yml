@@ -2,20 +2,6 @@
 # Change this value and restart to adjust logging verbosity
 logLevel: error
 
-# API configuration (for mediamtx-connect)
-api: yes
-apiAddress: :${MEDIAMTX_API_PORT}
-
-# Allow API access from any IP (needed for Docker networking)
-authInternalUsers:
-  - user: any
-    pass:
-    ips: []
-    permissions:
-      - action: api
-      - action: read
-      - action: publish
-
 # Protocol listeners
 rtspAddress: :${MEDIAMTX_RTSP_PORT}
 rtpAddress: :${MEDIAMTX_RTP_PORT}
