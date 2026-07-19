@@ -78,8 +78,8 @@ Stream names are sanitized from filenames:
 
 Edit `.env` file:
 
-Docker Compose reads `.env` directly, and the container renders the MediaMTX
-template at startup.
+Docker Compose reads `.env` directly; `mediamtx.yml` is mounted into the
+container as-is.
 
 | Variable | Description | Default |
 |----------|-------------|---------|
@@ -127,7 +127,7 @@ make compose-down
 ```
 
 Plain `docker compose up -d` also works after the image is built; `make
-compose-up` adds config-change detection so template or `.env` edits recreate the
+compose-up` adds config-change detection so `mediamtx.yml` edits recreate the
 container when needed.
 
 **Note:** Docker Compose uses an external network `octo-cx-network`. Create it first if it doesn't exist:

@@ -5,11 +5,10 @@
 
 .DEFAULT_GOAL := help
 
-# Rendered mediamtx config cache. compose-up fills in the ports from .env via
-# envsubst so it can force-recreate the container only when the effective config
-# changes. docker-compose.yml mounts the checked-in template instead, so direct
-# `docker compose up` does not depend on this generated file existing.
-GENERATED_CONFIG := .generated/mediamtx.yml
+# Copy of the last-applied mediamtx config. compose-up compares against it so
+# it can force-recreate the container only when the config changed. Direct
+# `docker compose up` does not depend on this cache existing.
+CONFIG_CACHE := .generated/mediamtx.yml
 
 help:  ## List available targets
 	@awk 'BEGIN {FS = ":.*## "} /^[a-zA-Z0-9_-]+:.*## / {printf "  %-20s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -30,20 +29,15 @@ build:  ## Build the container image
 
 compose-up:  ## Start via docker compose
 	@# mediamtx reads its config only at startup, and the single-file bind mount
-	@# won't make a running container pick up edits, so render the config and
-	@# force a recreate only when it actually changed. Also drop the container if
-	@# its attached external-network id has drifted (for example the external
-	@# network was recreated), so compose can recreate it instead of failing
-	@# against a dead id.
+	@# won't make a running container pick up edits, so force a recreate only
+	@# when the config actually changed. Also drop the container if its attached
+	@# external-network id has drifted (for example the external network was
+	@# recreated), so compose can recreate it instead of failing against a dead id.
 	@set -a && . ./.env && \
-	mkdir -p $(dir $(GENERATED_CONFIG)); \
-	tmp=$$(mktemp); envsubst < mediamtx.yml > "$$tmp"; \
-	if [ -d $(GENERATED_CONFIG) ]; then \
-		rmdir $(GENERATED_CONFIG) || { rm -f "$$tmp"; echo "$(GENERATED_CONFIG) is a directory and is not empty"; exit 1; }; \
-	fi; \
-	if [ ! -f $(GENERATED_CONFIG) ] || ! cmp -s "$$tmp" $(GENERATED_CONFIG); then \
+	mkdir -p $(dir $(CONFIG_CACHE)); \
+	if [ ! -f $(CONFIG_CACHE) ] || ! cmp -s mediamtx.yml $(CONFIG_CACHE); then \
 		recreate=--force-recreate; else recreate=; fi; \
-	mv "$$tmp" $(GENERATED_CONFIG); \
+	cp mediamtx.yml $(CONFIG_CACHE); \
 	if docker inspect "$$CONTAINER_NAME" >/dev/null 2>&1; then \
 		docker inspect "$$CONTAINER_NAME" \
 		  --format '{{range $$n, $$v := .NetworkSettings.Networks}}{{$$n}} {{$$v.NetworkID}}{{"\n"}}{{end}}' \
@@ -66,7 +60,7 @@ compose-logs:  ## Tail docker compose logs
 
 clean:  ## Remove generated config cache and saved image tarballs
 	rm -f *.tar
-	rm -rf $(dir $(GENERATED_CONFIG))
+	rm -rf $(dir $(CONFIG_CACHE))
 
 # ---- systemd service ----
 # Install autostream as a systemd service that wraps the docker compose flow.

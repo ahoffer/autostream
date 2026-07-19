@@ -2,14 +2,16 @@
 # Change this value and restart to adjust logging verbosity
 logLevel: error
 
-# Protocol listeners
-rtspAddress: :${MEDIAMTX_RTSP_PORT}
-rtpAddress: :${MEDIAMTX_RTP_PORT}
-rtcpAddress: :${MEDIAMTX_RTCP_PORT}
+# Protocol listeners. The ports are MediaMTX's own defaults and mirror .env,
+# which docker-compose.yml (port mappings) and stream-supervisor.py (URLs,
+# readiness check) consume.
+rtspAddress: :8554
+rtpAddress: :8000
+rtcpAddress: :8001
 
 # Enable HLS
 hls: yes
-hlsAddress: :${MEDIAMTX_HLS_PORT}
+hlsAddress: :8888
 
 # Paths configuration
 # All videos in /app/videos are automatically discovered and streamed
