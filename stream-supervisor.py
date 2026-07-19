@@ -458,23 +458,12 @@ def _claim_slot(stream_name, filename, video_path):
     return True
 
 
-def scan_videos():
-    """Scan the video directory and claim a stream slot for every file found."""
-    if not VIDEOS_DIR.exists():
-        log.error("Directory does not exist: %s", VIDEOS_DIR)
-        return
-
+def start_initial_streams(files):
+    """Claim a slot for every file in the startup snapshot and start them all."""
     with _state_lock:
-        for video_path in iter_video_files():
-            _claim_slot(sanitize_name(video_path), video_path.name, str(video_path))
-
-
-def sync_videos():
-    """Scan videos and start all streams"""
-    log.info("Scanning %s for video files...", VIDEOS_DIR)
-    scan_videos()
-
-    with _state_lock:
+        for filename in files:
+            path = VIDEOS_DIR / filename
+            _claim_slot(sanitize_name(path), filename, str(path))
         targets = list(streams_by_name)
 
     count = 0
@@ -702,15 +691,23 @@ def start_api_server():
         os._exit(1)
 
 
-def get_video_files():
-    """Return {filename: (mtime, size)} for all streamable files in VIDEOS_DIR."""
+def snapshot_video_stats():
+    """Return {filename: (mtime, size)} for the streamable files in VIDEOS_DIR.
+
+    Returns None when the directory is unreadable — logged once here so every
+    caller can treat None uniformly as "no information this tick".
+    """
     files = {}
-    for video_path in iter_video_files():
-        try:
-            stat = video_path.stat()
-        except OSError:
-            continue  # vanished between the scan and the stat; next poll sees the delete
-        files[video_path.name] = (stat.st_mtime, stat.st_size)
+    try:
+        for video_path in iter_video_files():
+            try:
+                stat = video_path.stat()
+            except OSError:
+                continue  # vanished between the scan and the stat; next poll sees the delete
+            files[video_path.name] = (stat.st_mtime, stat.st_size)
+    except OSError as e:
+        log.error("Cannot read %s: %s", VIDEOS_DIR, e)
+        return None
     return files
 
 
@@ -762,8 +759,12 @@ class FileChangeDebouncer:
         return creates, modifies, deletions
 
 
-def watch_directory():
+def watch_directory(initial_files):
     """Watch directory for changes using polling (works on network filesystems).
+
+    initial_files is the same snapshot start_initial_streams claimed slots
+    from, so files present at boot are baselined exactly as claimed — nothing
+    can slip between two competing scans.
 
     Deletions are processed before creates/modifies in each tick so that a
     rename (delete-then-create with the same stream_name) frees the slot before
@@ -773,23 +774,12 @@ def watch_directory():
 
     last_cleanup = time.time()
     refresh_output_reachable()
-    try:
-        known_files = get_video_files()
-    except Exception as e:
-        log.error("Error scanning directory: %s", e)
-        known_files = {}
-
-    debouncer = FileChangeDebouncer(known_files)
+    debouncer = FileChangeDebouncer(initial_files)
 
     while True:
         time.sleep(POLL_INTERVAL_SEC)
 
-        try:
-            current_files = get_video_files()
-        except Exception as e:
-            log.error("Error scanning directory: %s", e)
-            current_files = None
-
+        current_files = snapshot_video_stats()
         if current_files is not None:
             creates, modifies, deletions = debouncer.poll(current_files)
             # Process deletions first so renames into a now-free slot work.
@@ -817,8 +807,10 @@ def main():
     api_thread = threading.Thread(target=start_api_server, name="APIServer", daemon=True)
     api_thread.start()
 
-    sync_videos()
-    watch_directory()
+    log.info("Scanning %s for video files...", VIDEOS_DIR)
+    files = snapshot_video_stats() or {}
+    start_initial_streams(files)
+    watch_directory(files)
 
 
 if __name__ == "__main__":
