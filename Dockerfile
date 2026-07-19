@@ -13,16 +13,16 @@ WORKDIR /app
 # even when the container runs without a bind mount.
 RUN mkdir -p /app/videos
 
-COPY stream-video.sh /usr/local/bin/stream-video.sh
+COPY stream-video.sh /app/stream-video.sh
 COPY stream-supervisor.py /app/stream-supervisor.py
+COPY streams.py /app/streams.py
+COPY streamapi.py /app/streamapi.py
 COPY filewatch.py /app/filewatch.py
 COPY index.html /app/index.html
 COPY entrypoint.sh /app/entrypoint.sh
 
-# All app files and dirs owned by autostream (UID/GID 1000); stream-video.sh
-# stays root-owned but world-executable.
-RUN chown -R autostream:autostream /app && \
-    chmod 755 /usr/local/bin/stream-video.sh
+# All app files and dirs owned by autostream (UID/GID 1000).
+RUN chown -R autostream:autostream /app
 
 # Switch to non-root user — every process spawned from the entrypoint
 # (mediamtx, python3, ffmpeg) runs as UID 1000.

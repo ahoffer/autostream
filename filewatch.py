@@ -16,7 +16,7 @@ import logging
 import math
 import time
 
-log = logging.getLogger("autostream")
+log = logging.getLogger(__name__)
 
 POLL_INTERVAL_SEC = 2
 QUIET_PERIOD = 4  # seconds a file's (mtime, size) must hold steady before a change is reported
