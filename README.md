@@ -55,10 +55,9 @@ service (on `octo-cx-network`), which listens on `udp://0.0.0.0:<port>`, decodes
 the KLV, and publishes it to the AMQP `stream.klv` topic that cx-edge consumes
 for geolocation. Add each feed to cx-search like any other stream, using the
 `udp://0.0.0.0:<port>` the UI/API reports for it — there is no separate
-registration step beyond adding the stream.
-
-`video-streaming` is the cx-search service that ingests video/KLV UDP feeds on
-`40000-40100/udp`; see that stack's docs for details.
+registration step beyond adding the stream. Keep `UDP_BASE_PORT`/`UDP_LAST_PORT`
+inside video-streaming's own ingest range (`UDP_START_PORT`..`UDP_END_PORT`,
+`40000-40100` by default) or it will not be listening where autostream pushes.
 
 UDP is push, not pull. If `OUTPUT_HOST` does not resolve (for example the
 cx-search stack isn't running), autostream logs a warning and streams RTSP/HLS
@@ -80,10 +79,11 @@ Stream names are sanitized from filenames:
 
 Edit `.env` file:
 
-Docker Compose reads `.env` directly; `mediamtx.yml` is mounted into the
-container as-is. Every variable must be set — `.env` is the single source of
-truth and there are no in-code fallbacks. The Default column shows the shipped
-`.env` values.
+Docker Compose reads `.env` directly and passes the whole file through to the
+container; `mediamtx.yml` is mounted in as-is. `.env` is the single source of
+truth: every variable must be set, and the only one that may be empty is
+`MAX_VIDEO_BITRATE` (empty disables the cap). The Default column shows the
+shipped `.env` values.
 
 | Variable | Description | Default |
 |----------|-------------|---------|
