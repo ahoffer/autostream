@@ -5,21 +5,12 @@ services:
       - ./mediamtx.yml:/app/mediamtx.yml:ro
       - ./videos:/app/videos:ro
     container_name: ${CONTAINER_NAME}
-    hostname: ${CONTAINER_NAME}
     restart: unless-stopped
     stop_grace_period: 1s
-    environment:
-      - MEDIAMTX_RTSP_PORT=${MEDIAMTX_RTSP_PORT}
-      - MEDIAMTX_HLS_PORT=${MEDIAMTX_HLS_PORT}
-      - MEDIAMTX_RTP_PORT=${MEDIAMTX_RTP_PORT}
-      - MEDIAMTX_RTCP_PORT=${MEDIAMTX_RTCP_PORT}
-      - STREAM_API_PORT=${STREAM_API_PORT}
-      - LOG_LEVEL=${LOG_LEVEL}
-      - CONTAINER_NAME=${CONTAINER_NAME}
-      - MAX_VIDEO_BITRATE=${MAX_VIDEO_BITRATE}
-      - OUTPUT_HOST=${OUTPUT_HOST}
-      - UDP_BASE_PORT=${UDP_BASE_PORT}
-      - UDP_LAST_PORT=${UDP_LAST_PORT}
+    # .env is the single source of truth: pass it through whole rather than
+    # restating each key here.
+    env_file:
+      - .env
     ports:
       - "9554:${MEDIAMTX_RTSP_PORT}"       # RTSP
       - "9322:${MEDIAMTX_HLS_PORT}"        # HLS
