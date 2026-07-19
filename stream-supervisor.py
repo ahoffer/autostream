@@ -381,9 +381,6 @@ def get_stream_status():
     with _state_lock:
         for stream in streams_by_name.values():
             urls = stream.urls()
-            # udp_enabled means the feed is really live: the stream is running, it
-            # launched with a UDP output, and the consumer resolves right now.
-            # udp_reason explains an inactive feed so the UI can say why.
             udp_active = stream.running and stream.udp_enabled and reachable
             if udp_active:
                 udp_reason = None
@@ -402,7 +399,7 @@ def get_stream_status():
                 "rtsp_url": urls["rtsp"],
                 "hls_url": urls["hls"],
                 "udp_url": urls["udp"],
-                "udp_enabled": udp_active,
+                "udp_active": udp_active,
                 "udp_reason": udp_reason,
             })
     return result
