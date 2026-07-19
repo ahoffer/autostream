@@ -134,7 +134,7 @@ class Stream:
 # Shared state. Mutations and reads MUST hold _state_lock — the API server runs in
 # threads and the poll loop runs in the main thread, both touching this state.
 _state_lock = threading.RLock()
-streams_by_name = {}          # stream_name -> Stream, one entry per video file present
+_streams_by_name = {}          # stream_name -> Stream, one entry per video file present
 
 # UDP port allocator. Separate from Stream on purpose: an assignment lasts for the
 # whole process lifetime, outliving the slot, so a video that is removed and put
@@ -294,7 +294,7 @@ def wait_for_mediamtx():
 def start_stream(stream_name, loop_count=None, log_start=True):
     """Start a claimed stream slot. loop_count None keeps the last requested value."""
     with _state_lock:
-        stream = streams_by_name.get(stream_name)
+        stream = _streams_by_name.get(stream_name)
         if stream is None:
             log.warning("Cannot start unclaimed stream: %s", stream_name)
             return False
@@ -316,7 +316,7 @@ def start_stream(stream_name, loop_count=None, log_start=True):
     udp_target = f"{OUTPUT_HOST}:{udp_port}" if udp_enabled else ""
 
     with _state_lock:
-        stream = streams_by_name.get(stream_name)
+        stream = _streams_by_name.get(stream_name)
         if stream is None or stream.occupied:
             # Another thread claimed or started the slot while we were probing.
             log.warning("Stream changed while starting: %s", stream_name)
@@ -343,7 +343,7 @@ def start_stream(stream_name, loop_count=None, log_start=True):
 
 def stop_stream(stream_name):
     with _state_lock:
-        stream = streams_by_name.get(stream_name)
+        stream = _streams_by_name.get(stream_name)
         if stream is None or not stream.occupied:
             log.warning("Stream not running: %s", stream_name)
             return False
@@ -371,7 +371,7 @@ def stop_stream(stream_name):
                           stream_name, process.pid)
                 return True
         with _state_lock:
-            current = streams_by_name.get(stream_name)
+            current = _streams_by_name.get(stream_name)
             if current is not None and current.process is process:
                 current.clear_process()
         log.info("Stopped stream: %s", stream_name)
@@ -387,11 +387,33 @@ def restart_stream(stream_name, loop_count=None):
     loop_count None keeps the last requested value.
     """
     with _state_lock:
-        stream = streams_by_name.get(stream_name)
+        stream = _streams_by_name.get(stream_name)
         occupied = stream is not None and stream.occupied
     if occupied:
         stop_stream(stream_name)
     return start_stream(stream_name, loop_count)
+
+
+def stream_exists(stream_name):
+    """True if a slot is registered under this name."""
+    with _state_lock:
+        return stream_name in _streams_by_name
+
+
+def stop_all_streams():
+    """Stop every slot that currently owns a process."""
+    with _state_lock:
+        names = [s.name for s in _streams_by_name.values() if s.occupied]
+    for name in names:
+        stop_stream(name)
+
+
+def start_all_streams():
+    """Start every idle slot, keeping each one's last requested loop count."""
+    with _state_lock:
+        names = [s.name for s in _streams_by_name.values() if not s.occupied]
+    for name in names:
+        start_stream(name)
 
 
 def get_stream_status():
@@ -402,7 +424,7 @@ def get_stream_status():
     # pushing UDP into the void otherwise, so the start-time flag alone would lie.
     reachable = _output_reachable
     with _state_lock:
-        for stream in streams_by_name.values():
+        for stream in _streams_by_name.values():
             urls = stream.urls()
             udp_active = stream.running and stream.udp_enabled and reachable
             if udp_active:
@@ -438,9 +460,9 @@ def _claim_slot(stream_name, filename, video_path):
     there was a collision with a different file (caller should skip).
     Must be called under _state_lock.
     """
-    stream = streams_by_name.get(stream_name)
+    stream = _streams_by_name.get(stream_name)
     if stream is None:
-        streams_by_name[stream_name] = Stream(
+        _streams_by_name[stream_name] = Stream(
             name=stream_name,
             filename=filename,
             video_path=video_path,
@@ -471,7 +493,7 @@ def handle_delete(filepath):
     stream_name = sanitize_name(path)
 
     with _state_lock:
-        stream = streams_by_name.get(stream_name)
+        stream = _streams_by_name.get(stream_name)
         if stream is None or stream.filename != path.name:
             # Slot belongs to a different file (or never existed) — don't touch it.
             owner = stream.filename if stream is not None else None
@@ -483,7 +505,7 @@ def handle_delete(filepath):
     if was_occupied:
         stop_stream(stream_name)
     with _state_lock:
-        streams_by_name.pop(stream_name, None)
+        _streams_by_name.pop(stream_name, None)
 
 
 def handle_modify(filepath):
@@ -492,7 +514,7 @@ def handle_modify(filepath):
     with _state_lock:
         if not _claim_slot(stream_name, path.name, str(path)):
             return
-        running = streams_by_name[stream_name].running
+        running = _streams_by_name[stream_name].running
 
     log.info("Video updated: %s", path.name)
     if running:
@@ -501,7 +523,7 @@ def handle_modify(filepath):
 
 def cleanup_dead_processes():
     with _state_lock:
-        snapshot = [(s.name, s.process) for s in streams_by_name.values() if s.occupied]
+        snapshot = [(s.name, s.process) for s in _streams_by_name.values() if s.occupied]
 
     dead = []
     for stream_name, process in snapshot:
@@ -519,7 +541,7 @@ def cleanup_dead_processes():
     restarted = []
     for stream_name, process in dead:
         with _state_lock:
-            current = streams_by_name.get(stream_name)
+            current = _streams_by_name.get(stream_name)
             # If a concurrent /start replaced our entry with a fresh process,
             # don't orphan it — leave the new process alone.
             if current is None or current.process is not process:
@@ -565,7 +587,7 @@ def recover_udp_outputs():
     if not _output_reachable:
         return
     with _state_lock:
-        pending = [s.name for s in streams_by_name.values()
+        pending = [s.name for s in _streams_by_name.values()
                    if s.running and not s.udp_enabled and s.udp_port is not None]
     for name in pending:
         restart_stream(name)
@@ -614,16 +636,10 @@ class StreamHandler(BaseHTTPRequestHandler):
             # always carry an action segment, so a stream that happens to be
             # named stop-all keeps its own start/stop routes.
             if path_parts[2] == 'stop-all':
-                with _state_lock:
-                    names = [s.name for s in streams_by_name.values() if s.occupied]
-                for name in names:
-                    stop_stream(name)
+                stop_all_streams()
                 self.send_json({"success": True})
             elif path_parts[2] == 'start-all':
-                with _state_lock:
-                    candidates = [s.name for s in streams_by_name.values() if not s.occupied]
-                for name in candidates:
-                    start_stream(name)
+                start_all_streams()
                 self.send_json({"success": True})
             else:
                 self.send_json({"error": "Unknown action"}, 400)
@@ -631,9 +647,7 @@ class StreamHandler(BaseHTTPRequestHandler):
 
         stream_name, action = path_parts[2], path_parts[3]
         if action == 'start':
-            with _state_lock:
-                stream = streams_by_name.get(stream_name)
-            if stream is None:
+            if not stream_exists(stream_name):
                 self.send_json({"error": "Stream not found"}, 404)
                 return
             query = parse_qs(parsed.query)
