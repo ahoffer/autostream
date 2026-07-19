@@ -629,55 +629,56 @@ class StreamHandler(BaseHTTPRequestHandler):
         parsed = urlparse(self.path)
         path_parts = parsed.path.strip('/').split('/')
 
-        if len(path_parts) >= 3 and path_parts[0] == 'api' and path_parts[1] == 'streams':
-            stream_name = path_parts[2]
-            action = path_parts[3] if len(path_parts) > 3 else None
+        if path_parts[:2] != ['api', 'streams'] or len(path_parts) not in (3, 4):
+            self.send_json({"error": "Not found"}, 404)
+            return
 
-            if stream_name == 'stop-all':
+        if len(path_parts) == 3:
+            # No action segment means a collective operation. Individual streams
+            # always carry an action segment, so a stream that happens to be
+            # named stop-all keeps its own start/stop routes.
+            if path_parts[2] == 'stop-all':
                 with _state_lock:
                     names = [s.name for s in streams_by_name.values() if s.occupied]
                 for name in names:
                     stop_stream(name)
                 self.send_json({"success": True})
-                return
-
-            if stream_name == 'start-all':
+            elif path_parts[2] == 'start-all':
                 with _state_lock:
                     candidates = [s.name for s in streams_by_name.values() if not s.occupied]
                 for name in candidates:
                     start_stream(name)
                 self.send_json({"success": True})
-                return
-
-            if action == 'start':
-                with _state_lock:
-                    stream = streams_by_name.get(stream_name)
-                    occupied = stream is not None and stream.occupied
-                if stream is None:
-                    self.send_json({"error": "Stream not found"}, 404)
-                    return
-                query = parse_qs(parsed.query)
-                try:
-                    loop_count = int(query.get('loop', ['-1'])[0])
-                except (TypeError, ValueError):
-                    self.send_json({"error": "Invalid loop count"}, 400)
-                    return
-                if loop_count < -1:
-                    self.send_json({"error": "Invalid loop count"}, 400)
-                    return
-                if occupied:
-                    stop_stream(stream_name)
-                success = start_stream(stream_name, loop_count)
-                self.send_json({"success": success})
-
-            elif action == 'stop':
-                success = stop_stream(stream_name)
-                self.send_json({"success": success})
-
             else:
                 self.send_json({"error": "Unknown action"}, 400)
+            return
+
+        stream_name, action = path_parts[2], path_parts[3]
+        if action == 'start':
+            with _state_lock:
+                stream = streams_by_name.get(stream_name)
+                occupied = stream is not None and stream.occupied
+            if stream is None:
+                self.send_json({"error": "Stream not found"}, 404)
+                return
+            query = parse_qs(parsed.query)
+            try:
+                loop_count = int(query.get('loop', ['-1'])[0])
+            except (TypeError, ValueError):
+                self.send_json({"error": "Invalid loop count"}, 400)
+                return
+            if loop_count < -1:
+                self.send_json({"error": "Invalid loop count"}, 400)
+                return
+            if occupied:
+                stop_stream(stream_name)
+            success = start_stream(stream_name, loop_count)
+            self.send_json({"success": success})
+        elif action == 'stop':
+            success = stop_stream(stream_name)
+            self.send_json({"success": success})
         else:
-            self.send_json({"error": "Not found"}, 404)
+            self.send_json({"error": "Unknown action"}, 400)
 
 def start_api_server():
     try:
