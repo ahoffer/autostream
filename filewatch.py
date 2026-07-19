@@ -12,12 +12,13 @@ any other file — to the caller, startup looks exactly like someone dropping
 files into an already-watched directory.
 """
 import logging
+import math
 import time
 
 log = logging.getLogger("autostream")
 
 POLL_INTERVAL_SEC = 2
-DEBOUNCE_STABLE_POLLS = 2  # ~4s of (mtime, size) stability before committing a change
+QUIET_PERIOD = 4  # seconds a file's (mtime, size) must hold steady before a change is reported
 
 
 class FileChangeDebouncer:
@@ -25,16 +26,17 @@ class FileChangeDebouncer:
 
     Copying a file into a watched directory takes far longer than one poll, so
     reporting immediately would hand the caller a truncated file and then a
-    modify event on every tick as the copy grows. A create or modify is
-    therefore only reported once its (mtime, size) has held steady for
-    stable_polls consecutive polls. Deletions are reported immediately; gone
-    is gone.
+    modify event on every tick as the copy grows. The first poll to see a new
+    (mtime, size) registers it as a candidate; each later poll that sees the
+    same snapshot confirms it. A create or modify is reported only after
+    confirmations_needed consecutive confirmations. Deletions are reported
+    immediately; gone is gone.
     """
 
-    def __init__(self, stable_polls):
-        self._stable_polls = stable_polls
+    def __init__(self, confirmations_needed):
+        self._confirmations_needed = confirmations_needed
         self._known = {}    # filename -> (mtime, size) as last reported to the caller
-        self._pending = {}  # filename -> (snapshot, consecutive stable polls)
+        self._pending = {}  # filename -> (candidate snapshot, confirmations so far)
 
     def poll(self, current_files):
         """Return (creates, modifies, deletions) for this snapshot."""
@@ -53,13 +55,13 @@ class FileChangeDebouncer:
             if previous == current:
                 self._pending.pop(name, None)
                 continue
-            snapshot, stable_polls = self._pending.get(name, (None, 0))
-            if snapshot != current:
+            candidate, confirmations = self._pending.get(name, (None, 0))
+            if candidate != current:
                 self._pending[name] = (current, 0)
                 continue
-            stable_polls += 1
-            if stable_polls < self._stable_polls:
-                self._pending[name] = (current, stable_polls)
+            confirmations += 1
+            if confirmations < self._confirmations_needed:
+                self._pending[name] = (current, confirmations)
                 continue
             if previous is None:
                 creates.append(name)
@@ -71,19 +73,22 @@ class FileChangeDebouncer:
         return creates, modifies, deletions
 
 
-def watch(directory, ignore, poll_interval=POLL_INTERVAL_SEC, stable_polls=DEBOUNCE_STABLE_POLLS):
+def watch(directory, ignore, poll_interval=POLL_INTERVAL_SEC, quiet_period=QUIET_PERIOD):
     """Yield (creates, modifies, deletions) filename lists, one batch per tick.
 
     Never returns. A batch is yielded every tick even when nothing changed, so
     the caller can piggyback periodic work on the poll cadence. An unreadable
     directory yields an empty batch rather than fabricating deletions.
 
+    quiet_period is in seconds, rounded up to whole polls, so a change is
+    reported at most one poll after the file has held steady that long.
+
     Non-files and entries rejected by the ignore predicate are skipped, as are
     entries that vanish mid-scan — the next poll picks those up as deletions.
     Scans in name order so events for simultaneous files arrive deterministically.
     """
     log.info("Watching %s for changes (polling mode)...", directory)
-    debouncer = FileChangeDebouncer(stable_polls)
+    debouncer = FileChangeDebouncer(math.ceil(quiet_period / poll_interval))
     while True:
         # filename -> (mtime, size): keyed by name for O(1) diffing between ticks.
         files = {}
