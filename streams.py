@@ -56,8 +56,14 @@ if LOG_LEVEL not in LOG_LEVEL_NAMES:
     raise RuntimeError(
         f"LOG_LEVEL must be one of {', '.join(LOG_LEVEL_NAMES)}, not {LOG_LEVEL!r}")
 # Documented side effect of debug: the child ffmpeg processes keep their stdio
-# instead of being sent to /dev/null.
+# instead of writing to per-stream log files under FFMPEG_LOG_DIR.
 SHOW_FFMPEG_OUTPUT = LOG_LEVEL == "debug"
+# One log file per stream, truncated at each start so it holds only the current
+# run. When a process dies unexpectedly, the tail is replayed into our log —
+# otherwise the ffmpeg error explaining the death would be lost.
+FFMPEG_LOG_DIR = Path("/tmp/ffmpeg-logs")
+FFMPEG_LOG_DIR.mkdir(exist_ok=True)
+FFMPEG_LOG_TAIL_BYTES = 4096
 MAX_VIDEO_BITRATE = os.getenv("MAX_VIDEO_BITRATE", "")  # empty disables the cap
 MAX_VIDEO_BPS = parse_bitrate(MAX_VIDEO_BITRATE)  # malformed values fail here, at boot
 
@@ -281,6 +287,31 @@ def sanitize_name(filepath):
     return name
 
 
+def _ffmpeg_log_path(stream_name):
+    return FFMPEG_LOG_DIR / f"{stream_name}.log"
+
+
+def _log_ffmpeg_tail(stream_name):
+    """Replay the end of a stream's ffmpeg log after an unexpected death.
+
+    ffmpeg output goes to a per-stream file rather than the console (except in
+    debug mode, where it was already visible), so without this the reason a
+    stream died would be invisible.
+    """
+    if SHOW_FFMPEG_OUTPUT:
+        return
+    try:
+        with open(_ffmpeg_log_path(stream_name), "rb") as f:
+            f.seek(0, os.SEEK_END)
+            f.seek(max(0, f.tell() - FFMPEG_LOG_TAIL_BYTES))
+            tail = f.read().decode(errors="replace").strip()
+    except OSError as e:
+        log.warning("No ffmpeg log for %s: %s", stream_name, e)
+        return
+    if tail:
+        log.warning("ffmpeg output for %s before it died:\n%s", stream_name, tail)
+
+
 def wait_for_mediamtx():
     log.info("Waiting for MediaMTX to be available on port %d...", RTSP_PORT)
     while True:
@@ -330,7 +361,9 @@ def start_stream(stream_name, loop_count=None, log_start=True):
             if SHOW_FFMPEG_OUTPUT:
                 process = subprocess.Popen(cmd)
             else:
-                process = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                # The child keeps its own fd, so closing ours right away is safe.
+                with open(_ffmpeg_log_path(stream_name), "wb") as ffmpeg_log:
+                    process = subprocess.Popen(cmd, stdout=ffmpeg_log, stderr=ffmpeg_log)
         except Exception as e:
             log.error("Failed to start stream %s: %s", stream_name, e)
             return False
@@ -557,6 +590,8 @@ def cleanup_dead_processes():
         if loop_count != -1 and process.returncode == 0:
             log.info("Stream completed: %s", stream_name)
             continue
+
+        _log_ffmpeg_tail(stream_name)
 
         try:
             if not Path(video_path).exists():

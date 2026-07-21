@@ -35,7 +35,7 @@ fi
 
 # Output 1: RTSP -> MediaMTX, video+audio only.
 set -- -map 0:v? -map 0:a? $VIDEO_OPTS $BITRATE_OPTS $AUDIO_OPTS $TS_FIX -vsync cfr \
-       -f rtsp "rtsp://localhost:${RTSP_PORT}/$STREAM_PATH"
+       -f rtsp -rtsp_transport tcp "rtsp://localhost:${RTSP_PORT}/$STREAM_PATH"
 
 # Output 2 (optional): MPEG-TS/UDP with all streams, data/KLV copied verbatim.
 if [ -n "$UDP_TARGET" ]; then
@@ -44,10 +44,13 @@ if [ -n "$UDP_TARGET" ]; then
          $TS_FIX -f mpegts "udp://${UDP_TARGET}?pkt_size=1316"
 fi
 
-exec ffmpeg -re -stream_loop "$LOOP_COUNT" -i "$VIDEO_FILE" "$@"
+exec ffmpeg -hide_banner -nostats -re -stream_loop "$LOOP_COUNT" -i "$VIDEO_FILE" "$@"
 
 # FLAG EXPLANATIONS
 #
+# -hide_banner                   No version/build banner, so the captured log is signal
+# -nostats                       No periodic progress line; it would grow the per-stream
+#                                log file the supervisor captures stderr into forever
 # -re                            Read input at native frame rate (real-time streaming)
 # -stream_loop N                 Loop the input N times; -1 = forever
 # -i "$VIDEO_FILE"               Input video file
@@ -98,4 +101,9 @@ exec ffmpeg -re -stream_loop "$LOOP_COUNT" -i "$VIDEO_FILE" "$@"
 #
 # OUTPUTS:
 # -f rtsp rtsp://localhost:${RTSP_PORT}/<stream-path>   Publish to MediaMTX (serves RTSP + HLS)
+# -rtsp_transport tcp            (RTSP output) Send RTP over the RTSP TCP connection. Over
+#                                the default UDP, ffmpeg keeps streaming into the void if
+#                                MediaMTX drops the session; over TCP the write fails,
+#                                ffmpeg exits, and the supervisor's dead-process check
+#                                restarts the stream.
 # -f mpegts udp://<udp-target>?pkt_size=1316            KLV-preserving MPEG-TS feed
