@@ -1,7 +1,14 @@
 FROM bluenviron/mediamtx:1.15.3-ffmpeg
 
-# Install Python3 for the stream supervisor (stdlib only).
-RUN apk add --no-cache python3
+# python3: stream supervisor (stdlib only).
+# intel-media-driver: VA-API driver (iHD) for Intel iGPUs.
+# mesa-va-gallium: VA-API drivers for AMD APUs (radeonsi/r600) and others.
+# onevpl-intel-gpu: the oneVPL GPU runtime h264_qsv dispatches to. Not packaged
+# in Alpine 3.22, so it alone comes from edge/community (its deps resolve from
+# 3.22); the --repository flag scopes edge to that single transaction. The
+# legacy intel-media-sdk does NOT support current Intel generations.
+RUN apk add --no-cache python3 intel-media-driver mesa-va-gallium && \
+    apk add --no-cache --repository=https://dl-cdn.alpinelinux.org/alpine/edge/community onevpl-intel-gpu
 
 # Create non-root user
 RUN addgroup -g 1000 autostream && \

@@ -1,0 +1,15 @@
+# iGPU add-on. composeup chains this file (-f) only when gpuconfig detected an
+# integrated GPU; RENDER_GROUP_GID and VAAPI_RENDER_NODE come from
+# .generated/gpu.env, which composeup sources before invoking compose.
+services:
+  autostream:
+    # Expose the GPU render nodes and join the group that owns them so the
+    # non-root container user (UID 1000) can open them.
+    devices:
+      - /dev/dri:/dev/dri
+    group_add:
+      - "${RENDER_GROUP_GID}"
+    # Tells stream-video.sh which node carries the integrated GPU, so the
+    # vaapi tier doesn't guess wrong on multi-GPU machines.
+    environment:
+      VAAPI_RENDER_NODE: ${VAAPI_RENDER_NODE}

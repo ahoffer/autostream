@@ -1,0 +1,47 @@
+#!/bin/sh
+# Detect the CPU's integrated GPU and record its access details for compose.
+# Only integrated graphics are used (Intel iGPU, AMD APU) — never a discrete
+# card. Writes .generated/gpu.env when found, removes it when not; composeup
+# includes docker-compose.gpu.yml only while that file exists.
+set -eu
+
+GPU_ENV=.generated/gpu.env
+mkdir -p .generated
+
+node=
+case "$(awk -F': ' '/^vendor_id/ {print $2; exit}' /proc/cpuinfo 2>/dev/null)" in
+  GenuineIntel)
+    # The Intel iGPU always sits at PCI 0000:00:02.0; discrete cards never do.
+    for n in /dev/dri/renderD*; do
+      [ -e "$n" ] || continue
+      addr=$(basename "$(readlink "/sys/class/drm/$(basename "$n")/device")")
+      [ "$addr" = "0000:00:02.0" ] && { node=$n; break; }
+    done
+    ;;
+  AuthenticAMD)
+    # APUs advertise the iGPU in the CPU model name. Require exactly one AMD
+    # render node so a discrete Radeon can never be picked by mistake.
+    if grep -q "Radeon Graphics" /proc/cpuinfo; then
+      for n in /dev/dri/renderD*; do
+        [ -e "$n" ] || continue
+        vendor=$(cat "/sys/class/drm/$(basename "$n")/device/vendor")
+        if [ "$vendor" = "0x1002" ]; then
+          [ -n "$node" ] && { node=; break; }   # second AMD node: ambiguous, bail
+          node=$n
+        fi
+      done
+    fi
+    ;;
+esac
+
+if [ -z "$node" ]; then
+  rm -f "$GPU_ENV"
+  echo "gpuconfig: no integrated GPU found; streams will use software encoding"
+  exit 0
+fi
+
+{
+  echo "RENDER_GROUP_GID=$(stat -c %g "$node")"
+  echo "VAAPI_RENDER_NODE=$node"
+} > "$GPU_ENV"
+echo "gpuconfig: integrated GPU at $node; wrote $GPU_ENV"

@@ -27,6 +27,22 @@ Autostream automatically:
 - **Watches** for new files added at runtime
 - **Removes streams** when files are deleted
 
+## Hardware video encoding
+
+Fully automatic, no configuration. `make build` and `make compose-up` run
+`gpuconfig`, which looks for the CPU's integrated GPU (Intel iGPU or AMD APU —
+discrete cards are never used) and records its access details in
+`.generated/gpu.env`; `composeup` then chains `docker-compose.gpu.yml` into the
+compose invocation only when that file exists. Inside the container, each
+stream start runs a one-frame trial encode and picks the first tier that
+works: `h264_qsv` (Intel Quick Sync), then `h264_vaapi` (AMD), then `libx264`
+in software. Macs and machines without an integrated GPU always get the
+software path.
+
+To see what happened: the container log shows the CPU and GPU devices the
+container sees at startup, and the chosen encoder is logged at the top of each
+stream's ffmpeg log (`/tmp/ffmpeg-logs/<stream>.log` inside the container).
+
 ## Stream URLs
 
 Other containers on `octo-cx-network` reach each stream through the `autostream`
@@ -88,7 +104,7 @@ shipped `.env` values.
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `CONTAINER_NAME` | Image name and service/hostname used in stream URLs | `autostream` |
-| `VERSION` | Image version tag | `2.0.0` (see `.env`) |
+| `VERSION` | Image version tag | `2.1.0` (see `.env`) |
 | `MAX_VIDEO_BITRATE` | Cap video bitrate (for example `3M`, `5M`) | `2M` |
 | `OUTPUT_HOST` | Host/service the KLV UDP feeds are pushed to (cx-search `video-streaming`, or an IP/multicast group) | `video-streaming` |
 | `UDP_BASE_PORT` | First UDP port; each stream gets the next one | `40000` |
@@ -118,7 +134,9 @@ make systemd-uninstall # Remove the systemd unit
 
 Plain `docker compose up -d` also works after the image is built; `make
 compose-up` adds config-change detection so `mediamtx.yml` edits recreate the
-container when needed.
+container when needed, plus the GPU detection described under "Hardware video
+encoding" (a plain `up` runs without the GPU mapping, so streams encode in
+software).
 
 **Note:** Docker Compose uses an external network `octo-cx-network`. Create it first if it doesn't exist:
 ```bash

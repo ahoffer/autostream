@@ -17,6 +17,7 @@ build:  ## Build the container image
 	@# DOCKER_BUILDKIT=0 forces the legacy builder on purpose: this host has no
 	@# buildx component, so the default BuildKit path fails with "buildx is
 	@# missing or broken". Drop the override only once buildx is installed.
+	./gpuconfig
 	set -a && . ./.env && DOCKER_BUILDKIT=0 docker build -t $$CONTAINER_NAME:$$VERSION .
 
 compose-up:  ## Start via docker compose (recreates on config change; see composeup)
