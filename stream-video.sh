@@ -27,7 +27,7 @@ UDP_TARGET="$5"          # host:port for the KLV MPEG-TS/UDP feed; empty = RTSP 
 RTSP_PORT="${MEDIAMTX_RTSP_PORT:?MEDIAMTX_RTSP_PORT is not set}"
 
 # Shared encode settings. Deliberately space-split.
-QSV_OPTS="-c:v h264_qsv -preset veryfast -async_depth 1 -pix_fmt nv12 -g 30 -keyint_min 30 -bf 0"
+QSV_OPTS="-c:v h264_qsv -preset veryfast -async_depth 1 -g 30 -keyint_min 30 -bf 0"
 VAAPI_OPTS="-vf format=nv12,hwupload -c:v h264_vaapi -g 30 -keyint_min 30 -bf 0"
 X264_OPTS="-c:v libx264 -preset ultrafast -tune zerolatency -g 30 -keyint_min 30 -sc_threshold 0 -bf 0 -x264-params ref=1"
 AUDIO_OPTS="-c:a aac -b:a 128k"
@@ -49,10 +49,34 @@ trial() {
 # the next tier stands. Trials run the full option string so an option this
 # driver rejects can never pass the trial and then kill the real encode.
 # Stateless per start: the supervisor's restart path re-picks every time.
+# The qsv tier also decodes on the GPU when the input codec allows: decoding,
+# not encoding, was most of the CPU cost. This must be an explicit decoder
+# (-c:v h264_qsv etc. before -i), NOT -hwaccel qsv: -hwaccel renegotiates the
+# frame format when the decoder flushes at the -stream_loop seam and the run
+# dies with "Impossible to convert between the formats" one file-length in.
+# An explicit decoder keeps one output format for the whole run and survives
+# the seam. Gated to 8-bit 4:2:0 input so exotic profiles the GPU cannot
+# decode stay on the never-fails software decoder. The vaapi tier deliberately
+# decodes in software: without hardware-frame filters it would decode to
+# system memory and re-upload, which measured slower than software decode;
+# revisit on real AMD hardware.
+# head -1 because MPEG-TS inputs list the stream twice (program + stream table)
+IN_FORMAT=$(ffprobe -v error -select_streams v:0 \
+  -show_entries stream=codec_name,pix_fmt -of csv=p=0 "$VIDEO_FILE" 2>/dev/null | head -n 1)
+QSV_DECODER=""
+case "$IN_FORMAT" in
+  h264,yuv420p|h264,yuvj420p|h264,nv12)       QSV_DECODER="-c:v h264_qsv" ;;
+  hevc,yuv420p|hevc,yuvj420p|hevc,nv12)       QSV_DECODER="-c:v hevc_qsv" ;;
+  mjpeg,yuv420p|mjpeg,yuvj420p|mjpeg,nv12)    QSV_DECODER="-c:v mjpeg_qsv" ;;
+  mpeg2video,yuv420p|mpeg2video,yuvj420p)     QSV_DECODER="-c:v mpeg2_qsv" ;;
+  vp9,yuv420p|vp9,yuvj420p|vp9,nv12)          QSV_DECODER="-c:v vp9_qsv" ;;
+esac
+
 HWDEV_OPTS=""
 if trial $QSV_OPTS; then
   VIDEO_OPTS="$QSV_OPTS"
-  ENCODER="h264_qsv (Intel Quick Sync)"
+  HWDEV_OPTS="$QSV_DECODER"
+  ENCODER="h264_qsv (Intel Quick Sync)${QSV_DECODER:+, GPU decode}"
 elif trial $VAAPI_DEV $VAAPI_OPTS; then
   VIDEO_OPTS="$VAAPI_OPTS"
   HWDEV_OPTS="$VAAPI_DEV"
@@ -122,9 +146,13 @@ exec ffmpeg -hide_banner -nostats $HWDEV_OPTS -re -stream_loop "$LOOP_COUNT" -i 
 # -preset veryfast               Fastest QSV preset (TargetUsage 7); qsv has no "ultrafast"
 # -async_depth 1                 Pipeline depth 1: the qsv equivalent of -tune
 #                                zerolatency (the default of 4 buffers extra frames)
-# -pix_fmt nv12                  Convert any input to the NV12 the GPU expects, so odd
-#                                formats (10-bit, 4:2:2) don't kill the real encode
-#                                after passing the 8-bit trial
+# -c:v <codec>_qsv before -i     Decode on the GPU too — decoding, not encoding, was
+#                                most of the CPU cost (~4x measured on 1080p MJPEG).
+#                                Must be an explicit decoder, NOT -hwaccel qsv, which
+#                                dies at the -stream_loop seam when the decoder flush
+#                                renegotiates the frame format ("Impossible to
+#                                convert between the formats"). Applied only to
+#                                8-bit 4:2:0 input; anything else decodes in software
 # -global_quality 23             (uncapped only) ICQ quality mode ~ libx264's CRF 23
 #                                default; qsv would otherwise default to a fixed 1 Mbps
 #
