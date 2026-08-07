@@ -27,6 +27,27 @@ Autostream automatically:
 - **Watches** for new files added at runtime
 - **Removes streams** when files are deleted
 
+## Passthrough and transcode
+
+Each stream has a per-stream mode, chosen in the UI and applied on Start:
+
+- **Passthrough** (`Video: Passthrough`): the source video is sent unmodified —
+  no decode, no encode, near-zero CPU. Only H.264 and H.265 can pass through
+  (that is all MediaMTX carries). H.264 files default to passthrough; H.265
+  files default to transcode because browser HLS playback of H.265 is spotty,
+  but passthrough can be selected for RTSP-centric consumers. Files with any
+  other video codec always transcode; a passthrough request on them is kept
+  but runs as transcode, with the reason shown in the UI. Note that
+  passthrough streams follow the source file's keyframe cadence (players join
+  and recover at source keyframes) instead of the enforced 1-second GOP, and
+  `MAX_VIDEO_BITRATE` does not apply.
+- **Transcode** (`Video: Transcode`): re-encode to H.264 with a clean 1-second
+  GOP (fixes loop-point artifacts) and the bitrate cap applied, using the
+  hardware encoder when available (see below).
+
+Audio is handled automatically in both modes: copied when the source is
+already AAC, re-encoded to AAC otherwise.
+
 ## Hardware video encoding
 
 Fully automatic, no configuration. `make build` and `make compose-up` run
@@ -104,8 +125,8 @@ shipped `.env` values.
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `CONTAINER_NAME` | Image name and service/hostname used in stream URLs | `autostream` |
-| `VERSION` | Image version tag | `2.1.0` (see `.env`) |
-| `MAX_VIDEO_BITRATE` | Cap video bitrate (for example `3M`, `5M`) | `2M` |
+| `VERSION` | Image version tag | `2.2.0` (see `.env`) |
+| `MAX_VIDEO_BITRATE` | Cap video bitrate (for example `3M`, `5M`); transcode mode only — passthrough sends the source bitrate unchanged | `2M` |
 | `OUTPUT_HOST` | Host/service the KLV UDP feeds are pushed to (cx-search `video-streaming`, or an IP/multicast group) | `video-streaming` |
 | `UDP_BASE_PORT` | First UDP port; each stream gets the next one | `40000` |
 | `UDP_LAST_PORT` | Last UDP port; streams arriving after the range is used up run RTSP/HLS only | `40100` |

@@ -7,6 +7,7 @@ transport nor poll loop appears here.
 """
 from __future__ import annotations
 
+import json
 import logging
 import os
 import re
@@ -67,6 +68,31 @@ FFMPEG_LOG_TAIL_BYTES = 4096
 MAX_VIDEO_BITRATE = os.getenv("MAX_VIDEO_BITRATE", "")  # empty disables the cap
 MAX_VIDEO_BPS = parse_bitrate(MAX_VIDEO_BITRATE)  # malformed values fail here, at boot
 
+# Passthrough policy. MediaMTX only carries H.264/H.265, so nothing else may be
+# stream-copied. HEVC is eligible but not the default: RTSP consumers handle it,
+# but browser HLS playback of HEVC is spotty, so it takes an explicit request.
+PASSTHROUGH_CODECS = frozenset({"h264", "hevc"})
+PASSTHROUGH_DEFAULT_CODECS = frozenset({"h264"})
+
+
+def default_mode(video_codecs):
+    """Codec-derived default mode: all-H.264 files pass through, all else transcodes.
+
+    None or empty (never probed, probe failed, or no video track) defaults to
+    transcode — the mode that works for everything.
+    """
+    if video_codecs and all(c in PASSTHROUGH_DEFAULT_CODECS for c in video_codecs):
+        return "passthrough"
+    return "transcode"
+
+
+def passthrough_eligible(video_codecs):
+    """True when every video track can ride MediaMTX unencoded.
+
+    All tracks matter because stream-video.sh maps every video track (-map 0:v?).
+    """
+    return bool(video_codecs) and all(c in PASSTHROUGH_CODECS for c in video_codecs)
+
 # UDP MPEG-TS output carries KLV/data streams that RTSP/HLS (via MediaMTX) drop.
 # Each stream is pushed to OUTPUT_HOST on its own port (UDP_BASE_PORT + slot).
 # OUTPUT_HOST is a reachable consumer or a multicast group.
@@ -89,8 +115,12 @@ class Stream:
     collection. filename is the on-disk basename the slot belongs to, kept so a
     second file sanitizing to the same name can't silently take the slot over.
     loop_count is the last requested value and deliberately outlives the
-    process, so a stop/start keeps the user's choice. udp_port is None when the
-    configured range was already used up, which means RTSP/HLS only.
+    process, so a stop/start keeps the user's choice; mode works the same way,
+    with None meaning "no explicit request yet" so the codec-derived default
+    applies until the user picks one. video_codecs/audio_codecs are the last
+    start's probe of the file — they describe the file, not the process, so
+    clear_process leaves them alone. udp_port is None when the configured range
+    was already used up, which means RTSP/HLS only.
     """
     name: str
     filename: str
@@ -99,6 +129,10 @@ class Stream:
     process: subprocess.Popen | None = None
     udp_enabled: bool = False
     stopping: bool = False
+    mode: str | None = None
+    video_codecs: tuple | None = None
+    audio_codecs: tuple | None = None
+    passthrough_active: bool = False
 
     @property
     def video_path(self):
@@ -115,17 +149,20 @@ class Stream:
         """True while a process owns this slot, including one still stopping."""
         return self.process is not None
 
-    def mark_started(self, process, loop_count, udp_enabled):
+    def mark_started(self, process, loop_count, mode, udp_enabled, passthrough_active):
         """Transition the slot to running under a freshly launched process."""
         self.process = process
         self.loop_count = loop_count
+        self.mode = mode
         self.udp_enabled = udp_enabled
+        self.passthrough_active = passthrough_active
         self.stopping = False
 
     def clear_process(self):
         """Transition the slot back to idle once its process is gone."""
         self.process = None
         self.udp_enabled = False
+        self.passthrough_active = False
         self.stopping = False
 
     def urls(self):
@@ -246,6 +283,48 @@ def get_video_bitrate(video_path):
     return None
 
 
+def get_stream_codecs(video_path):
+    """Return (video_codecs, audio_codecs, audio_copyable) for the file, or
+    (None, None, False) when the probe fails — callers treat unknown as
+    transcode + encode, the combination that works for everything.
+
+    The codec tuples are index-ordered and cover every track, because
+    stream-video.sh maps every track. audio_copyable is True only when each
+    audio track is AAC that already carries global headers (extradata): ADTS
+    AAC — the packaging MPEG-TS sources use — has none, and ffmpeg's RTSP muxer
+    needs the headers at SDP time, before the first packet flows, so the
+    aac_adtstoasc bitstream filter cannot rescue a copy. Such audio is
+    re-encoded instead.
+
+    JSON output rather than csv: csv emits fields in ffprobe's internal order,
+    not the requested order, and MPEG-TS inputs repeat streams under a programs
+    section — json.loads()["streams"] dodges both traps.
+    """
+    try:
+        result = subprocess.run(
+            ["ffprobe", "-v", "error",
+             "-show_entries", "stream=index,codec_type,codec_name,extradata_size",
+             "-of", "json", str(video_path)],
+            capture_output=True, text=True, timeout=10,
+        )
+    except (subprocess.SubprocessError, OSError) as e:
+        log.warning("Error probing codecs for %s: %s", Path(video_path).name, e)
+        return None, None, False
+    if result.returncode != 0:
+        return None, None, False
+    try:
+        entries = json.loads(result.stdout).get("streams", [])
+    except ValueError:
+        return None, None, False
+    ordered = sorted(entries, key=lambda s: s.get("index", 0))
+    video = tuple(s.get("codec_name", "") for s in ordered if s.get("codec_type") == "video")
+    audio_streams = [s for s in ordered if s.get("codec_type") == "audio"]
+    audio = tuple(s.get("codec_name", "") for s in audio_streams)
+    audio_copyable = all(s.get("codec_name") == "aac" and s.get("extradata_size", 0) > 0
+                         for s in audio_streams)
+    return video, audio, audio_copyable
+
+
 def get_bitrate_cap(video_path):
     """Return MAX_VIDEO_BITRATE if the video exceeds it, else empty string.
 
@@ -325,8 +404,15 @@ def wait_for_mediamtx():
     log.info("MediaMTX is ready")
 
 
-def start_stream(stream_name, loop_count=None, log_start=True):
-    """Start a claimed stream slot. loop_count None keeps the last requested value."""
+def start_stream(stream_name, loop_count=None, mode=None, log_start=True):
+    """Start a claimed stream slot.
+
+    loop_count None keeps the last requested value; mode None keeps the last
+    requested mode (codec default when the user never picked one). Passthrough
+    eligibility is re-derived from a fresh probe on every start, so the script
+    only ever receives a vetted mode — a replaced file or failed probe degrades
+    to transcode instead of launching a command ffmpeg cannot run.
+    """
     with _state_lock:
         stream = _streams_by_name.get(stream_name)
         if stream is None:
@@ -340,10 +426,16 @@ def start_stream(stream_name, loop_count=None, log_start=True):
         udp_port = stream.udp_port
         if loop_count is None:
             loop_count = stream.loop_count
+        if mode is None:
+            mode = stream.mode
 
-    # ffprobe (inside get_bitrate_cap) can take time — run it outside the lock
-    # so we don't stall other threads on I/O.
-    bitrate_cap = get_bitrate_cap(video_path)
+    # ffprobe can take time — run the probes outside the lock so we don't stall
+    # other threads on I/O.
+    video_codecs, audio_codecs, audio_copy = get_stream_codecs(video_path)
+    requested_mode = mode or default_mode(video_codecs)
+    passthrough = requested_mode == "passthrough" and passthrough_eligible(video_codecs)
+    # Copied packets can't honor a cap, so don't even probe the bitrate.
+    bitrate_cap = "" if passthrough else get_bitrate_cap(video_path)
     # No port from the range is the same outcome as an unreachable consumer:
     # publish RTSP/HLS and leave the KLV feed off.
     udp_enabled = _output_reachable and udp_port is not None
@@ -357,7 +449,10 @@ def start_stream(stream_name, loop_count=None, log_start=True):
             return False
 
         try:
-            cmd = [STREAM_VIDEO_SCRIPT, video_path, stream_name, str(loop_count), bitrate_cap, udp_target]
+            cmd = [STREAM_VIDEO_SCRIPT, video_path, stream_name, str(loop_count),
+                   bitrate_cap, udp_target,
+                   "passthrough" if passthrough else "transcode",
+                   "copy" if audio_copy else "encode"]
             if SHOW_FFMPEG_OUTPUT:
                 process = subprocess.Popen(cmd)
             else:
@@ -368,12 +463,18 @@ def start_stream(stream_name, loop_count=None, log_start=True):
             log.error("Failed to start stream %s: %s", stream_name, e)
             return False
 
-        stream.mark_started(process, loop_count, udp_enabled=udp_enabled)
+        stream.video_codecs = video_codecs
+        stream.audio_codecs = audio_codecs
+        stream.mark_started(process, loop_count, mode=mode,
+                            udp_enabled=udp_enabled, passthrough_active=passthrough)
 
     if log_start:
         udp_status = "UDP active" if udp_target else "UDP disabled"
-        log.info("Started stream: %s video=%r udp=%s udp_url=%s",
-                 stream_name, Path(video_path).name, udp_status, stream.urls()["udp"])
+        log.info("Started stream: %s video=%r mode=%s audio=%s udp=%s udp_url=%s",
+                 stream_name, Path(video_path).name,
+                 "passthrough" if passthrough else "transcode",
+                 "copy" if audio_copy else "aac",
+                 udp_status, stream.urls()["udp"])
     return True
 
 
@@ -417,17 +518,17 @@ def stop_stream(stream_name):
     return True
 
 
-def restart_stream(stream_name, loop_count=None):
+def restart_stream(stream_name, loop_count=None, mode=None):
     """Relaunch a stream: stop its current process if it has one, then start it.
 
-    loop_count None keeps the last requested value.
+    loop_count and mode None keep the last requested values.
     """
     with _state_lock:
         stream = _streams_by_name.get(stream_name)
         occupied = stream is not None and stream.occupied
     if occupied:
         stop_stream(stream_name)
-    return start_stream(stream_name, loop_count)
+    return start_stream(stream_name, loop_count, mode)
 
 
 def stream_exists(stream_name):
@@ -474,11 +575,29 @@ def get_stream_status():
                 udp_reason = f"{OUTPUT_HOST} unreachable"
             else:
                 udp_reason = "starting"
+            requested_mode = stream.mode or default_mode(stream.video_codecs)
+            passthrough_active = stream.running and stream.passthrough_active
+            if requested_mode != "passthrough" or passthrough_active:
+                passthrough_reason = None
+            elif stream.video_codecs is not None and not passthrough_eligible(stream.video_codecs):
+                # Permanent for this file, so report it ahead of the transient reasons.
+                blocked = sorted({c for c in stream.video_codecs if c not in PASSTHROUGH_CODECS})
+                passthrough_reason = (f"video codec {', '.join(blocked)} cannot pass through "
+                                      f"(H.264/H.265 only)")
+            elif not stream.running:
+                passthrough_reason = "stream stopped"
+            elif stream.video_codecs is None:
+                passthrough_reason = "codec probe failed; transcoding"
+            else:
+                passthrough_reason = "starting"
             result.append({
                 "name": stream.name,
                 "running": stream.running,
                 "stopping": stream.stopping,
                 "loop_count": stream.loop_count,
+                "mode": requested_mode,
+                "passthrough_active": passthrough_active,
+                "passthrough_reason": passthrough_reason,
                 "rtsp_url": urls["rtsp"],
                 "hls_url": urls["hls"],
                 "udp_url": urls["udp"],

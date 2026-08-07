@@ -72,6 +72,10 @@
                         ${s.running ? 'Running' : 'Stopped'}
                     </span>
                     <div class="controls">
+                        <select id="mode-${s.name}" title="Video passthrough sends the source unmodified (H.264/H.265 only); applied on Start">
+                            <option value="passthrough" ${s.mode === 'passthrough' ? 'selected' : ''}>Video: Passthrough</option>
+                            <option value="transcode" ${s.mode === 'transcode' ? 'selected' : ''}>Video: Transcode</option>
+                        </select>
                         <select id="loop-${s.name}">
                             <option value="-1" ${s.loop_count === -1 ? 'selected' : ''}>Loop: Infinite</option>
                             <option value="0" ${s.loop_count === 0 ? 'selected' : ''}>Play: 1x</option>
@@ -101,6 +105,12 @@
                                 ? `<button class="copy-btn" title="Copy UDP URL" onclick='copyUrl(this, ${JSON.stringify(s.udp_url)})'>${copyIcon}</button>`
                                 : `<span class="udp-reason">inactive${s.udp_reason ? ' — ' + s.udp_reason : ''}</span>`}
                         </div>
+                        ${s.mode === 'passthrough' && !s.passthrough_active
+                            ? `<div class="url-row inactive">
+                                <span class="url-label" title="Requested passthrough is not in effect">MODE</span>
+                                <span class="udp-reason">transcoding${s.passthrough_reason ? ' — ' + s.passthrough_reason : ''}</span>
+                            </div>`
+                            : ''}
                     </div>
                 </div>
             `).join('');
@@ -170,7 +180,8 @@
 
         function startStream(name) {
             const loopCount = document.getElementById('loop-' + name).value;
-            return command(`/api/streams/${name}/start?loop=${loopCount}`, `start ${name}`);
+            const mode = document.getElementById('mode-' + name).value;
+            return command(`/api/streams/${name}/start?loop=${loopCount}&mode=${mode}`, `start ${name}`);
         }
 
         function stopStream(name) {

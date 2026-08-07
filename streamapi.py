@@ -86,7 +86,14 @@ class StreamHandler(BaseHTTPRequestHandler):
             if loop_count < -1:
                 self.send_json({"error": "Invalid loop count"}, 400)
                 return
-            success = streams.restart_stream(stream_name, loop_count)
+            # Absent loop defaults to -1, but absent mode keeps the stored value:
+            # mode has no universal default (it depends on the file's codec), so
+            # a bare start must not reset a stream's choice.
+            mode = query.get('mode', [None])[0]
+            if mode is not None and mode not in ('passthrough', 'transcode'):
+                self.send_json({"error": "Invalid mode"}, 400)
+                return
+            success = streams.restart_stream(stream_name, loop_count, mode)
             self.send_json({"success": success})
         elif action == 'stop':
             success = streams.stop_stream(stream_name)
