@@ -72,11 +72,11 @@
                         ${s.running ? 'Running' : 'Stopped'}
                     </span>
                     <div class="controls">
-                        <select id="mode-${s.name}" title="Video passthrough sends the source unmodified (H.264/H.265 only); applied on Start">
+                        <select id="mode-${s.name}" onchange="settingChanged('${s.name}', ${s.running})" title="Video passthrough sends the source unmodified (H.264/H.265 only); changing it restarts a running stream">
                             <option value="passthrough" ${s.mode === 'passthrough' ? 'selected' : ''}>Video: Passthrough</option>
                             <option value="transcode" ${s.mode === 'transcode' ? 'selected' : ''}>Video: Transcode</option>
                         </select>
-                        <select id="loop-${s.name}">
+                        <select id="loop-${s.name}" onchange="settingChanged('${s.name}', ${s.running})">
                             <option value="-1" ${s.loop_count === -1 ? 'selected' : ''}>Loop: Infinite</option>
                             <option value="0" ${s.loop_count === 0 ? 'selected' : ''}>Play: 1x</option>
                             <option value="1" ${s.loop_count === 1 ? 'selected' : ''}>Play: 2x</option>
@@ -182,6 +182,13 @@
             const loopCount = document.getElementById('loop-' + name).value;
             const mode = document.getElementById('mode-' + name).value;
             return command(`/api/streams/${name}/start?loop=${loopCount}&mode=${mode}`, `start ${name}`);
+        }
+
+        // Changing a dropdown on a running stream applies it right away by
+        // restarting with the new values. On a stopped stream the choice
+        // simply waits for Start, so browsing the options starts nothing.
+        function settingChanged(name, running) {
+            if (running) startStream(name);
         }
 
         function stopStream(name) {

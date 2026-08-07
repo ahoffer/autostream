@@ -29,7 +29,9 @@ Autostream automatically:
 
 ## Passthrough and transcode
 
-Each stream has a per-stream mode, chosen in the UI and applied on Start:
+Each stream has a per-stream mode, chosen in the UI. Changing it (or the loop
+setting) on a running stream restarts the stream with the new value; on a
+stopped stream the choice is applied at the next Start. The modes:
 
 - **Passthrough** (`Video: Passthrough`): the source video is sent unmodified —
   no decode, no encode, near-zero CPU. Only H.264 and H.265 can pass through
