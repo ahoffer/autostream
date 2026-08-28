@@ -6,6 +6,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <style>
         * { box-sizing: border-box; }
+        /* The hidden attribute must beat the display rules below. */
+        [hidden] { display: none !important; }
         html, body { height: 100%; }
         body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
                background: #1a1a2e; color: #eee; display: grid; grid-template-columns: 280px minmax(0, 1fr); }
