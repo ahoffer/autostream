@@ -45,10 +45,16 @@ stopped stream the choice is applied at the next Start. The modes:
   `MAX_VIDEO_BITRATE` does not apply.
 - **Transcode** (`Video: Transcode`): re-encode to H.264 with a clean GOP
   (fixes loop-point artifacts) and the bitrate cap applied, using the
-  hardware encoder when available (see below). The GOP length is the
-  per-stream `GOP` field in the UI, in frames (default 30, one second at 30
-  fps); shorter means faster player join and loop recovery at some bitrate
-  cost.
+  hardware encoder when available (see below). Two encoder settings sit
+  beside the mode in the UI and only apply when transcoding (they are
+  disabled under passthrough): `FPS`, the output frame rate, which defaults
+  to the file's own rate; and `GOP`, the keyframe interval in frames, which
+  defaults to one second at the output rate (25 for 25 fps). A shorter GOP
+  means faster player join and loop recovery at some bitrate cost.
+
+Settings changes are saved as soon as they are made; a running stream
+restarts with the new values right away, and the command shown for each
+output is always what the current settings produce.
 
 Audio is handled automatically in both modes: copied when the source is
 already AAC, re-encoded to AAC otherwise.

@@ -174,7 +174,9 @@ class Stream:
     sanitizing to the same name can't silently take the slot over. loop_count,
     mode, and gop_frames are the last requested values and deliberately
     outlive the processes; mode None means "no explicit request yet" so the
-    codec-derived default applies until the user picks one. profile is the
+    codec-derived default applies until the user picks one; frame_rate None
+    likewise means the file's own rate, and gop_frames None one second at the
+    output rate. profile is the
     last probe of the file — it describes the file, not a process. udp_port is
     None when the configured range was already used up, which means RTSP/HLS
     only.
@@ -184,7 +186,8 @@ class Stream:
     udp_port: int | None
     loop_count: int = -1
     mode: str | None = None
-    gop_frames: int = ffmpegcmd.DEFAULT_GOP_FRAMES
+    gop_frames: int | None = None
+    frame_rate: float | None = None
     profile: ffmpegcmd.FileProfile | None = None
     rtsp: Output = field(default_factory=lambda: Output("rtsp"))
     udp: Output = field(default_factory=lambda: Output("udp"))
@@ -258,7 +261,7 @@ def load_persisted_state():
 def _persisted_stream(stream):
     return statefile.PersistedStream(
         filename=stream.filename, mode=stream.mode, loop_count=stream.loop_count,
-        gop_frames=stream.gop_frames,
+        gop_frames=stream.gop_frames, frame_rate=stream.frame_rate,
         rtsp=statefile.PersistedOutput(stream.rtsp.enabled),
         udp=statefile.PersistedOutput(stream.udp.enabled),
     )
@@ -400,6 +403,8 @@ def encode_spec(stream):
     """
     profile = stream.profile or ffmpegcmd.UNKNOWN_PROFILE
     requested_mode = stream.mode or default_mode(profile.video_codecs)
+    output_rate = stream.frame_rate or profile.frame_rate
+    gop_frames = stream.gop_frames or ffmpegcmd.natural_gop_frames(output_rate)
     passthrough = requested_mode == "passthrough" and passthrough_eligible(profile.video_codecs)
     qsv_decoder = None
     if _encoder_tier == "qsv" and profile.video_codecs:
@@ -408,7 +413,8 @@ def encode_spec(stream):
         video_path=stream.video_path,
         stream_name=stream.name,
         loop_count=stream.loop_count,
-        gop_frames=stream.gop_frames,
+        gop_frames=gop_frames,
+        frame_rate=stream.frame_rate,
         passthrough=passthrough,
         audio_copy=profile.audio_copyable,
         # Copied packets can't honor a cap.
@@ -548,26 +554,52 @@ def refresh_stream_probe(stream_name):
 
 # ---- Operations: what the UI, API, and file events ask for ----
 
-def start_stream(stream_name, loop_count=None, mode=None, gop_frames=None):
-    """(Re)start a stream with the given settings.
+KEEP = object()   # update_settings argument: leave this setting as it is
+
+
+def update_settings(stream_name, loop_count=KEEP, mode=KEEP, gop_frames=KEEP, frame_rate=KEEP):
+    """Store new settings for a stream and apply them to whatever is running.
+
+    mode None means the codec-derived default, frame_rate None the file's
+    own rate, and gop_frames None one second at the output rate. A running
+    output is relaunched so the process always matches the stored settings;
+    a stopped stream just keeps them for its next start.
+    """
+    with _state_lock:
+        stream = _streams_by_name.get(stream_name)
+        if stream is None:
+            return False
+        if loop_count is not KEEP:
+            stream.loop_count = loop_count
+        if mode is not KEEP:
+            stream.mode = mode
+        if gop_frames is not KEEP:
+            stream.gop_frames = gop_frames
+        if frame_rate is not KEEP:
+            stream.frame_rate = frame_rate
+        _persist()
+        running = [output.name for output in stream.outputs if output.running]
+        log.info("Settings for %s: mode=%s loop=%s fps=%s gop=%s", stream_name,
+                 stream.mode, stream.loop_count, stream.frame_rate, stream.gop_frames)
+    if running:
+        refresh_stream_probe(stream_name)
+    for output_name in running:
+        _relaunch_output(stream_name, output_name)
+    return True
+
+
+def start_stream(stream_name):
+    """(Re)start a stream with its stored settings.
 
     A fully stopped stream comes up with both outputs. One that is up keeps
-    its per-output choices: a settings change or Restart relaunches the
-    enabled outputs and leaves a deliberately stopped one down. A None
-    setting keeps the last requested value (for mode, the codec default when
-    the user never picked one).
+    its per-output choices: Restart relaunches the enabled outputs and leaves
+    a deliberately stopped one down.
     """
     with _state_lock:
         stream = _streams_by_name.get(stream_name)
         if stream is None:
             log.warning("Cannot start unclaimed stream: %s", stream_name)
             return False
-        if loop_count is not None:
-            stream.loop_count = loop_count
-        if mode is not None:
-            stream.mode = mode
-        if gop_frames is not None:
-            stream.gop_frames = gop_frames
         if not any(output.enabled for output in stream.outputs):
             for output in stream.outputs:
                 output.enabled = True
@@ -706,7 +738,9 @@ def get_stream_status():
         for stream in _streams_by_name.values():
             urls = stream.urls()
             spec = encode_spec(stream)
-            video_codecs = (stream.profile or ffmpegcmd.UNKNOWN_PROFILE).video_codecs
+            profile = stream.profile or ffmpegcmd.UNKNOWN_PROFILE
+            video_codecs = profile.video_codecs
+            source_rate = profile.frame_rate
             requested_mode = stream.mode or default_mode(video_codecs)
             passthrough_active = stream.rtsp.running and spec.passthrough
             if requested_mode != "passthrough" or passthrough_active:
@@ -728,8 +762,13 @@ def get_stream_status():
                 "running": stream.running,
                 "stopping": stream.stopping,
                 "loop_count": stream.loop_count,
-                "gop_frames": stream.gop_frames,
+                "gop_frames": spec.gop_frames,
+                "gop_explicit": stream.gop_frames is not None,
+                "frame_rate": stream.frame_rate or source_rate,
+                "frame_rate_explicit": stream.frame_rate is not None,
+                "source_frame_rate": source_rate,
                 "mode": requested_mode,
+                "effective_mode": "passthrough" if spec.passthrough else "transcode",
                 "passthrough_active": passthrough_active,
                 "passthrough_reason": passthrough_reason,
                 "encoder": spec.encoder_label,
@@ -760,6 +799,7 @@ def _claim_slot(stream_name, filename):
             stream.mode = remembered.mode
             stream.loop_count = remembered.loop_count
             stream.gop_frames = remembered.gop_frames
+            stream.frame_rate = remembered.frame_rate
             stream.rtsp.enabled = remembered.rtsp.enabled
             stream.udp.enabled = remembered.udp.enabled
         _streams_by_name[stream_name] = stream

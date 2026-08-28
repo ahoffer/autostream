@@ -31,7 +31,8 @@ class PersistedStream:
     filename: str
     mode: str | None = None
     loop_count: int = -1
-    gop_frames: int = 30
+    gop_frames: int | None = None    # None: one second at the output frame rate
+    frame_rate: float | None = None  # None: the file's own frame rate
     rtsp: PersistedOutput = PersistedOutput()
     udp: PersistedOutput = PersistedOutput()
 
@@ -54,7 +55,8 @@ def _stream_from_json(data):
         filename=data["filename"],
         mode=data.get("mode"),
         loop_count=int(data.get("loop_count", -1)),
-        gop_frames=int(data.get("gop_frames", 30)),
+        gop_frames=int(data["gop_frames"]) if data.get("gop_frames") is not None else None,
+        frame_rate=float(data["frame_rate"]) if data.get("frame_rate") is not None else None,
         rtsp=_output_from_json(outputs.get("rtsp", {})),
         udp=_output_from_json(outputs.get("udp", {})),
     )
@@ -101,6 +103,7 @@ def save_state(path, state):
                 "mode": record.mode,
                 "loop_count": record.loop_count,
                 "gop_frames": record.gop_frames,
+                "frame_rate": record.frame_rate,
                 "outputs": {"rtsp": asdict(record.rtsp), "udp": asdict(record.udp)},
             }
             for name, record in state.streams.items()

@@ -36,7 +36,8 @@
         .sidebar-footer button { flex: 1; padding: 8px 0; }
 
         /* Detail pane: the selected stream */
-        .detail { display: flex; flex-direction: column; gap: 22px; padding: 28px 32px; max-width: 960px; }
+        .detail { display: flex; flex-direction: column; gap: 16px; padding: 28px 32px; max-width: 960px; }
+        #detail { display: flex; flex-direction: column; gap: 22px; }
         .detail-header { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
         .detail-title { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
         .detail-title h2 { margin: 0; font-size: 24px; }
@@ -46,6 +47,12 @@
         .settings { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
         .settings label { display: flex; flex-direction: column; gap: 6px; font-size: 12px; color: #8a93a8;
                           text-transform: uppercase; letter-spacing: 0.04em; }
+        .settings input:disabled { opacity: 0.4; }
+        .hint { font-size: 11px; text-transform: none; letter-spacing: 0; }
+        .hint a { color: #00d4ff; }
+        .playback { display: flex; align-items: center; gap: 10px; font-size: 12px; color: #8a93a8;
+                    text-transform: uppercase; letter-spacing: 0.04em; }
+        .playback select { width: auto; padding: 4px 8px; font-size: 12px; background: transparent; border-color: #0f3460; color: #8a93a8; }
         .reason { color: #ffb74d; font-style: italic; font-size: 13px; }
         .output { display: flex; flex-direction: column; gap: 10px; padding: 14px 16px; background: #16213e; border-radius: 8px; }
         .output-header { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
@@ -154,6 +161,10 @@
             }
             const modeNote = s.mode === 'passthrough' && !s.passthrough_active && s.passthrough_reason
                 ? `<span class="reason">transcoding — ${escapeHtml(s.passthrough_reason)}</span>` : '';
+            // FPS and GOP are encoder settings: nothing to set when the source
+            // is copied. A passthrough request on an ineligible file still
+            // transcodes, so follow what actually runs, not the dropdown.
+            const transcodeOff = s.effective_mode === 'passthrough' ? 'disabled' : '';
             detail.innerHTML = `
                 <div class="detail-header">
                     <div class="detail-title">
@@ -167,28 +178,40 @@
                 </div>
                 <div class="settings">
                     <label>Video
-                        <select id="mode" onchange="settingChanged('${s.name}', ${s.running})" title="Passthrough sends the source unmodified (H.264/H.265 only)">
+                        <select id="mode" onchange="modeChanged('${s.name}')" title="Passthrough sends the source unmodified (H.264/H.265 only)">
                             <option value="passthrough" ${s.mode === 'passthrough' ? 'selected' : ''}>Passthrough</option>
                             <option value="transcode" ${s.mode === 'transcode' ? 'selected' : ''}>Transcode</option>
                         </select>
                         ${modeNote}
                     </label>
-                    <label>Loop
-                        <select id="loop" onchange="settingChanged('${s.name}', ${s.running})">
-                            <option value="-1" ${s.loop_count === -1 ? 'selected' : ''}>Infinite</option>
-                            <option value="0" ${s.loop_count === 0 ? 'selected' : ''}>Play 1x</option>
-                            <option value="1" ${s.loop_count === 1 ? 'selected' : ''}>Play 2x</option>
-                            <option value="2" ${s.loop_count === 2 ? 'selected' : ''}>Play 3x</option>
-                            <option value="4" ${s.loop_count === 4 ? 'selected' : ''}>Play 5x</option>
-                            <option value="9" ${s.loop_count === 9 ? 'selected' : ''}>Play 10x</option>
-                        </select>
+                    <label>FPS
+                        <input type="number" id="fps" min="1" max="240" step="any" value="${s.frame_rate === null ? '' : Math.round(s.frame_rate * 1000) / 1000}" ${transcodeOff}
+                               onchange="fpsChanged('${s.name}')" title="Output frame rate. Transcode only.">
+                        <span class="hint">${s.frame_rate_explicit
+                            ? `<a href="#" onclick="resetSetting('${s.name}', 'fps'); return false;">reset to source (${fmtRate(s.source_frame_rate)})</a>`
+                            : `source rate${s.source_frame_rate ? ` (${fmtRate(s.source_frame_rate)})` : ''}`}</span>
                     </label>
                     <label>GOP (frames)
-                        <input type="number" id="gop" min="1" step="1" value="${s.gop_frames}" onchange="settingChanged('${s.name}', ${s.running})" title="Keyframe interval (transcode only)">
+                        <input type="number" id="gop" min="1" step="1" value="${s.gop_frames}" ${transcodeOff}
+                               onchange="gopChanged('${s.name}')" title="Keyframe interval; one second of frames unless changed. Transcode only.">
+                        <span class="hint">${s.gop_explicit
+                            ? `<a href="#" onclick="resetSetting('${s.name}', 'gop'); return false;">reset to one second</a>`
+                            : 'one second at the output rate'}</span>
                     </label>
                 </div>
                 ${outputCard(s, 'rtsp', [['rtsp', s.rtsp_url], ['hls', s.hls_url]], 'RTSP and HLS through MediaMTX')}
-                ${outputCard(s, 'udp', [['udp', s.udp_url]], 'MPEG-TS with KLV metadata')}`;
+                ${outputCard(s, 'udp', [['udp', s.udp_url]], 'MPEG-TS with KLV metadata')}
+                <div class="playback">
+                    <span>Playback</span>
+                    <select id="loop" onchange="loopChanged('${s.name}')">
+                        <option value="-1" ${s.loop_count === -1 ? 'selected' : ''}>Loop forever</option>
+                        <option value="0" ${s.loop_count === 0 ? 'selected' : ''}>Play once</option>
+                        <option value="1" ${s.loop_count === 1 ? 'selected' : ''}>Play 2x</option>
+                        <option value="2" ${s.loop_count === 2 ? 'selected' : ''}>Play 3x</option>
+                        <option value="4" ${s.loop_count === 4 ? 'selected' : ''}>Play 5x</option>
+                        <option value="9" ${s.loop_count === 9 ? 'selected' : ''}>Play 10x</option>
+                    </select>
+                </div>`;
         }
 
         function render() {
@@ -283,20 +306,19 @@
             loadStreams(true);
         }
 
-        function startStream(name) {
-            const loop = document.getElementById('loop').value;
-            const mode = document.getElementById('mode').value;
-            const gop = document.getElementById('gop').value;
-            return command(`/api/streams/${name}/start?loop=${loop}&mode=${mode}&gop=${gop}`, `start ${name}`);
+        // Settings are saved the moment they change; the supervisor restarts a
+        // running stream with them, so the command shown always matches.
+        function saveSettings(name, query) {
+            return command(`/api/streams/${name}/settings?${query}`, `change ${name} settings`);
         }
+        function modeChanged(name) { return saveSettings(name, 'mode=' + document.getElementById('mode').value); }
+        function loopChanged(name) { return saveSettings(name, 'loop=' + document.getElementById('loop').value); }
+        function gopChanged(name) { return saveSettings(name, 'gop=' + document.getElementById('gop').value); }
+        function fpsChanged(name) { return saveSettings(name, 'fps=' + (document.getElementById('fps').value || 'auto')); }
+        function resetSetting(name, key) { return saveSettings(name, key + '=auto'); }
+        function fmtRate(rate) { return rate ? `${Math.round(rate * 100) / 100} fps` : 'unknown'; }
 
-        // Changing a setting on a running stream applies it right away by
-        // restarting with the new values. On a stopped stream the choice
-        // simply waits for Start, so browsing the options starts nothing.
-        function settingChanged(name, running) {
-            if (running) startStream(name);
-        }
-
+        function startStream(name) { return command(`/api/streams/${name}/start`, `start ${name}`); }
         function stopStream(name) { return command(`/api/streams/${name}/stop`, `stop ${name}`); }
         function stopAll() { return command('/api/streams/stop-all', 'stop all streams'); }
         function startAll() { return command('/api/streams/start-all', 'start all streams'); }

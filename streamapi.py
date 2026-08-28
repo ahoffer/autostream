@@ -8,7 +8,8 @@ Routes:
   GET    /                                        the UI
   GET    /api/streams                             status of every stream
   POST   /api/streams/start-all | stop-all
-  POST   /api/streams/{name}/start?loop=&mode=&gop=  restart every output
+  POST   /api/streams/{name}/settings?loop=&mode=&gop=&fps=  store settings, apply if running
+  POST   /api/streams/{name}/start                start (or restart) with stored settings
   POST   /api/streams/{name}/stop                 stop every output
   POST   /api/streams/{name}/outputs/{out}/start  restart one output
   POST   /api/streams/{name}/outputs/{out}/stop   stop one output
@@ -108,42 +109,61 @@ class StreamHandler(BaseHTTPRequestHandler):
             return
 
         stream_name, action = path_parts[2], path_parts[3]
+        if not streams.stream_exists(stream_name):
+            self.send_json({"error": "Stream not found"}, 404)
+            return
         if action == 'start':
-            if not streams.stream_exists(stream_name):
-                self.send_json({"error": "Stream not found"}, 404)
-                return
-            query = parse_qs(parsed.query)
-            try:
-                loop_count = int(query.get('loop', ['-1'])[0])
-            except (TypeError, ValueError):
-                self.send_json({"error": "Invalid loop count"}, 400)
-                return
-            if loop_count < -1:
-                self.send_json({"error": "Invalid loop count"}, 400)
-                return
-            # Absent loop defaults to -1, but absent mode and gop keep the
-            # stored values: mode has no universal default (it depends on the
-            # file's codec), so a bare start must not reset a stream's choice.
-            mode = query.get('mode', [None])[0]
-            if mode is not None and mode not in ('passthrough', 'transcode'):
-                self.send_json({"error": "Invalid mode"}, 400)
-                return
-            gop_frames = query.get('gop', [None])[0]
-            if gop_frames is not None:
-                try:
-                    gop_frames = int(gop_frames)
-                except ValueError:
-                    gop_frames = 0
-                if gop_frames < 1:
-                    self.send_json({"error": "GOP length must be a whole number of frames, 1 or more"}, 400)
-                    return
-            success = streams.start_stream(stream_name, loop_count, mode, gop_frames)
-            self.send_json({"success": success})
+            self.send_json({"success": streams.start_stream(stream_name)})
         elif action == 'stop':
-            success = streams.stop_stream(stream_name)
-            self.send_json({"success": success})
+            self.send_json({"success": streams.stop_stream(stream_name)})
+        elif action == 'settings':
+            settings, error = parse_settings(parse_qs(parsed.query))
+            if error:
+                self.send_json({"error": error}, 400)
+                return
+            self.send_json({"success": streams.update_settings(stream_name, **settings)})
         else:
             self.send_json({"error": "Unknown action"}, 400)
+
+
+def parse_settings(query):
+    """The settings named in a ?loop=&mode=&gop=&fps= query as update_settings
+    keyword arguments, or an error message. An absent key leaves that setting
+    alone; fps=auto returns to the file's own rate and gop=auto to one second
+    at the output rate."""
+    settings = {}
+    if 'loop' in query:
+        try:
+            settings['loop_count'] = int(query['loop'][0])
+        except ValueError:
+            return None, "Invalid loop count"
+        if settings['loop_count'] < -1:
+            return None, "Invalid loop count"
+    if 'mode' in query:
+        if query['mode'][0] not in ('passthrough', 'transcode'):
+            return None, "Invalid mode"
+        settings['mode'] = query['mode'][0]
+    if 'gop' in query:
+        if query['gop'][0] == 'auto':
+            settings['gop_frames'] = None
+        else:
+            try:
+                settings['gop_frames'] = int(query['gop'][0])
+            except ValueError:
+                settings['gop_frames'] = 0
+            if settings['gop_frames'] < 1:
+                return None, "GOP length must be a whole number of frames, 1 or more, or auto"
+    if 'fps' in query:
+        if query['fps'][0] == 'auto':
+            settings['frame_rate'] = None
+        else:
+            try:
+                settings['frame_rate'] = float(query['fps'][0])
+            except ValueError:
+                settings['frame_rate'] = 0
+            if not 0 < settings['frame_rate'] <= 240:
+                return None, "FPS must be a number between 0 and 240, or auto"
+    return settings, None
 
 def serve(port):
     """Serve the control UI and API on port, until the process dies."""

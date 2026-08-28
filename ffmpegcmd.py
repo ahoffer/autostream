@@ -31,9 +31,17 @@ log = logging.getLogger(__name__)
 
 OUTPUT_NAMES = ("rtsp", "udp")
 
-# GOP size in frames (1s @ 30fps) for quick player join and loop recovery;
-# each stream can set its own in the UI.
+# GOP fallback in frames when the file's frame rate is unknown. The natural
+# default is one second of frames at the file's own rate (natural_gop_frames);
+# each stream can override it in the UI.
 DEFAULT_GOP_FRAMES = 30
+
+
+def natural_gop_frames(frame_rate):
+    """One second of frames at the output rate, the GOP used unless overridden."""
+    if frame_rate:
+        return max(1, round(frame_rate))
+    return DEFAULT_GOP_FRAMES
 
 ENCODER_TIERS = ("qsv", "vaapi", "x264")
 # Keyed by tier: the label is looked up from the cached tier for logs and status.
@@ -71,9 +79,19 @@ class FileProfile:
     audio_copyable: bool
     pix_fmt: str | None
     bitrate_bps: int | None
+    frame_rate: float | None
 
 
-UNKNOWN_PROFILE = FileProfile(None, None, False, None, None)
+UNKNOWN_PROFILE = FileProfile(None, None, False, None, None, None)
+
+
+def _parse_frame_rate(text):
+    """ffprobe's "30000/1001" rational (or "0/0" for unknown) as a float, or None."""
+    try:
+        numerator, denominator = (int(part) for part in str(text).split("/"))
+    except ValueError:
+        return None
+    return numerator / denominator if numerator > 0 and denominator > 0 else None
 
 
 def probe_file(video_path):
@@ -92,7 +110,8 @@ def probe_file(video_path):
         result = subprocess.run(
             ["ffprobe", "-v", "error",
              "-show_entries",
-             "stream=index,codec_type,codec_name,pix_fmt,extradata_size,bit_rate:format=bit_rate",
+             "stream=index,codec_type,codec_name,pix_fmt,extradata_size,bit_rate,avg_frame_rate"
+             ":format=bit_rate",
              "-of", "json", str(video_path)],
             capture_output=True, text=True, timeout=10,
         )
@@ -121,6 +140,7 @@ def probe_file(video_path):
                            for entry in audio_streams),
         pix_fmt=video_streams[0].get("pix_fmt") if video_streams else None,
         bitrate_bps=bitrate,
+        frame_rate=_parse_frame_rate(video_streams[0].get("avg_frame_rate")) if video_streams else None,
     )
 
 
@@ -188,6 +208,7 @@ class EncodeSpec:
     stream_name: str
     loop_count: int
     gop_frames: int
+    frame_rate: float | None    # output rate under transcode; None keeps the source's
     passthrough: bool
     audio_copy: bool
     bitrate_cap: str
@@ -244,6 +265,8 @@ def build_argv(spec, output_name):
         else:
             input_opts = []
         video_opts = _tier_video_opts(spec.encoder_tier, spec.gop_frames)
+        if spec.frame_rate:
+            video_opts += ["-r", f"{spec.frame_rate:g}"]
         if spec.bitrate_cap:
             bitrate_opts = ["-b:v", spec.bitrate_cap, "-maxrate", spec.bitrate_cap,
                             "-bufsize", spec.bitrate_cap]
@@ -369,6 +392,9 @@ def build_argv(spec, output_name):
 #                                input DTS are the only correct interleaving order for
 #                                B-frame sources, so there it is dropped.
 # -avoid_negative_ts make_zero   Shift all timestamps to start at 0 (prevents negative values)
+# -r <fps>                       (transcode only, when the stream's FPS setting is set)
+#                                Output frame rate; frames are dropped or duplicated
+#                                to hit it. Absent, the source rate is kept
 # -vsync cfr                     (RTSP output, transcode only) Constant frame rate (even
 #                                frame spacing at loop point); an encode-path operation
 #                                ffmpeg rejects when combined with -c:v copy
