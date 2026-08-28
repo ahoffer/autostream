@@ -80,9 +80,11 @@ with their own Start and Stop:
 - **udp** pushes the KLV-preserving MPEG-TS feed to `OUTPUT_HOST`.
 
 Stopping one output leaves the other running, and the choice is remembered:
-a stopped output stays down through dead-process sweeps and container
-restarts until it is started again. The stream-level Start and Stop (and
-Start All / Stop All) apply to both outputs. Both processes decode and encode
+a stopped output stays down through dead-process sweeps, settings changes,
+and container restarts until it is started again. The stream-level Stop
+stops both outputs; Start on a fully stopped stream brings both up, while
+Restart (or a settings change) on a running stream relaunches only the
+outputs that are up. Start All / Stop All apply to every output. Both processes decode and encode
 independently, so a transcoded stream costs about twice the CPU or GPU it
 did as a single process.
 

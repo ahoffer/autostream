@@ -6,68 +6,92 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <style>
         * { box-sizing: border-box; }
-        /* zoom scales every component (text, buttons, spacing) together. */
-        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-               max-width: 900px; margin: 0 auto; padding: 20px; background: #1a1a2e; color: #eee;
-               zoom: 0.8; }
-        h1 { color: #00d4ff; }
-        .stream { background: #16213e; border-radius: 8px; padding: 15px; margin: 10px 0;
-                  display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
-        .stream-name { font-weight: bold; font-size: 1.1em; flex: 1; min-width: 150px; }
-        .stream-status { padding: 4px 12px; border-radius: 12px; font-size: 1.275em; }
-        .running { background: #00c853; color: #000; }
-        .stopped { background: #ff5252; color: #fff; }
-        .waiting { background: #ffb74d; color: #000; }
-        .controls { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
-        button { padding: 8px 16px; border: none; border-radius: 4px; cursor: pointer;
-                 font-size: 1.35em; transition: opacity 0.2s; }
+        html, body { height: 100%; }
+        body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+               background: #1a1a2e; color: #eee; display: grid; grid-template-columns: 280px minmax(0, 1fr); }
+        button { padding: 6px 14px; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; transition: opacity 0.2s; }
         button:hover { opacity: 0.8; }
         button:disabled { opacity: 0.5; cursor: not-allowed; }
         .btn-start { background: #00c853; color: #000; }
         .btn-stop { background: #ff5252; color: #fff; }
-        .btn-plain { background: #0f3460; color: #fff; border: 1px solid #00d4ff; }
-        select, input[type=number] { padding: 8px; border-radius: 4px; background: #0f3460; color: #fff; border: 1px solid #00d4ff; }
-        input[type=number] { width: 5em; }
-        .gop-label { color: #aaa; font-size: 0.95em; }
-        .urls { width: 100%; margin-top: 5px; display: flex; flex-direction: column; gap: 3px; }
-        .url-row { display: flex; align-items: center; gap: 6px; font-size: 1.2em; color: #888; }
-        .url-label { color: #00d4ff; font-weight: bold; min-width: 54px; }
-        .url-text { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; word-break: break-all; }
-        .copy-btn { background: transparent; border: none; color: #888; cursor: pointer; padding: 2px 4px;
+        select, input[type=number] { padding: 8px 10px; border-radius: 4px; background: #0f3460; color: #fff;
+                                     border: 1px solid #00d4ff; font-size: 14px; width: 100%; }
+        .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+
+        /* Sidebar: the stream list */
+        .sidebar { display: flex; flex-direction: column; background: #16213e; border-right: 1px solid #0f3460; padding: 20px 0; min-height: 100vh; }
+        .sidebar-header { display: flex; align-items: center; justify-content: space-between; padding: 0 18px 16px; }
+        .sidebar-header h1 { margin: 0; font-size: 18px; color: #00d4ff; }
+        .sidebar-header span { font-size: 12px; color: #8a93a8; }
+        .stream-item { display: flex; align-items: center; justify-content: space-between; padding: 12px 18px; font-size: 14px;
+                       cursor: pointer; border-left: 3px solid transparent; }
+        .stream-item:hover { background: #1b2a4f; }
+        .stream-item.selected { background: #0f3460; border-left-color: #00d4ff; font-weight: 600; }
+        .dots { display: flex; gap: 6px; }
+        .dot { width: 10px; height: 10px; border-radius: 50%; }
+        .dot.running { background: #00c853; }
+        .dot.waiting { background: #ffb74d; }
+        .dot.stopped { border: 1px solid #ff5252; }
+        .sidebar-footer { margin-top: auto; display: flex; gap: 8px; padding: 16px 18px 0; }
+        .sidebar-footer button { flex: 1; padding: 8px 0; }
+
+        /* Detail pane: the selected stream */
+        .detail { display: flex; flex-direction: column; gap: 22px; padding: 28px 32px; max-width: 960px; }
+        .detail-header { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+        .detail-title { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+        .detail-title h2 { margin: 0; font-size: 24px; }
+        .detail-title span { font-size: 12px; color: #8a93a8; }
+        .header-buttons { display: flex; gap: 8px; }
+        .header-buttons button { padding: 8px 16px; }
+        .settings { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+        .settings label { display: flex; flex-direction: column; gap: 6px; font-size: 12px; color: #8a93a8;
+                          text-transform: uppercase; letter-spacing: 0.04em; }
+        .reason { color: #ffb74d; font-style: italic; font-size: 13px; }
+        .output { display: flex; flex-direction: column; gap: 10px; padding: 14px 16px; background: #16213e; border-radius: 8px; }
+        .output-header { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+        .output-header .name { font-weight: 700; color: #00d4ff; width: 48px; }
+        .output-header .spacer { flex: 1; }
+        .pill { padding: 3px 10px; border-radius: 10px; font-size: 12px; font-weight: 600; }
+        .pill.running { background: #00c853; color: #000; }
+        .pill.waiting { background: #ffb74d; color: #000; }
+        .pill.stopped { background: #2a2f4a; color: #ff8a8a; border: 1px solid #ff5252; }
+        .url-grid { display: grid; grid-template-columns: 48px 1fr 28px; gap: 8px; align-items: center; font-size: 13px; }
+        .url-grid .label { color: #8a93a8; }
+        .url-grid .url { color: #ccc; word-break: break-all; }
+        .url-grid.inactive .url { opacity: 0.45; text-decoration: line-through; }
+        .copy-btn { background: transparent; border: none; color: #8a93a8; cursor: pointer; padding: 2px 4px;
                     border-radius: 3px; display: inline-flex; align-items: center; }
         .copy-btn:hover { color: #00d4ff; background: rgba(0, 212, 255, 0.1); }
         .copy-btn.copied { color: #00c853; }
         .copy-btn.copy-failed { color: #ff5252; }
-        .copy-btn svg { width: 21px; height: 21px; }
-        .url-row.inactive .url-text { opacity: 0.45; text-decoration: line-through; }
-        .reason { color: #ffb74d; font-style: italic; }
-        .outputs { width: 100%; display: flex; flex-direction: column; gap: 6px; margin-top: 8px;
-                   border-top: 1px solid #0f3460; padding-top: 8px; }
-        .output-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 1.1em; }
-        .output-label { color: #00d4ff; font-weight: bold; min-width: 54px; }
-        .output-status { padding: 2px 10px; border-radius: 10px; font-size: 0.95em; }
-        .output-row button { font-size: 1em; padding: 5px 12px; }
-        .command { width: 100%; margin: 0; padding: 8px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-                   font-size: 0.9em; background: #0f3460; color: #ccc; border-radius: 4px;
-                   white-space: pre-wrap; word-break: break-all; }
-        .error-banner { background: #4a1e1e; border: 1px solid #ff5252; color: #ffb4b4;
-                        border-radius: 4px; padding: 10px 12px; margin-bottom: 15px; font-size: 1.35em; }
+        .copy-btn svg { width: 16px; height: 16px; }
+        details { font-size: 12px; color: #8a93a8; }
+        summary { cursor: pointer; color: #00d4ff; }
+        pre.command { margin: 8px 0 0; padding: 10px; background: #0f3460; color: #bbb; border-radius: 4px;
+                      white-space: pre-wrap; word-break: break-all; font-size: 11.5px; }
+        .error-banner { background: #4a1e1e; border: 1px solid #ff5252; color: #ffb4b4; border-radius: 4px; padding: 10px 12px; }
+        .empty { color: #8a93a8; }
     </style>
 </head>
 <body>
-    <h1>Stream Control</h1>
-    <div style="margin-bottom: 15px;">
-        <button class="btn-stop" onclick="stopAll()">Stop All</button>
-        <button class="btn-start" onclick="startAll()">Start All</button>
-    </div>
-    <!-- Below the controls so showing it never shifts the buttons under the cursor. -->
-    <div id="error" class="error-banner" hidden></div>
-    <div id="streams"></div>
+    <nav class="sidebar">
+        <div class="sidebar-header"><h1>Streams</h1><span id="count"></span></div>
+        <div id="list"></div>
+        <div class="sidebar-footer">
+            <button class="btn-stop" onclick="stopAll()">Stop All</button>
+            <button class="btn-start" onclick="startAll()">Start All</button>
+        </div>
+    </nav>
+    <main class="detail">
+        <div id="error" class="error-banner" hidden></div>
+        <div id="detail"></div>
+    </main>
     <script>
         const copyIcon = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>`;
 
-        // "stream/output" keys of the command views that are open, so the
-        // poll's rewrite reproduces them.
+        let streams = [];
+        let selectedName = null;
+        // Output names whose command view is open, so a rewrite keeps it open.
         const openCommands = new Set();
         let lastPayload = '';
 
@@ -75,80 +99,107 @@
             return String(text).replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
         }
 
-        function urlRow(label, url, active, reason, title) {
-            return `<div class="url-row${active ? '' : ' inactive'}">
-                <span class="url-label" title="${title}">${label}</span>
-                <span class="url-text">${url ?? 'none assigned'}</span>
-                ${active
-                    ? `<button class="copy-btn" title="Copy ${label} URL" onclick='copyUrl(this, ${JSON.stringify(url)})'>${copyIcon}</button>`
-                    : `<span class="reason">inactive${reason ? ' — ' + reason : ''}</span>`}
-            </div>`;
+        function outputState(output) {
+            return output.running ? 'running' : output.enabled ? 'waiting' : 'stopped';
         }
 
-        function outputRow(streamName, outputName, output) {
-            const key = `${streamName}/${outputName}`;
-            const status = output.running ? ['running', 'Running']
-                         : output.enabled ? ['waiting', 'Waiting']
-                         : ['stopped', 'Stopped'];
-            return `<div class="output-row">
-                <span class="output-label">${outputName.toUpperCase()}</span>
-                <span class="output-status ${status[0]}">${status[1]}</span>
-                ${output.reason && output.enabled ? `<span class="reason">${escapeHtml(output.reason)}</span>` : ''}
-                <button class="btn-stop" onclick="stopOutput('${streamName}', '${outputName}')" ${output.enabled ? '' : 'disabled'}>Stop</button>
-                <button class="btn-start" onclick="startOutput('${streamName}', '${outputName}')" title="Start, or restart if running">Start</button>
-                <button class="btn-plain" onclick="toggleCommand('${key}')" ${output.command === null ? 'disabled' : ''} title="Show the ffmpeg command line">Command</button>
-                ${openCommands.has(key) ? `<pre class="command">${escapeHtml(output.command)}</pre>` : ''}
-            </div>`;
-        }
-
-        function streamCard(s) {
-            return `
-                <div class="stream">
-                    <span class="stream-name">${s.name}</span>
-                    <span class="stream-status ${s.running ? 'running' : 'stopped'}">
-                        ${s.running ? 'Running' : 'Stopped'}
+        function renderList() {
+            document.getElementById('count').textContent = streams.length;
+            document.getElementById('list').innerHTML = streams.map(s => `
+                <div class="stream-item${s.name === selectedName ? ' selected' : ''}" onclick="select('${s.name}')">
+                    <span>${s.name}</span>
+                    <span class="dots">
+                        <span class="dot ${outputState(s.outputs.rtsp)}" title="rtsp"></span>
+                        <span class="dot ${outputState(s.outputs.udp)}" title="udp"></span>
                     </span>
-                    <div class="controls">
-                        <select id="mode-${s.name}" onchange="settingChanged('${s.name}', ${s.running})" title="Video passthrough sends the source unmodified (H.264/H.265 only); changing it restarts a running stream">
-                            <option value="passthrough" ${s.mode === 'passthrough' ? 'selected' : ''}>Video: Passthrough</option>
-                            <option value="transcode" ${s.mode === 'transcode' ? 'selected' : ''}>Video: Transcode</option>
+                </div>`).join('');
+        }
+
+        function urlRow(label, url, active) {
+            return `<span class="label">${label}</span>
+                <span class="url mono">${url ?? 'none assigned'}</span>
+                ${active ? `<button class="copy-btn" title="Copy ${label} URL" onclick='copyUrl(this, ${JSON.stringify(url)})'>${copyIcon}</button>` : '<span></span>'}`;
+        }
+
+        function outputCard(s, outputName, urls, note) {
+            const output = s.outputs[outputName];
+            const state = outputState(output);
+            const label = {running: 'Running', waiting: 'Waiting', stopped: 'Stopped'}[state];
+            return `<div class="output">
+                <div class="output-header">
+                    <span class="name">${outputName.toUpperCase()}</span>
+                    <span class="pill ${state}">${label}</span>
+                    ${output.reason && output.enabled ? `<span class="reason">${escapeHtml(output.reason)}</span>` : `<span class="reason" style="color:#8a93a8;font-style:normal">${note}</span>`}
+                    <span class="spacer"></span>
+                    <button class="btn-stop" onclick="stopOutput('${s.name}', '${outputName}')" ${output.enabled ? '' : 'disabled'}>Stop</button>
+                    <button class="btn-start" onclick="startOutput('${s.name}', '${outputName}')">${output.running ? 'Restart' : 'Start'}</button>
+                </div>
+                <div class="url-grid${output.running ? '' : ' inactive'}">
+                    ${urls.map(([label, url]) => urlRow(label, url, output.running)).join('')}
+                </div>
+                ${output.command === null ? '' : `
+                <details ${openCommands.has(outputName) ? 'open' : ''} ontoggle="toggleCommand('${outputName}', this.open)">
+                    <summary>Command</summary>
+                    <pre class="command mono">${escapeHtml(output.command)}</pre>
+                </details>`}
+            </div>`;
+        }
+
+        function renderDetail() {
+            const s = streams.find(x => x.name === selectedName);
+            const detail = document.getElementById('detail');
+            if (!s) {
+                detail.innerHTML = `<p class="empty">${streams.length ? 'Select a stream' : 'No videos in the videos directory'}</p>`;
+                return;
+            }
+            const modeNote = s.mode === 'passthrough' && !s.passthrough_active && s.passthrough_reason
+                ? `<span class="reason">transcoding — ${escapeHtml(s.passthrough_reason)}</span>` : '';
+            detail.innerHTML = `
+                <div class="detail-header">
+                    <div class="detail-title">
+                        <h2>${s.name}</h2>
+                        <span class="mono">${escapeHtml(s.filename)} · ${escapeHtml(s.encoder)}</span>
+                    </div>
+                    <div class="header-buttons">
+                        <button class="btn-stop" onclick="stopStream('${s.name}')" ${s.running ? '' : 'disabled'}>Stop</button>
+                        <button class="btn-start" onclick="startStream('${s.name}')">${s.running ? 'Restart' : 'Start'}</button>
+                    </div>
+                </div>
+                <div class="settings">
+                    <label>Video
+                        <select id="mode" onchange="settingChanged('${s.name}', ${s.running})" title="Passthrough sends the source unmodified (H.264/H.265 only)">
+                            <option value="passthrough" ${s.mode === 'passthrough' ? 'selected' : ''}>Passthrough</option>
+                            <option value="transcode" ${s.mode === 'transcode' ? 'selected' : ''}>Transcode</option>
                         </select>
-                        <select id="loop-${s.name}" onchange="settingChanged('${s.name}', ${s.running})">
-                            <option value="-1" ${s.loop_count === -1 ? 'selected' : ''}>Loop: Infinite</option>
-                            <option value="0" ${s.loop_count === 0 ? 'selected' : ''}>Play: 1x</option>
-                            <option value="1" ${s.loop_count === 1 ? 'selected' : ''}>Play: 2x</option>
-                            <option value="2" ${s.loop_count === 2 ? 'selected' : ''}>Play: 3x</option>
-                            <option value="4" ${s.loop_count === 4 ? 'selected' : ''}>Play: 5x</option>
-                            <option value="9" ${s.loop_count === 9 ? 'selected' : ''}>Play: 10x</option>
+                        ${modeNote}
+                    </label>
+                    <label>Loop
+                        <select id="loop" onchange="settingChanged('${s.name}', ${s.running})">
+                            <option value="-1" ${s.loop_count === -1 ? 'selected' : ''}>Infinite</option>
+                            <option value="0" ${s.loop_count === 0 ? 'selected' : ''}>Play 1x</option>
+                            <option value="1" ${s.loop_count === 1 ? 'selected' : ''}>Play 2x</option>
+                            <option value="2" ${s.loop_count === 2 ? 'selected' : ''}>Play 3x</option>
+                            <option value="4" ${s.loop_count === 4 ? 'selected' : ''}>Play 5x</option>
+                            <option value="9" ${s.loop_count === 9 ? 'selected' : ''}>Play 10x</option>
                         </select>
-                        <label class="gop-label" title="Keyframe interval in frames (transcode only); changing it restarts a running stream">GOP
-                            <input type="number" id="gop-${s.name}" min="1" step="1" value="${s.gop_frames}" onchange="settingChanged('${s.name}', ${s.running})">
-                        </label>
-                        <button class="btn-stop" onclick="stopStream('${s.name}')" ${!s.running ? 'disabled' : ''}>Stop</button>
-                        <button class="btn-start" onclick="startStream('${s.name}')" ${s.running ? 'disabled' : ''}>Start</button>
-                    </div>
-                    <div class="urls">
-                        ${urlRow('RTSP', s.rtsp_url, s.outputs.rtsp.running, s.outputs.rtsp.reason, 'RTSP through MediaMTX')}
-                        ${urlRow('HLS', s.hls_url, s.outputs.rtsp.running, s.outputs.rtsp.reason, 'HLS is MediaMTX re-serving the RTSP output, so it is up whenever RTSP is')}
-                        ${urlRow('UDP', s.udp_url, s.outputs.udp.running, s.outputs.udp.reason, 'MPEG-TS/UDP feed that preserves KLV metadata')}
-                        ${s.mode === 'passthrough' && !s.passthrough_active
-                            ? `<div class="url-row inactive">
-                                <span class="url-label" title="Requested passthrough is not in effect">MODE</span>
-                                <span class="reason">transcoding${s.passthrough_reason ? ' — ' + s.passthrough_reason : ''}</span>
-                            </div>`
-                            : ''}
-                    </div>
-                    <div class="outputs">
-                        ${outputRow(s.name, 'rtsp', s.outputs.rtsp)}
-                        ${outputRow(s.name, 'udp', s.outputs.udp)}
-                    </div>
-                </div>`;
+                    </label>
+                    <label>GOP (frames)
+                        <input type="number" id="gop" min="1" step="1" value="${s.gop_frames}" onchange="settingChanged('${s.name}', ${s.running})" title="Keyframe interval (transcode only)">
+                    </label>
+                </div>
+                ${outputCard(s, 'rtsp', [['rtsp', s.rtsp_url], ['hls', s.hls_url]], 'RTSP and HLS through MediaMTX')}
+                ${outputCard(s, 'udp', [['udp', s.udp_url]], 'MPEG-TS with KLV metadata')}`;
+        }
+
+        function render() {
+            if (!streams.some(s => s.name === selectedName)) selectedName = streams.length ? streams[0].name : null;
+            renderList();
+            renderDetail();
         }
 
         async function loadStreams(force) {
-            const container = document.getElementById('streams');
-            // Never rewrite the page while a value is being typed: the caret
-            // would be lost. The next poll after blur catches up.
+            // Never rewrite while a value is being typed: the caret would be
+            // lost. The next poll after blur catches up.
             if (!force && document.activeElement && document.activeElement.tagName === 'INPUT') return;
             try {
                 const res = await fetch('/api/streams');
@@ -157,11 +208,20 @@
                 // unsubmitted selection survives the 5s poll.
                 if (!force && payload === lastPayload) return;
                 lastPayload = payload;
-                const streams = JSON.parse(payload);
-                container.innerHTML = streams.length ? streams.map(streamCard).join('') : '<p>No streams found</p>';
+                streams = JSON.parse(payload);
+                render();
             } catch (err) {
-                container.innerHTML = '<p style="color:#ff5252">Error loading streams: ' + err.message + '</p>';
+                document.getElementById('detail').innerHTML = '<p style="color:#ff5252">Error loading streams: ' + err.message + '</p>';
             }
+        }
+
+        function select(name) {
+            selectedName = name;
+            render();
+        }
+
+        function toggleCommand(outputName, open) {
+            if (open) openCommands.add(outputName); else openCommands.delete(outputName);
         }
 
         async function copyUrl(btn, text) {
@@ -224,10 +284,10 @@
         }
 
         function startStream(name) {
-            const loopCount = document.getElementById('loop-' + name).value;
-            const mode = document.getElementById('mode-' + name).value;
-            const gop = document.getElementById('gop-' + name).value;
-            return command(`/api/streams/${name}/start?loop=${loopCount}&mode=${mode}&gop=${gop}`, `start ${name}`);
+            const loop = document.getElementById('loop').value;
+            const mode = document.getElementById('mode').value;
+            const gop = document.getElementById('gop').value;
+            return command(`/api/streams/${name}/start?loop=${loop}&mode=${mode}&gop=${gop}`, `start ${name}`);
         }
 
         // Changing a setting on a running stream applies it right away by
@@ -237,30 +297,11 @@
             if (running) startStream(name);
         }
 
-        function stopStream(name) {
-            return command(`/api/streams/${name}/stop`, `stop ${name}`);
-        }
-
-        function stopAll() {
-            return command('/api/streams/stop-all', 'stop all streams');
-        }
-
-        function startAll() {
-            return command('/api/streams/start-all', 'start all streams');
-        }
-
-        function startOutput(name, output) {
-            return command(`/api/streams/${name}/outputs/${output}/start`, `start ${name}/${output}`);
-        }
-
-        function stopOutput(name, output) {
-            return command(`/api/streams/${name}/outputs/${output}/stop`, `stop ${name}/${output}`);
-        }
-
-        function toggleCommand(key) {
-            if (openCommands.has(key)) openCommands.delete(key); else openCommands.add(key);
-            loadStreams(true);
-        }
+        function stopStream(name) { return command(`/api/streams/${name}/stop`, `stop ${name}`); }
+        function stopAll() { return command('/api/streams/stop-all', 'stop all streams'); }
+        function startAll() { return command('/api/streams/start-all', 'start all streams'); }
+        function startOutput(name, output) { return command(`/api/streams/${name}/outputs/${output}/start`, `start ${name}/${output}`); }
+        function stopOutput(name, output) { return command(`/api/streams/${name}/outputs/${output}/stop`, `stop ${name}/${output}`); }
 
         loadStreams();
         setInterval(loadStreams, 5000);

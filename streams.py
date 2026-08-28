@@ -549,10 +549,13 @@ def refresh_stream_probe(stream_name):
 # ---- Operations: what the UI, API, and file events ask for ----
 
 def start_stream(stream_name, loop_count=None, mode=None, gop_frames=None):
-    """(Re)start every output of a stream, re-enabling both.
+    """(Re)start a stream with the given settings.
 
-    A None setting keeps the last requested value (for mode, the codec default
-    when the user never picked one).
+    A fully stopped stream comes up with both outputs. One that is up keeps
+    its per-output choices: a settings change or Restart relaunches the
+    enabled outputs and leaves a deliberately stopped one down. A None
+    setting keeps the last requested value (for mode, the codec default when
+    the user never picked one).
     """
     with _state_lock:
         stream = _streams_by_name.get(stream_name)
@@ -565,12 +568,15 @@ def start_stream(stream_name, loop_count=None, mode=None, gop_frames=None):
             stream.mode = mode
         if gop_frames is not None:
             stream.gop_frames = gop_frames
+        if not any(output.enabled for output in stream.outputs):
+            for output in stream.outputs:
+                output.enabled = True
         for output in stream.outputs:
-            output.enabled = True
             output.completed = False
         _persist()
+        enabled = [output.name for output in stream.outputs if output.enabled]
     refresh_stream_probe(stream_name)
-    launched = [_relaunch_output(stream_name, output_name) for output_name in ffmpegcmd.OUTPUT_NAMES]
+    launched = [_relaunch_output(stream_name, output_name) for output_name in enabled]
     return any(launched)
 
 
@@ -718,6 +724,7 @@ def get_stream_status():
                 passthrough_reason = "starting"
             result.append({
                 "name": stream.name,
+                "filename": stream.filename,
                 "running": stream.running,
                 "stopping": stream.stopping,
                 "loop_count": stream.loop_count,
