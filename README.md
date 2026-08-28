@@ -52,9 +52,10 @@ stopped stream the choice is applied at the next Start. The modes:
   defaults to one second at the output rate (25 for 25 fps). A shorter GOP
   means faster player join and loop recovery at some bitrate cost.
 
-Settings changes are saved as soon as they are made; a running stream
-restarts with the new values right away, and the command shown for each
-output is always what the current settings produce.
+Settings edits are held until Apply (Cancel puts the previous values back);
+Apply saves them and restarts a running stream with the new values in one
+go, and the command shown for each output is always what the saved
+settings produce.
 
 Audio is handled automatically in both modes: copied when the source is
 already AAC, re-encoded to AAC otherwise.

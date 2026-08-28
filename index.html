@@ -14,8 +14,12 @@
         button:disabled { opacity: 0.5; cursor: not-allowed; }
         .btn-start { background: #00c853; color: #000; }
         .btn-stop { background: #ff5252; color: #fff; }
+        .btn-plain { background: transparent; color: #eee; border: 1px solid #8a93a8; }
         select, input[type=number] { padding: 8px 10px; border-radius: 4px; background: #0f3460; color: #fff;
-                                     border: 1px solid #00d4ff; font-size: 14px; width: 100%; }
+                                     border: 1px solid #0f3460; font-size: 14px; width: 100%; }
+        select:focus, input:focus { border-color: #00d4ff; outline: none; }
+        /* Keyboard focus only: a visible ring for Tab users, none on mouse clicks. */
+        :focus-visible { outline: 2px solid #00d4ff; outline-offset: 2px; }
         .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
 
         /* Sidebar: the stream list */
@@ -23,20 +27,22 @@
         .sidebar-header { display: flex; align-items: center; justify-content: space-between; padding: 0 18px 16px; }
         .sidebar-header h1 { margin: 0; font-size: 18px; color: #00d4ff; }
         .sidebar-header span { font-size: 12px; color: #8a93a8; }
-        .stream-item { display: flex; align-items: center; justify-content: space-between; padding: 12px 18px; font-size: 14px;
-                       cursor: pointer; border-left: 3px solid transparent; }
-        .stream-item:hover { background: #1b2a4f; }
+        .stale { color: #ffb74d; }
+        .stream-item { display: flex; align-items: center; justify-content: space-between; width: 100%; padding: 12px 18px;
+                       font-size: 14px; color: #eee; background: transparent; border: none; border-left: 3px solid transparent;
+                       border-radius: 0; text-align: left; }
+        .stream-item:hover { background: #1b2a4f; opacity: 1; }
         .stream-item.selected { background: #0f3460; border-left-color: #00d4ff; font-weight: 600; }
         .dots { display: flex; gap: 6px; }
         .dot { width: 10px; height: 10px; border-radius: 50%; }
         .dot.running { background: #00c853; }
         .dot.waiting { background: #ffb74d; }
-        .dot.stopped { border: 1px solid #ff5252; }
+        .dot.stopped { background: #2a2f4a; border: 2px solid #ff5252; }
         .sidebar-footer { margin-top: auto; display: flex; gap: 8px; padding: 16px 18px 0; }
         .sidebar-footer button { flex: 1; padding: 8px 0; }
 
         /* Detail pane: the selected stream */
-        .detail { display: flex; flex-direction: column; gap: 16px; padding: 28px 32px; max-width: 960px; }
+        .detail { display: flex; flex-direction: column; gap: 16px; padding: 28px 32px; max-width: 1000px; }
         #detail { display: flex; flex-direction: column; gap: 22px; }
         .detail-header { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
         .detail-title { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
@@ -44,31 +50,31 @@
         .detail-title span { font-size: 12px; color: #8a93a8; }
         .header-buttons { display: flex; gap: 8px; }
         .header-buttons button { padding: 8px 16px; }
-        .settings { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+        .settings { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
         .settings label { display: flex; flex-direction: column; gap: 6px; font-size: 12px; color: #8a93a8;
                           text-transform: uppercase; letter-spacing: 0.04em; }
         .settings input:disabled { opacity: 0.4; }
-        .hint { font-size: 11px; text-transform: none; letter-spacing: 0; }
+        .hint { font-size: 12px; text-transform: none; letter-spacing: 0; min-height: 1.2em; }
         .hint a { color: #00d4ff; }
-        .playback { display: flex; align-items: center; gap: 10px; font-size: 12px; color: #8a93a8;
-                    text-transform: uppercase; letter-spacing: 0.04em; }
-        .playback select { width: auto; padding: 4px 8px; font-size: 12px; background: transparent; border-color: #0f3460; color: #8a93a8; }
+        .settings-actions { display: flex; align-items: center; gap: 10px; font-size: 13px; color: #ffb74d; }
         .reason { color: #ffb74d; font-style: italic; font-size: 13px; }
         .output { display: flex; flex-direction: column; gap: 10px; padding: 14px 16px; background: #16213e; border-radius: 8px; }
         .output-header { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
         .output-header .name { font-weight: 700; color: #00d4ff; width: 48px; }
+        .output-header .note { color: #8a93a8; font-size: 13px; }
         .output-header .spacer { flex: 1; }
         .pill { padding: 3px 10px; border-radius: 10px; font-size: 12px; font-weight: 600; }
         .pill.running { background: #00c853; color: #000; }
         .pill.waiting { background: #ffb74d; color: #000; }
         .pill.stopped { background: #2a2f4a; color: #ff8a8a; border: 1px solid #ff5252; }
-        .url-grid { display: grid; grid-template-columns: 48px 1fr 28px; gap: 8px; align-items: center; font-size: 13px; }
+        .url-grid { display: grid; grid-template-columns: 48px 1fr auto; gap: 8px; align-items: center; font-size: 13px; }
         .url-grid .label { color: #8a93a8; }
         .url-grid .url { color: #ccc; word-break: break-all; }
         .url-grid.inactive .url { opacity: 0.45; text-decoration: line-through; }
-        .copy-btn { background: transparent; border: none; color: #8a93a8; cursor: pointer; padding: 2px 4px;
-                    border-radius: 3px; display: inline-flex; align-items: center; }
-        .copy-btn:hover { color: #00d4ff; background: rgba(0, 212, 255, 0.1); }
+        .url-grid .url.none { text-decoration: none; opacity: 1; color: #8a93a8; }
+        .copy-btn { background: transparent; border: none; color: #8a93a8; cursor: pointer; padding: 2px 6px;
+                    border-radius: 3px; display: inline-flex; align-items: center; gap: 4px; font-size: 12px; }
+        .copy-btn:hover { color: #00d4ff; background: rgba(0, 212, 255, 0.1); opacity: 1; }
         .copy-btn.copied { color: #00c853; }
         .copy-btn.copy-failed { color: #ff5252; }
         .copy-btn svg { width: 16px; height: 16px; }
@@ -76,7 +82,10 @@
         summary { cursor: pointer; color: #00d4ff; }
         pre.command { margin: 8px 0 0; padding: 10px; background: #0f3460; color: #bbb; border-radius: 4px;
                       white-space: pre-wrap; word-break: break-all; font-size: 11.5px; }
-        .error-banner { background: #4a1e1e; border: 1px solid #ff5252; color: #ffb4b4; border-radius: 4px; padding: 10px 12px; }
+        .error-banner { display: flex; align-items: center; gap: 12px; background: #4a1e1e; border: 1px solid #ff5252;
+                        color: #ffb4b4; border-radius: 4px; padding: 10px 12px; }
+        .error-banner span { flex: 1; }
+        .error-banner button { background: transparent; color: #ffb4b4; border: 1px solid #ff5252; padding: 2px 10px; }
         .empty { color: #8a93a8; }
     </style>
 </head>
@@ -84,13 +93,16 @@
     <nav class="sidebar">
         <div class="sidebar-header"><h1>Streams</h1><span id="count"></span></div>
         <div id="list"></div>
-        <div class="sidebar-footer">
-            <button class="btn-stop" onclick="stopAll()">Stop All</button>
-            <button class="btn-start" onclick="startAll()">Start All</button>
+        <div class="sidebar-footer" id="all-buttons">
+            <button class="btn-stop" onclick="stopAll(this)">Stop All</button>
+            <button class="btn-start" onclick="startAll(this)">Start All</button>
         </div>
     </nav>
     <main class="detail">
-        <div id="error" class="error-banner" hidden></div>
+        <div id="error" class="error-banner" hidden>
+            <span id="error-text"></span>
+            <button onclick="hideError()" title="Dismiss">Dismiss</button>
+        </div>
         <div id="detail"></div>
     </main>
     <script>
@@ -98,9 +110,13 @@
 
         let streams = [];
         let selectedName = null;
+        // Unapplied settings edits for the selected stream: null when the
+        // controls show the server's values. fps/gop null means "automatic".
+        let draft = null;
         // Output names whose command view is open, so a rewrite keeps it open.
         const openCommands = new Set();
         let lastPayload = '';
+        let lastUpdate = null;
 
         function escapeHtml(text) {
             return String(text).replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
@@ -110,21 +126,24 @@
             return output.running ? 'running' : output.enabled ? 'waiting' : 'stopped';
         }
 
+        function fmtRate(rate) { return rate ? `${Math.round(rate * 100) / 100} fps` : 'unknown'; }
+
         function renderList() {
             document.getElementById('count').textContent = streams.length;
+            document.getElementById('all-buttons').hidden = streams.length === 0;
             document.getElementById('list').innerHTML = streams.map(s => `
-                <div class="stream-item${s.name === selectedName ? ' selected' : ''}" onclick="select('${s.name}')">
+                <button class="stream-item${s.name === selectedName ? ' selected' : ''}" onclick="select('${s.name}')">
                     <span>${s.name}</span>
                     <span class="dots">
-                        <span class="dot ${outputState(s.outputs.rtsp)}" title="rtsp"></span>
-                        <span class="dot ${outputState(s.outputs.udp)}" title="udp"></span>
+                        <span class="dot ${outputState(s.outputs.rtsp)}" title="rtsp: ${outputState(s.outputs.rtsp)}"></span>
+                        <span class="dot ${outputState(s.outputs.udp)}" title="udp: ${outputState(s.outputs.udp)}"></span>
                     </span>
-                </div>`).join('');
+                </button>`).join('');
         }
 
         function urlRow(label, url, active) {
             return `<span class="label">${label}</span>
-                <span class="url mono">${url ?? 'none assigned'}</span>
+                <span class="url mono${url ? '' : ' none'}">${url ?? 'none assigned'}</span>
                 ${active ? `<button class="copy-btn" title="Copy ${label} URL" onclick='copyUrl(this, ${JSON.stringify(url)})'>${copyIcon}</button>` : '<span></span>'}`;
         }
 
@@ -136,10 +155,10 @@
                 <div class="output-header">
                     <span class="name">${outputName.toUpperCase()}</span>
                     <span class="pill ${state}">${label}</span>
-                    ${output.reason && output.enabled ? `<span class="reason">${escapeHtml(output.reason)}</span>` : `<span class="reason" style="color:#8a93a8;font-style:normal">${note}</span>`}
+                    ${output.reason && output.enabled ? `<span class="reason">${escapeHtml(output.reason)}</span>` : `<span class="note">${note}</span>`}
                     <span class="spacer"></span>
-                    <button class="btn-stop" onclick="stopOutput('${s.name}', '${outputName}')" ${output.enabled ? '' : 'disabled'}>Stop</button>
-                    <button class="btn-start" onclick="startOutput('${s.name}', '${outputName}')">${output.running ? 'Restart' : 'Start'}</button>
+                    <button class="btn-stop" onclick="stopOutput(this, '${s.name}', '${outputName}')" ${output.enabled ? '' : 'disabled'}>Stop</button>
+                    <button class="btn-start" onclick="startOutput(this, '${s.name}', '${outputName}')">${output.running ? 'Restart' : 'Start'}</button>
                 </div>
                 <div class="url-grid${output.running ? '' : ' inactive'}">
                     ${urls.map(([label, url]) => urlRow(label, url, output.running)).join('')}
@@ -152,6 +171,70 @@
             </div>`;
         }
 
+        // The settings the controls should show: the draft while editing,
+        // else the server's values.
+        function currentSettings(s) {
+            return draft ?? {
+                mode: s.mode, loop: s.loop_count,
+                fps: s.frame_rate_explicit ? s.frame_rate : null,
+                gop: s.gop_explicit ? s.gop_frames : null,
+            };
+        }
+
+        function settingsRow(s) {
+            const v = currentSettings(s);
+            const dirty = draft !== null;
+            const outputRate = v.fps ?? s.source_frame_rate;
+            const naturalGop = outputRate ? Math.max(1, Math.round(outputRate)) : 30;
+            // FPS and GOP are encoder settings: nothing to set when the source
+            // is copied. A passthrough request on an ineligible file still
+            // transcodes, so follow what would actually run.
+            const copying = v.mode === 'passthrough' && s.passthrough_eligible !== false;
+            const off = copying ? 'disabled' : '';
+            const modeNote = v.mode === 'passthrough' && s.passthrough_eligible === false
+                ? `<span class="reason">transcodes — ${escapeHtml(s.passthrough_reason ?? 'not eligible')}</span>` : '';
+            return `
+                <div class="settings">
+                    <label>Video
+                        <select id="mode" onchange="edit('mode', this.value)" title="Passthrough sends the source unmodified (H.264/H.265 only)">
+                            <option value="passthrough" ${v.mode === 'passthrough' ? 'selected' : ''}>Passthrough</option>
+                            <option value="transcode" ${v.mode === 'transcode' ? 'selected' : ''}>Transcode</option>
+                        </select>
+                        <span class="hint">${modeNote}</span>
+                    </label>
+                    <label>FPS
+                        <input type="number" id="fps" min="1" max="240" step="any" value="${Math.round(outputRate * 1000) / 1000 || ''}" ${off}
+                               oninput="edit('fps', this.value === '' ? null : Number(this.value))" title="Output frame rate. Transcode only.">
+                        <span class="hint">${v.fps !== null
+                            ? `<a href="#" onclick="edit('fps', null); return false;">reset to source (${fmtRate(s.source_frame_rate)})</a>`
+                            : `source rate (${fmtRate(s.source_frame_rate)})`}</span>
+                    </label>
+                    <label>GOP (frames)
+                        <input type="number" id="gop" min="1" step="1" value="${v.gop ?? naturalGop}" ${off}
+                               oninput="edit('gop', this.value === '' ? null : Number(this.value))" title="Keyframe interval; one second of frames unless changed. Transcode only.">
+                        <span class="hint">${v.gop !== null
+                            ? `<a href="#" onclick="edit('gop', null); return false;">reset to one second</a>`
+                            : 'one second at the output rate'}</span>
+                    </label>
+                    <label>Playback
+                        <select id="loop" onchange="edit('loop', Number(this.value))">
+                            <option value="-1" ${v.loop === -1 ? 'selected' : ''}>Loop forever</option>
+                            <option value="0" ${v.loop === 0 ? 'selected' : ''}>Play once</option>
+                            <option value="1" ${v.loop === 1 ? 'selected' : ''}>Play 2x</option>
+                            <option value="2" ${v.loop === 2 ? 'selected' : ''}>Play 3x</option>
+                            <option value="4" ${v.loop === 4 ? 'selected' : ''}>Play 5x</option>
+                            <option value="9" ${v.loop === 9 ? 'selected' : ''}>Play 10x</option>
+                        </select>
+                        <span class="hint"></span>
+                    </label>
+                </div>
+                <div class="settings-actions" ${dirty ? '' : 'hidden'}>
+                    <button class="btn-start" onclick="applySettings(this, '${s.name}')">Apply</button>
+                    <button class="btn-plain" onclick="cancelSettings()">Cancel</button>
+                    <span>${s.running ? 'Apply restarts the running stream with the new values' : 'Apply saves the values for the next start'}</span>
+                </div>`;
+        }
+
         function renderDetail() {
             const s = streams.find(x => x.name === selectedName);
             const detail = document.getElementById('detail');
@@ -159,12 +242,6 @@
                 detail.innerHTML = `<p class="empty">${streams.length ? 'Select a stream' : 'No videos in the videos directory'}</p>`;
                 return;
             }
-            const modeNote = s.mode === 'passthrough' && !s.passthrough_active && s.passthrough_reason
-                ? `<span class="reason">transcoding — ${escapeHtml(s.passthrough_reason)}</span>` : '';
-            // FPS and GOP are encoder settings: nothing to set when the source
-            // is copied. A passthrough request on an ineligible file still
-            // transcodes, so follow what actually runs, not the dropdown.
-            const transcodeOff = s.effective_mode === 'passthrough' ? 'disabled' : '';
             detail.innerHTML = `
                 <div class="detail-header">
                     <div class="detail-title">
@@ -172,90 +249,108 @@
                         <span class="mono">${escapeHtml(s.filename)} · ${escapeHtml(s.encoder)}</span>
                     </div>
                     <div class="header-buttons">
-                        <button class="btn-stop" onclick="stopStream('${s.name}')" ${s.running ? '' : 'disabled'}>Stop</button>
-                        <button class="btn-start" onclick="startStream('${s.name}')">${s.running ? 'Restart' : 'Start'}</button>
+                        <button class="btn-stop" onclick="stopStream(this, '${s.name}')" ${s.running ? '' : 'disabled'}>Stop</button>
+                        <button class="btn-start" onclick="startStream(this, '${s.name}')">${s.running ? 'Restart' : 'Start'}</button>
                     </div>
                 </div>
-                <div class="settings">
-                    <label>Video
-                        <select id="mode" onchange="modeChanged('${s.name}')" title="Passthrough sends the source unmodified (H.264/H.265 only)">
-                            <option value="passthrough" ${s.mode === 'passthrough' ? 'selected' : ''}>Passthrough</option>
-                            <option value="transcode" ${s.mode === 'transcode' ? 'selected' : ''}>Transcode</option>
-                        </select>
-                        ${modeNote}
-                    </label>
-                    <label>FPS
-                        <input type="number" id="fps" min="1" max="240" step="any" value="${s.frame_rate === null ? '' : Math.round(s.frame_rate * 1000) / 1000}" ${transcodeOff}
-                               onchange="fpsChanged('${s.name}')" title="Output frame rate. Transcode only.">
-                        <span class="hint">${s.frame_rate_explicit
-                            ? `<a href="#" onclick="resetSetting('${s.name}', 'fps'); return false;">reset to source (${fmtRate(s.source_frame_rate)})</a>`
-                            : `source rate${s.source_frame_rate ? ` (${fmtRate(s.source_frame_rate)})` : ''}`}</span>
-                    </label>
-                    <label>GOP (frames)
-                        <input type="number" id="gop" min="1" step="1" value="${s.gop_frames}" ${transcodeOff}
-                               onchange="gopChanged('${s.name}')" title="Keyframe interval; one second of frames unless changed. Transcode only.">
-                        <span class="hint">${s.gop_explicit
-                            ? `<a href="#" onclick="resetSetting('${s.name}', 'gop'); return false;">reset to one second</a>`
-                            : 'one second at the output rate'}</span>
-                    </label>
-                </div>
+                ${settingsRow(s)}
                 ${outputCard(s, 'rtsp', [['rtsp', s.rtsp_url], ['hls', s.hls_url]], 'RTSP and HLS through MediaMTX')}
-                ${outputCard(s, 'udp', [['udp', s.udp_url]], 'MPEG-TS with KLV metadata')}
-                <div class="playback">
-                    <span>Playback</span>
-                    <select id="loop" onchange="loopChanged('${s.name}')">
-                        <option value="-1" ${s.loop_count === -1 ? 'selected' : ''}>Loop forever</option>
-                        <option value="0" ${s.loop_count === 0 ? 'selected' : ''}>Play once</option>
-                        <option value="1" ${s.loop_count === 1 ? 'selected' : ''}>Play 2x</option>
-                        <option value="2" ${s.loop_count === 2 ? 'selected' : ''}>Play 3x</option>
-                        <option value="4" ${s.loop_count === 4 ? 'selected' : ''}>Play 5x</option>
-                        <option value="9" ${s.loop_count === 9 ? 'selected' : ''}>Play 10x</option>
-                    </select>
-                </div>`;
+                ${outputCard(s, 'udp', [['udp', s.udp_url]], 'MPEG-TS with KLV metadata')}`;
         }
 
         function render() {
-            if (!streams.some(s => s.name === selectedName)) selectedName = streams.length ? streams[0].name : null;
+            if (!streams.some(s => s.name === selectedName)) {
+                selectedName = streams.length ? streams[0].name : null;
+                draft = null;
+            }
             renderList();
-            renderDetail();
+            // Hold the detail pane while a value is being typed so the caret
+            // is not lost; the list above keeps updating.
+            const typing = document.activeElement && document.activeElement.closest('#detail')
+                           && document.activeElement.tagName === 'INPUT';
+            if (!typing) renderDetail();
+        }
+
+        function showStale() {
+            const count = document.getElementById('count');
+            if (lastUpdate === null) return;
+            const age = Math.round((Date.now() - lastUpdate) / 1000);
+            if (age > 12) {
+                count.textContent = `updates stalled ${age}s`;
+                count.className = 'stale';
+            }
         }
 
         async function loadStreams(force) {
-            // Never rewrite while a value is being typed: the caret would be
-            // lost. The next poll after blur catches up.
-            if (!force && document.activeElement && document.activeElement.tagName === 'INPUT') return;
             try {
                 const res = await fetch('/api/streams');
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
                 const payload = await res.text();
-                // Skip the rewrite when nothing changed: no flicker, and an
-                // unsubmitted selection survives the 5s poll.
+                lastUpdate = Date.now();
+                document.getElementById('count').className = '';
+                // Skip the rewrite when nothing changed: no flicker.
                 if (!force && payload === lastPayload) return;
                 lastPayload = payload;
                 streams = JSON.parse(payload);
                 render();
             } catch (err) {
-                document.getElementById('detail').innerHTML = '<p style="color:#ff5252">Error loading streams: ' + err.message + '</p>';
+                // Keep the page as it was; the sidebar says how old it is.
+                showStale();
             }
         }
 
         function select(name) {
+            if (name === selectedName) return;
             selectedName = name;
+            draft = null;
             render();
         }
+
+        // ---- Settings draft ----
+
+        function edit(key, value) {
+            const s = streams.find(x => x.name === selectedName);
+            if (draft === null) draft = currentSettings(s);
+            draft[key] = value;
+            // Re-render everything but the control being typed in, so the
+            // hints and Apply/Cancel follow the draft.
+            const active = document.activeElement && document.activeElement.id;
+            renderDetail();
+            if (active && ['fps', 'gop'].includes(active)) document.getElementById(active).focus();
+        }
+
+        function cancelSettings() {
+            draft = null;
+            document.activeElement.blur();
+            renderDetail();
+        }
+
+        function applySettings(button, name) {
+            const v = draft;
+            document.activeElement.blur();
+            const query = `mode=${v.mode}&loop=${v.loop}&fps=${v.fps ?? 'auto'}&gop=${v.gop ?? 'auto'}`;
+            draft = null;
+            return command(button, `/api/streams/${name}/settings?${query}`, `apply ${name} settings`);
+        }
+
+        // ---- Commands ----
 
         function toggleCommand(outputName, open) {
             if (open) openCommands.add(outputName); else openCommands.delete(outputName);
         }
 
         async function copyUrl(btn, text) {
-            const flash = (cls) => {
+            const flash = (cls, word) => {
                 btn.classList.add(cls);
-                setTimeout(() => btn.classList.remove(cls), 1000);
+                const note = document.createElement('span');
+                note.textContent = word;
+                btn.appendChild(note);
+                setTimeout(() => { btn.classList.remove(cls); note.remove(); }, 1200);
             };
             try {
                 if (navigator.clipboard && window.isSecureContext) {
                     await navigator.clipboard.writeText(text);
-                    flash('copied');
+                    flash('copied', 'Copied');
                     return;
                 }
                 // Fallback for plain-HTTP origins where the Clipboard API is unavailable.
@@ -273,60 +368,55 @@
                 const ok = document.execCommand('copy');
                 document.body.removeChild(ta);
                 if (!ok) throw new Error('execCommand("copy") returned false');
-                flash('copied');
+                flash('copied', 'Copied');
             } catch (err) {
                 console.error('Copy failed:', err);
                 btn.title = 'Copy failed: ' + err.message;
-                flash('copy-failed');
+                flash('copy-failed', 'Failed');
             }
         }
 
-        let errorTimer;
         function showError(message) {
-            const banner = document.getElementById('error');
-            banner.textContent = message;
-            banner.hidden = false;
-            clearTimeout(errorTimer);
-            errorTimer = setTimeout(() => { banner.hidden = true; }, 10000);
+            document.getElementById('error-text').textContent = message;
+            document.getElementById('error').hidden = false;
         }
 
-        // Every control goes through here. A refused operation comes back as
+        function hideError() {
+            document.getElementById('error').hidden = true;
+        }
+
+        // Every control goes through here. The clicked button is disabled
+        // and relabelled until the refresh lands, so a second click cannot
+        // fire the same command twice. A refused operation comes back as
         // {"success": false} with a 200, so checking only the transport would
         // leave a failed click looking like it worked.
-        async function command(path, description) {
+        async function command(button, path, description) {
+            if (button) {
+                button.disabled = true;
+                button.textContent = button.textContent.replace(/…$/, '') + '…';
+            }
             try {
                 const res = await fetch(path, {method: 'POST'});
                 const result = await res.json().catch(() => ({}));
                 if (!res.ok) throw new Error(result.error || `HTTP ${res.status}`);
                 if (result.success === false) throw new Error('the supervisor could not complete it; check its log');
-                document.getElementById('error').hidden = true;
+                hideError();
             } catch (err) {
                 showError(`Could not ${description}: ${err.message}`);
             }
-            loadStreams(true);
+            await loadStreams(true);
         }
 
-        // Settings are saved the moment they change; the supervisor restarts a
-        // running stream with them, so the command shown always matches.
-        function saveSettings(name, query) {
-            return command(`/api/streams/${name}/settings?${query}`, `change ${name} settings`);
-        }
-        function modeChanged(name) { return saveSettings(name, 'mode=' + document.getElementById('mode').value); }
-        function loopChanged(name) { return saveSettings(name, 'loop=' + document.getElementById('loop').value); }
-        function gopChanged(name) { return saveSettings(name, 'gop=' + document.getElementById('gop').value); }
-        function fpsChanged(name) { return saveSettings(name, 'fps=' + (document.getElementById('fps').value || 'auto')); }
-        function resetSetting(name, key) { return saveSettings(name, key + '=auto'); }
-        function fmtRate(rate) { return rate ? `${Math.round(rate * 100) / 100} fps` : 'unknown'; }
-
-        function startStream(name) { return command(`/api/streams/${name}/start`, `start ${name}`); }
-        function stopStream(name) { return command(`/api/streams/${name}/stop`, `stop ${name}`); }
-        function stopAll() { return command('/api/streams/stop-all', 'stop all streams'); }
-        function startAll() { return command('/api/streams/start-all', 'start all streams'); }
-        function startOutput(name, output) { return command(`/api/streams/${name}/outputs/${output}/start`, `start ${name}/${output}`); }
-        function stopOutput(name, output) { return command(`/api/streams/${name}/outputs/${output}/stop`, `stop ${name}/${output}`); }
+        function startStream(button, name) { return command(button, `/api/streams/${name}/start`, `start ${name}`); }
+        function stopStream(button, name) { return command(button, `/api/streams/${name}/stop`, `stop ${name}`); }
+        function stopAll(button) { return command(button, '/api/streams/stop-all', 'stop all streams'); }
+        function startAll(button) { return command(button, '/api/streams/start-all', 'start all streams'); }
+        function startOutput(button, name, output) { return command(button, `/api/streams/${name}/outputs/${output}/start`, `start ${name}/${output}`); }
+        function stopOutput(button, name, output) { return command(button, `/api/streams/${name}/outputs/${output}/stop`, `stop ${name}/${output}`); }
 
         loadStreams();
         setInterval(loadStreams, 5000);
+        setInterval(showStale, 5000);
     </script>
 </body>
 </html>

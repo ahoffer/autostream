@@ -769,6 +769,8 @@ def get_stream_status():
                 "source_frame_rate": source_rate,
                 "mode": requested_mode,
                 "effective_mode": "passthrough" if spec.passthrough else "transcode",
+                "passthrough_eligible": (passthrough_eligible(video_codecs)
+                                         if video_codecs is not None else None),
                 "passthrough_active": passthrough_active,
                 "passthrough_reason": passthrough_reason,
                 "encoder": spec.encoder_label,
