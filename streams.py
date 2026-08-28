@@ -1,22 +1,27 @@
-"""Stream lifecycle: the video slots, their ffmpeg processes, and their endpoints.
+"""Stream lifecycle: the video slots, their per-output ffmpeg processes, and
+their endpoints.
 
-Owns the config read from .env, the Stream entity, the registry of slots, and
-every operation over them. Knows nothing about how it is driven: the supervisor
-feeds it file events and the HTTP API calls the same operations, so neither
-transport nor poll loop appears here.
+Owns the config read from .env, the Stream and Output entities, the registry
+of slots, and every operation over them. Knows nothing about how it is driven:
+the supervisor feeds it file events and the HTTP API calls the same
+operations, so neither transport nor poll loop appears here. ffmpegcmd owns
+the ffmpeg syntax; statefile owns the on-disk memory.
 """
 from __future__ import annotations
 
-import json
 import logging
 import os
 import re
+import shlex
 import socket
 import subprocess
 import threading
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
+
+import ffmpegcmd
+import statefile
 
 log = logging.getLogger(__name__)
 
@@ -47,7 +52,7 @@ def parse_bitrate(bitrate_str):
 
 
 VIDEOS_DIR = Path("/app/videos")
-STREAM_VIDEO_SCRIPT = "/app/stream-video.sh"
+STATE_PATH = Path("/app/state/streams.json")
 RTSP_PORT = int(require_env("MEDIAMTX_RTSP_PORT"))
 HLS_PORT = int(require_env("MEDIAMTX_HLS_PORT"))
 API_PORT = int(require_env("STREAM_API_PORT"))
@@ -57,9 +62,9 @@ if LOG_LEVEL not in LOG_LEVEL_NAMES:
     raise RuntimeError(
         f"LOG_LEVEL must be one of {', '.join(LOG_LEVEL_NAMES)}, not {LOG_LEVEL!r}")
 # Documented side effect of debug: the child ffmpeg processes keep their stdio
-# instead of writing to per-stream log files under FFMPEG_LOG_DIR.
+# instead of writing to per-output log files under FFMPEG_LOG_DIR.
 SHOW_FFMPEG_OUTPUT = LOG_LEVEL == "debug"
-# One log file per stream, truncated at each start so it holds only the current
+# One log file per output, truncated at each start so it holds only the current
 # run. When a process dies unexpectedly, the tail is replayed into our log —
 # otherwise the ffmpeg error explaining the death would be lost.
 FFMPEG_LOG_DIR = Path("/tmp/ffmpeg-logs")
@@ -67,6 +72,9 @@ FFMPEG_LOG_DIR.mkdir(exist_ok=True)
 FFMPEG_LOG_TAIL_BYTES = 4096
 MAX_VIDEO_BITRATE = os.getenv("MAX_VIDEO_BITRATE", "")  # empty disables the cap
 MAX_VIDEO_BPS = parse_bitrate(MAX_VIDEO_BITRATE)  # malformed values fail here, at boot
+# gpuconfig passes the integrated GPU's render node through compose; the
+# default covers a hand-run container with the device mapped.
+VAAPI_RENDER_NODE = os.getenv("VAAPI_RENDER_NODE", "/dev/dri/renderD128")
 
 # Passthrough policy. MediaMTX only carries H.264/H.265, so nothing else may be
 # stream-copied. HEVC is eligible but not the default: RTSP consumers handle it,
@@ -89,9 +97,20 @@ def default_mode(video_codecs):
 def passthrough_eligible(video_codecs):
     """True when every video track can ride MediaMTX unencoded.
 
-    All tracks matter because stream-video.sh maps every video track (-map 0:v?).
+    All tracks matter because the generated commands map every video track.
     """
     return bool(video_codecs) and all(c in PASSTHROUGH_CODECS for c in video_codecs)
+
+
+def bitrate_cap_for(bitrate_bps):
+    """MAX_VIDEO_BITRATE when the video exceeds it, else empty string.
+
+    An unknown bitrate (None) gets no cap: there is nothing to compare against.
+    """
+    if MAX_VIDEO_BPS and bitrate_bps and bitrate_bps > MAX_VIDEO_BPS:
+        return MAX_VIDEO_BITRATE
+    return ""
+
 
 # UDP MPEG-TS output carries KLV/data streams that RTSP/HLS (via MediaMTX) drop.
 # Each stream is pushed to OUTPUT_HOST on its own port (UDP_BASE_PORT + slot).
@@ -107,32 +126,68 @@ HOSTNAME = require_env("CONTAINER_NAME")
 
 
 @dataclass
-class Stream:
-    """One video file's stream slot: its identity, its endpoints, and its process.
+class Output:
+    """One of a stream's ffmpeg processes: rtsp or udp.
 
-    A slot exists for as long as the file is present in VIDEOS_DIR, so "known
-    but not currently streaming" is process is None rather than a separate
-    collection. filename is the on-disk basename the slot belongs to, kept so a
-    second file sanitizing to the same name can't silently take the slot over.
-    loop_count is the last requested value and deliberately outlives the
-    process, so a stop/start keeps the user's choice; mode works the same way,
-    with None meaning "no explicit request yet" so the codec-derived default
-    applies until the user picks one. video_codecs/audio_codecs are the last
-    start's probe of the file — they describe the file, not the process, so
-    clear_process leaves them alone. udp_port is None when the configured range
-    was already used up, which means RTSP/HLS only.
+    enabled is the desired state — "supervision keeps this up" — and outlives
+    the process, so a per-output Stop is remembered across a dead-process
+    sweep and a container restart. command_override is the user's edited
+    command line; None means the generated default. completed marks a finite
+    loop that ran to the end, which is not a failure to relaunch from.
+    launched_argv is what the running process was actually started with, so
+    the status can show it even if the default has since changed.
+    """
+    name: str
+    enabled: bool = True
+    command_override: str | None = None
+    process: subprocess.Popen | None = None
+    stopping: bool = False
+    completed: bool = False
+    launched_argv: list | None = None
+
+    @property
+    def running(self):
+        """True while the process is up and has not been asked to stop."""
+        return self.process is not None and not self.stopping
+
+    @property
+    def occupied(self):
+        """True while a process owns this output, including one still stopping."""
+        return self.process is not None
+
+    def mark_started(self, process, argv):
+        self.process = process
+        self.launched_argv = argv
+        self.stopping = False
+        self.completed = False
+
+    def clear_process(self):
+        self.process = None
+        self.launched_argv = None
+        self.stopping = False
+
+
+@dataclass
+class Stream:
+    """One video file's stream slot: its identity, its endpoints, and its outputs.
+
+    A slot exists for as long as the file is present in VIDEOS_DIR. filename
+    is the on-disk basename the slot belongs to, kept so a second file
+    sanitizing to the same name can't silently take the slot over. loop_count
+    and mode are the last requested values and deliberately outlive the
+    processes; mode None means "no explicit request yet" so the codec-derived
+    default applies until the user picks one. profile is the last probe of the
+    file — it describes the file, not a process. udp_port is None when the
+    configured range was already used up, which means RTSP/HLS only.
     """
     name: str
     filename: str
     udp_port: int | None
     loop_count: int = -1
-    process: subprocess.Popen | None = None
-    udp_enabled: bool = False
-    stopping: bool = False
     mode: str | None = None
-    video_codecs: tuple | None = None
-    audio_codecs: tuple | None = None
-    passthrough_active: bool = False
+    profile: ffmpegcmd.FileProfile | None = None
+    rtsp: Output = field(default_factory=lambda: Output("rtsp"))
+    udp: Output = field(default_factory=lambda: Output("udp"))
 
     @property
     def video_path(self):
@@ -140,30 +195,19 @@ class Stream:
         return str(VIDEOS_DIR / self.filename)
 
     @property
-    def running(self):
-        """True while the stream is up and has not been asked to stop."""
-        return self.process is not None and not self.stopping
+    def outputs(self):
+        return (self.rtsp, self.udp)
+
+    def output(self, output_name):
+        return self.rtsp if output_name == "rtsp" else self.udp
 
     @property
-    def occupied(self):
-        """True while a process owns this slot, including one still stopping."""
-        return self.process is not None
+    def running(self):
+        return any(output.running for output in self.outputs)
 
-    def mark_started(self, process, loop_count, mode, udp_enabled, passthrough_active):
-        """Transition the slot to running under a freshly launched process."""
-        self.process = process
-        self.loop_count = loop_count
-        self.mode = mode
-        self.udp_enabled = udp_enabled
-        self.passthrough_active = passthrough_active
-        self.stopping = False
-
-    def clear_process(self):
-        """Transition the slot back to idle once its process is gone."""
-        self.process = None
-        self.udp_enabled = False
-        self.passthrough_active = False
-        self.stopping = False
+    @property
+    def stopping(self):
+        return any(output.stopping for output in self.outputs)
 
     def urls(self):
         """Return the copyable endpoint URLs for this stream.
@@ -181,28 +225,74 @@ class Stream:
 # threads and the poll loop runs in the main thread, both touching this state.
 _state_lock = threading.RLock()
 _streams_by_name = {}          # stream_name -> Stream, one entry per video file present
+# Remembered choices of streams whose file is currently absent, so a re-copied
+# file gets its mode, loop, and commands back. Merged into the state file.
+_retained_streams = {}         # stream_name -> statefile.PersistedStream
 
-# UDP port allocator. Separate from Stream on purpose: an assignment lasts for the
-# whole process lifetime, outliving the slot, so a video that is removed and put
-# back keeps the udp:// URL a downstream consumer already registered.
+# UDP port allocator. Separate from Stream on purpose: an assignment lasts for
+# the whole process lifetime and is persisted, outliving the slot, so a video
+# that is removed and put back keeps the udp:// URL a downstream consumer
+# already registered — and a custom udp command keeps the port it embeds.
 _udp_ports = {}               # stream_name -> UDP port for the KLV MPEG-TS feed
 _next_udp_port = UDP_BASE_PORT  # next port to hand out; protected by _state_lock
 
+_encoder_tier = "x264"        # last trial result; the API reads it, never runs trials
 _output_host_warned = False   # so we log the "unresolved OUTPUT_HOST" warning once
 _output_reachable = False     # cached OUTPUT_HOST reachability; the poll loop refreshes it so the status API never blocks on DNS
+
+
+def load_persisted_state():
+    """Seed the registry's memory from the state file. Call once, before the
+    first file events: they claim slots, which assigns ports."""
+    global _next_udp_port
+    state = statefile.load_state(STATE_PATH)
+    with _state_lock:
+        _udp_ports.update(state.udp_ports)
+        _retained_streams.update(state.streams)
+        if _udp_ports:
+            _next_udp_port = max(UDP_BASE_PORT, max(_udp_ports.values()) + 1)
+    if state.streams:
+        log.info("Loaded settings for %d stream(s) from %s", len(state.streams), STATE_PATH)
+
+
+def _persisted_stream(stream):
+    return statefile.PersistedStream(
+        filename=stream.filename, mode=stream.mode, loop_count=stream.loop_count,
+        rtsp=statefile.PersistedOutput(stream.rtsp.enabled, stream.rtsp.command_override),
+        udp=statefile.PersistedOutput(stream.udp.enabled, stream.udp.command_override),
+    )
+
+
+def _persist():
+    """Write the state file. Must be called while holding _state_lock."""
+    records = dict(_retained_streams)
+    for stream in _streams_by_name.values():
+        records[stream.name] = _persisted_stream(stream)
+    statefile.save_state(STATE_PATH, statefile.PersistedState(dict(_udp_ports), records))
+
+
+def refresh_encoder_tier():
+    """Re-run the encoder trials and cache the winner. Runs ffmpeg; keep it off
+    the lock and off the API path."""
+    global _encoder_tier
+    tier = ffmpegcmd.detect_encoder_tier(VAAPI_RENDER_NODE)
+    if tier != _encoder_tier:
+        log.info("Video encoder: %s", ffmpegcmd.ENCODER_LABELS[tier])
+    _encoder_tier = tier
 
 
 def refresh_output_reachable():
     """Refresh the cached OUTPUT_HOST reachability.
 
-    ffmpeg aborts the whole process (taking the RTSP output down with it) if the
-    UDP destination host is unresolvable. So when the consumer (for example the
-    cx-search video-streaming service) is not on the network, streams launch
-    RTSP/HLS only rather than breaking playback. A numeric IP or multicast group
-    always resolves, so this only trips on a missing hostname.
+    ffmpeg aborts if the UDP destination host is unresolvable. So when the
+    consumer (for example the cx-search video-streaming service) is not on
+    the network, the udp output is held back rather than launched to die: it
+    stays enabled and recover_udp_outputs launches it once the host resolves.
+    A numeric IP or multicast group always resolves, so this only trips on a
+    missing hostname.
 
     gethostbyname blocks for the resolver timeout when the host is down, so it
-    must stay off the request path: status reads and stream starts sample the
+    must stay off the request path: status reads and launches sample the
     cache, and the poll loop refreshes it every tick.
     """
     global _output_reachable, _output_host_warned
@@ -224,11 +314,10 @@ def _udp_port_for(stream_name):
     Returns None once the configured range is used up; the caller streams
     RTSP/HLS only, the same degraded mode an unreachable OUTPUT_HOST produces.
 
-    Ports are stable for the process lifetime so a stopped/started stream keeps
-    the same udp:// URL. That means an assignment is never released, so a run
-    that cycles through more than the range holds will exhaust it — the range is
-    a contract with the downstream consumer, and quietly reusing a port a
-    consumer still has registered would be worse than running without one.
+    An assignment is never released, so a run that cycles through more than
+    the range holds will exhaust it — the range is a contract with the
+    downstream consumer, and quietly reusing a port a consumer still has
+    registered would be worse than running without one.
     Must be called while holding _state_lock.
     """
     global _next_udp_port
@@ -242,111 +331,6 @@ def _udp_port_for(stream_name):
         _next_udp_port += 1
         _udp_ports[stream_name] = port
     return port
-
-
-def _first_int(text):
-    """First integer-valued line in ffprobe output, or None.
-
-    ffprobe reports "N/A" (sometimes more than one line of it) when a bitrate is
-    unknown, so we can't just int() the whole output — pick the first real number.
-    """
-    for line in text.splitlines():
-        line = line.strip()
-        if line.isdigit():
-            return int(line)
-    return None
-
-
-def get_video_bitrate(video_path):
-    """Return the video bitrate in bits per second via ffprobe, or None.
-
-    Tries the video stream first, then the container format. An "N/A" (unknown
-    bitrate, common for MPEG-TS) is not an error — it just falls through to None.
-    """
-    queries = (
-        ["-select_streams", "v:0", "-show_entries", "stream=bit_rate"],
-        ["-show_entries", "format=bit_rate"],
-    )
-    for query in queries:
-        try:
-            result = subprocess.run(
-                ["ffprobe", "-v", "error", *query,
-                 "-of", "default=noprint_wrappers=1:nokey=1", str(video_path)],
-                capture_output=True, text=True, timeout=10,
-            )
-        except (subprocess.SubprocessError, OSError) as e:
-            log.warning("Error probing bitrate for %s: %s", Path(video_path).name, e)
-            return None
-        bitrate = _first_int(result.stdout)
-        if bitrate is not None:
-            return bitrate
-    return None
-
-
-def get_stream_codecs(video_path):
-    """Return (video_codecs, audio_codecs, audio_copyable) for the file, or
-    (None, None, False) when the probe fails — callers treat unknown as
-    transcode + encode, the combination that works for everything.
-
-    The codec tuples are index-ordered and cover every track, because
-    stream-video.sh maps every track. audio_copyable is True only when each
-    audio track is AAC that already carries global headers (extradata): ADTS
-    AAC — the packaging MPEG-TS sources use — has none, and ffmpeg's RTSP muxer
-    needs the headers at SDP time, before the first packet flows, so the
-    aac_adtstoasc bitstream filter cannot rescue a copy. Such audio is
-    re-encoded instead.
-
-    JSON output rather than csv: csv emits fields in ffprobe's internal order,
-    not the requested order, and MPEG-TS inputs repeat streams under a programs
-    section — json.loads()["streams"] dodges both traps.
-    """
-    try:
-        result = subprocess.run(
-            ["ffprobe", "-v", "error",
-             "-show_entries", "stream=index,codec_type,codec_name,extradata_size",
-             "-of", "json", str(video_path)],
-            capture_output=True, text=True, timeout=10,
-        )
-    except (subprocess.SubprocessError, OSError) as e:
-        log.warning("Error probing codecs for %s: %s", Path(video_path).name, e)
-        return None, None, False
-    if result.returncode != 0:
-        return None, None, False
-    try:
-        entries = json.loads(result.stdout).get("streams", [])
-    except ValueError:
-        return None, None, False
-    ordered = sorted(entries, key=lambda s: s.get("index", 0))
-    video = tuple(s.get("codec_name", "") for s in ordered if s.get("codec_type") == "video")
-    audio_streams = [s for s in ordered if s.get("codec_type") == "audio"]
-    audio = tuple(s.get("codec_name", "") for s in audio_streams)
-    audio_copyable = all(s.get("codec_name") == "aac" and s.get("extradata_size", 0) > 0
-                         for s in audio_streams)
-    return video, audio, audio_copyable
-
-
-def get_bitrate_cap(video_path):
-    """Return MAX_VIDEO_BITRATE if the video exceeds it, else empty string.
-
-    The cap value is expanded into concrete ffmpeg flags by stream-video.sh,
-    which owns all encode syntax.
-    """
-    if not MAX_VIDEO_BPS:
-        return ""
-
-    video_bps = get_video_bitrate(video_path)
-    if not video_bps:
-        log.debug("Could not detect bitrate for %s, no limit applied", Path(video_path).name)
-        return ""
-
-    video_mbps = video_bps / 1_000_000
-    if video_bps > MAX_VIDEO_BPS:
-        log.debug("Bitrate %.1fM exceeds max %s for %s; applying cap",
-                  video_mbps, MAX_VIDEO_BITRATE, Path(video_path).name)
-        return MAX_VIDEO_BITRATE
-    else:
-        log.debug("Bitrate %.1fM within max %s, no limit applied", video_mbps, MAX_VIDEO_BITRATE)
-        return ""
 
 
 def is_ignored(path):
@@ -366,29 +350,29 @@ def sanitize_name(filepath):
     return name
 
 
-def _ffmpeg_log_path(stream_name):
-    return FFMPEG_LOG_DIR / f"{stream_name}.log"
+def _ffmpeg_log_path(stream_name, output_name):
+    return FFMPEG_LOG_DIR / f"{stream_name}.{output_name}.log"
 
 
-def _log_ffmpeg_tail(stream_name):
-    """Replay the end of a stream's ffmpeg log after an unexpected death.
+def _log_ffmpeg_tail(stream_name, output_name):
+    """Replay the end of an output's ffmpeg log after an unexpected death.
 
-    ffmpeg output goes to a per-stream file rather than the console (except in
+    ffmpeg output goes to a per-output file rather than the console (except in
     debug mode, where it was already visible), so without this the reason a
-    stream died would be invisible.
+    process died would be invisible.
     """
     if SHOW_FFMPEG_OUTPUT:
         return
     try:
-        with open(_ffmpeg_log_path(stream_name), "rb") as f:
-            f.seek(0, os.SEEK_END)
-            f.seek(max(0, f.tell() - FFMPEG_LOG_TAIL_BYTES))
-            tail = f.read().decode(errors="replace").strip()
-    except OSError as e:
-        log.warning("No ffmpeg log for %s: %s", stream_name, e)
+        with open(_ffmpeg_log_path(stream_name, output_name), "rb") as log_file:
+            log_file.seek(0, os.SEEK_END)
+            log_file.seek(max(0, log_file.tell() - FFMPEG_LOG_TAIL_BYTES))
+            tail = log_file.read().decode(errors="replace").strip()
+    except OSError as error:
+        log.warning("No ffmpeg log for %s/%s: %s", stream_name, output_name, error)
         return
     if tail:
-        log.warning("ffmpeg output for %s before it died:\n%s", stream_name, tail)
+        log.warning("ffmpeg output for %s/%s before it died:\n%s", stream_name, output_name, tail)
 
 
 def wait_for_mediamtx():
@@ -404,89 +388,131 @@ def wait_for_mediamtx():
     log.info("MediaMTX is ready")
 
 
-def start_stream(stream_name, loop_count=None, mode=None, log_start=True):
-    """Start a claimed stream slot.
+# ---- Pure helpers: from a stream's state to a command line ----
 
-    loop_count None keeps the last requested value; mode None keeps the last
-    requested mode (codec default when the user never picked one). Passthrough
-    eligibility is re-derived from a fresh probe on every start, so the script
-    only ever receives a vetted mode — a replaced file or failed probe degrades
-    to transcode instead of launching a command ffmpeg cannot run.
+def encode_spec(stream):
+    """The supervisor's decisions for this stream, from its profile and choices.
+
+    Passthrough eligibility is re-derived from the profile, so a replaced file
+    or failed probe degrades to transcode instead of producing a command
+    ffmpeg cannot run. Must be called while holding _state_lock.
     """
+    profile = stream.profile or ffmpegcmd.UNKNOWN_PROFILE
+    requested_mode = stream.mode or default_mode(profile.video_codecs)
+    passthrough = requested_mode == "passthrough" and passthrough_eligible(profile.video_codecs)
+    qsv_decoder = None
+    if _encoder_tier == "qsv" and profile.video_codecs:
+        qsv_decoder = ffmpegcmd.qsv_decoder_for(profile.video_codecs[0], profile.pix_fmt)
+    return ffmpegcmd.EncodeSpec(
+        video_path=stream.video_path,
+        stream_name=stream.name,
+        loop_count=stream.loop_count,
+        passthrough=passthrough,
+        audio_copy=profile.audio_copyable,
+        # Copied packets can't honor a cap.
+        bitrate_cap="" if passthrough else bitrate_cap_for(profile.bitrate_bps),
+        encoder_tier=_encoder_tier,
+        qsv_decoder=qsv_decoder,
+        vaapi_render_node=VAAPI_RENDER_NODE,
+        rtsp_port=RTSP_PORT,
+        udp_target=f"{OUTPUT_HOST}:{stream.udp_port}" if stream.udp_port else None,
+    )
+
+
+def default_argv(stream, output_name):
+    """The generated command for one output, or None when it cannot be built."""
+    return ffmpegcmd.build_argv(encode_spec(stream), output_name)
+
+
+def effective_argv(stream, output):
+    """The command that launching this output would run: the override if the
+    user set one, else the generated default."""
+    if output.command_override is not None:
+        return shlex.split(output.command_override)
+    return default_argv(stream, output.name)
+
+
+def parse_command(text):
+    """Validate an edited command line. Returns (argv, None) or (None, error)."""
+    try:
+        argv = shlex.split(text or "")
+    except ValueError as error:
+        return None, f"command does not parse: {error}"
+    if not argv:
+        return None, "command is empty"
+    if Path(argv[0]).name != "ffmpeg":
+        return None, "command must start with ffmpeg"
+    return argv, None
+
+
+def udp_launchable(stream):
+    """Whether the udp output can be launched now, with the reason when not.
+
+    No port from the range is permanent for this slot; an unreachable consumer
+    is transient, and launching anyway would only make ffmpeg die at start.
+    """
+    if stream.udp_port is None:
+        return False, f"no free UDP port in {UDP_BASE_PORT}-{UDP_LAST_PORT}"
+    if not _output_reachable:
+        return False, f"{OUTPUT_HOST} unreachable"
+    return True, None
+
+
+# ---- Process primitives: one output at a time ----
+
+def launch_output(stream_name, output_name, log_start=True):
+    """Start one output's ffmpeg process. Does not change enabled."""
     with _state_lock:
         stream = _streams_by_name.get(stream_name)
         if stream is None:
             log.warning("Cannot start unclaimed stream: %s", stream_name)
             return False
-        if stream.occupied:
-            log.warning("Stream already %s: %s",
-                        "stopping" if stream.stopping else "running", stream_name)
+        output = stream.output(output_name)
+        if output.occupied:
+            log.warning("Output already %s: %s/%s",
+                        "stopping" if output.stopping else "running", stream_name, output_name)
             return False
-        video_path = stream.video_path
-        udp_port = stream.udp_port
-        if loop_count is None:
-            loop_count = stream.loop_count
-        if mode is None:
-            mode = stream.mode
-
-    # ffprobe can take time — run the probes outside the lock so we don't stall
-    # other threads on I/O.
-    video_codecs, audio_codecs, audio_copy = get_stream_codecs(video_path)
-    requested_mode = mode or default_mode(video_codecs)
-    passthrough = requested_mode == "passthrough" and passthrough_eligible(video_codecs)
-    # Copied packets can't honor a cap, so don't even probe the bitrate.
-    bitrate_cap = "" if passthrough else get_bitrate_cap(video_path)
-    # No port from the range is the same outcome as an unreachable consumer:
-    # publish RTSP/HLS and leave the KLV feed off.
-    udp_enabled = _output_reachable and udp_port is not None
-    udp_target = f"{OUTPUT_HOST}:{udp_port}" if udp_enabled else ""
-
-    with _state_lock:
-        stream = _streams_by_name.get(stream_name)
-        if stream is None or stream.occupied:
-            # Another thread claimed or started the slot while we were probing.
-            log.warning("Stream changed while starting: %s", stream_name)
-            return False
-
+        if output_name == "udp":
+            launchable, reason = udp_launchable(stream)
+            if not launchable:
+                log.debug("Holding %s/udp back: %s", stream_name, reason)
+                return False
+        argv = effective_argv(stream, output)
+        if output.command_override is not None:
+            description = "custom command"
+        else:
+            spec = encode_spec(stream)
+            description = (f"encoder={spec.encoder_label} "
+                           f"audio={'copy' if spec.audio_copy else 'aac'}")
         try:
-            cmd = [STREAM_VIDEO_SCRIPT, video_path, stream_name, str(loop_count),
-                   bitrate_cap, udp_target,
-                   "passthrough" if passthrough else "transcode",
-                   "copy" if audio_copy else "encode"]
             if SHOW_FFMPEG_OUTPUT:
-                process = subprocess.Popen(cmd)
+                process = subprocess.Popen(argv)
             else:
                 # The child keeps its own fd, so closing ours right away is safe.
-                with open(_ffmpeg_log_path(stream_name), "wb") as ffmpeg_log:
-                    process = subprocess.Popen(cmd, stdout=ffmpeg_log, stderr=ffmpeg_log)
-        except Exception as e:
-            log.error("Failed to start stream %s: %s", stream_name, e)
+                with open(_ffmpeg_log_path(stream_name, output_name), "wb") as ffmpeg_log:
+                    process = subprocess.Popen(argv, stdout=ffmpeg_log, stderr=ffmpeg_log)
+        except Exception as error:
+            log.error("Failed to start %s/%s: %s", stream_name, output_name, error)
             return False
-
-        stream.video_codecs = video_codecs
-        stream.audio_codecs = audio_codecs
-        stream.mark_started(process, loop_count, mode=mode,
-                            udp_enabled=udp_enabled, passthrough_active=passthrough)
+        output.mark_started(process, argv)
+        filename = stream.filename
 
     if log_start:
-        udp_status = "UDP active" if udp_target else "UDP disabled"
-        log.info("Started stream: %s video=%r mode=%s audio=%s udp=%s udp_url=%s",
-                 stream_name, Path(video_path).name,
-                 "passthrough" if passthrough else "transcode",
-                 "copy" if audio_copy else "aac",
-                 udp_status, stream.urls()["udp"])
+        log.info("Started %s/%s video=%r %s", stream_name, output_name, filename, description)
     return True
 
 
-def stop_stream(stream_name):
+def stop_output(stream_name, output_name):
+    """Stop one output's process. Does not change enabled."""
     with _state_lock:
         stream = _streams_by_name.get(stream_name)
-        if stream is None or not stream.occupied:
-            log.warning("Stream not running: %s", stream_name)
+        output = stream.output(output_name) if stream is not None else None
+        if output is None or not output.occupied:
+            log.warning("Output not running: %s/%s", stream_name, output_name)
             return False
-        process = stream.process
-        should_terminate = not stream.stopping
-        stream.stopping = True
+        process = output.process
+        should_terminate = not output.stopping
+        output.stopping = True
 
     try:
         if should_terminate:
@@ -495,40 +521,170 @@ def stop_stream(stream_name):
             process.wait(timeout=5)
         except subprocess.TimeoutExpired:
             if not should_terminate:
-                log.warning("Stream still stopping: %s", stream_name)
+                log.warning("Output still stopping: %s/%s", stream_name, output_name)
                 return True
             process.kill()
             try:
                 process.wait(timeout=5)
             except subprocess.TimeoutExpired:
                 # Better to leak a wedged process than to hang the supervisor forever
-                # (can happen on stuck NFS/CIFS reads inside ffmpeg). Keep the stream
-                # slot blocked so a second ffmpeg process can't reuse the same output.
-                log.error("Stream %s did not die after SIGKILL; leaking pid %d",
-                          stream_name, process.pid)
+                # (can happen on stuck NFS/CIFS reads inside ffmpeg). Keep the output
+                # blocked so a second ffmpeg process can't reuse the same destination.
+                log.error("Output %s/%s did not die after SIGKILL; leaking pid %d",
+                          stream_name, output_name, process.pid)
                 return True
         with _state_lock:
             current = _streams_by_name.get(stream_name)
-            if current is not None and current.process is process:
-                current.clear_process()
-        log.info("Stopped stream: %s", stream_name)
-    except Exception as e:
-        log.error("Error stopping stream %s: %s", stream_name, e)
+            if current is not None and current.output(output_name).process is process:
+                current.output(output_name).clear_process()
+        log.info("Stopped %s/%s", stream_name, output_name)
+    except Exception as error:
+        log.error("Error stopping %s/%s: %s", stream_name, output_name, error)
 
     return True
 
 
-def restart_stream(stream_name, loop_count=None, mode=None):
-    """Relaunch a stream: stop its current process if it has one, then start it.
+def _relaunch_output(stream_name, output_name):
+    with _state_lock:
+        stream = _streams_by_name.get(stream_name)
+        occupied = stream is not None and stream.output(output_name).occupied
+    if occupied:
+        stop_output(stream_name, output_name)
+    return launch_output(stream_name, output_name)
 
-    loop_count and mode None keep the last requested values.
+
+def refresh_stream_probe(stream_name):
+    """Re-probe the file and the encoder. Runs ffprobe/ffmpeg — outside the lock
+    so other threads don't stall on I/O."""
+    with _state_lock:
+        stream = _streams_by_name.get(stream_name)
+        if stream is None:
+            return
+        video_path = stream.video_path
+    profile = ffmpegcmd.probe_file(video_path)
+    refresh_encoder_tier()
+    with _state_lock:
+        stream = _streams_by_name.get(stream_name)
+        if stream is not None:
+            stream.profile = profile
+
+
+# ---- Operations: what the UI, API, and file events ask for ----
+
+def start_stream(stream_name, loop_count=None, mode=None):
+    """(Re)start every output of a stream, re-enabling both.
+
+    loop_count None keeps the last requested value; mode None keeps the last
+    requested mode (codec default when the user never picked one).
     """
     with _state_lock:
         stream = _streams_by_name.get(stream_name)
-        occupied = stream is not None and stream.occupied
+        if stream is None:
+            log.warning("Cannot start unclaimed stream: %s", stream_name)
+            return False
+        if loop_count is not None:
+            stream.loop_count = loop_count
+        if mode is not None:
+            stream.mode = mode
+        for output in stream.outputs:
+            output.enabled = True
+            output.completed = False
+        _persist()
+    refresh_stream_probe(stream_name)
+    launched = [_relaunch_output(stream_name, output_name) for output_name in ffmpegcmd.OUTPUT_NAMES]
+    return any(launched)
+
+
+def stop_stream(stream_name):
+    """Stop every output of a stream and disable both."""
+    with _state_lock:
+        stream = _streams_by_name.get(stream_name)
+        if stream is None:
+            log.warning("Stream not found: %s", stream_name)
+            return False
+        for output in stream.outputs:
+            output.enabled = False
+        _persist()
+        occupied = [output.name for output in stream.outputs if output.occupied]
+    for output_name in occupied:
+        stop_output(stream_name, output_name)
+    return True
+
+
+def start_output(stream_name, output_name):
+    """(Re)start one output and mark it enabled."""
+    with _state_lock:
+        stream = _streams_by_name.get(stream_name)
+        if stream is None:
+            return False
+        output = stream.output(output_name)
+        output.enabled = True
+        output.completed = False
+        _persist()
+    refresh_stream_probe(stream_name)
+    if _relaunch_output(stream_name, output_name):
+        return True
+    # A udp output held back (consumer unreachable) is not a failure: the
+    # request was recorded and recover_udp_outputs launches it later.
+    with _state_lock:
+        stream = _streams_by_name.get(stream_name)
+        return (output_name == "udp" and stream is not None
+                and not udp_launchable(stream)[0])
+
+
+def disable_output(stream_name, output_name):
+    """Stop one output and mark it disabled, so supervision leaves it down."""
+    with _state_lock:
+        stream = _streams_by_name.get(stream_name)
+        if stream is None:
+            return False
+        output = stream.output(output_name)
+        output.enabled = False
+        _persist()
+        occupied = output.occupied
     if occupied:
-        stop_stream(stream_name)
-    return start_stream(stream_name, loop_count, mode)
+        stop_output(stream_name, output_name)
+    return True
+
+
+def set_command(stream_name, output_name, text):
+    """Store an edited command for one output; None to return to the default.
+
+    A running output is relaunched with the new command. Returns an error
+    message, or None on success.
+    """
+    if text is not None:
+        argv, error = parse_command(text)
+        if error:
+            return error
+        text = shlex.join(argv)
+    with _state_lock:
+        stream = _streams_by_name.get(stream_name)
+        if stream is None:
+            return "stream not found"
+        output = stream.output(output_name)
+        if output.command_override == text:
+            return None
+        output.command_override = text
+        _persist()
+        running = output.running
+    log.info("%s command for %s/%s", "Custom" if text is not None else "Default", stream_name, output_name)
+    if running:
+        _relaunch_output(stream_name, output_name)
+    return None
+
+
+def launch_enabled_outputs(stream_name):
+    """Bring up whatever the stream's outputs say should be up."""
+    refresh_stream_probe(stream_name)
+    with _state_lock:
+        stream = _streams_by_name.get(stream_name)
+        if stream is None:
+            return
+        pending = [output.name for output in stream.outputs
+                   if output.enabled and not output.occupied and not output.completed]
+    for output_name in pending:
+        launch_output(stream_name, output_name)
 
 
 def stream_exists(stream_name):
@@ -538,55 +694,74 @@ def stream_exists(stream_name):
 
 
 def stop_all_streams():
-    """Stop every slot that currently owns a process."""
     with _state_lock:
-        names = [s.name for s in _streams_by_name.values() if s.occupied]
+        names = list(_streams_by_name)
     for name in names:
         stop_stream(name)
 
 
 def start_all_streams():
-    """Start every idle slot, keeping each one's last requested loop count."""
+    """Enable every output and bring up the ones that are down. Running
+    outputs are left alone, so viewers are not dropped."""
     with _state_lock:
-        names = [s.name for s in _streams_by_name.values() if not s.occupied]
+        for stream in _streams_by_name.values():
+            for output in stream.outputs:
+                output.enabled = True
+                output.completed = False
+        _persist()
+        names = list(_streams_by_name)
     for name in names:
-        start_stream(name)
+        launch_enabled_outputs(name)
+
+
+def _output_reason(stream, output):
+    """Why an output is not running, or None while it is."""
+    if output.running:
+        return None
+    if output.name == "udp" and stream.udp_port is None:
+        # Permanent for this slot, so report it ahead of the transient reasons.
+        return f"no free UDP port in {UDP_BASE_PORT}-{UDP_LAST_PORT}"
+    if not output.enabled:
+        return "stopped"
+    if output.name == "udp" and not _output_reachable:
+        return f"{OUTPUT_HOST} unreachable"
+    if output.completed:
+        return "completed"
+    return "starting"
+
+
+def _output_status(stream, output):
+    argv = output.launched_argv if output.running else effective_argv(stream, output)
+    return {
+        "running": output.running,
+        "enabled": output.enabled,
+        "stopping": output.stopping,
+        "command": shlex.join(argv) if argv else None,
+        "is_custom": output.command_override is not None,
+        "reason": _output_reason(stream, output),
+    }
 
 
 def get_stream_status():
     """Get status of all streams"""
     result = []
-    # Cached reachability (the poll loop refreshes it; never DNS on the API path).
-    # A running feed reads active only while the consumer resolves — ffmpeg keeps
-    # pushing UDP into the void otherwise, so the start-time flag alone would lie.
-    reachable = _output_reachable
     with _state_lock:
         for stream in _streams_by_name.values():
             urls = stream.urls()
-            udp_active = stream.running and stream.udp_enabled and reachable
-            if udp_active:
-                udp_reason = None
-            elif stream.udp_port is None:
-                # Permanent for this slot, so report it ahead of the transient reasons.
-                udp_reason = f"no free UDP port in {UDP_BASE_PORT}-{UDP_LAST_PORT}"
-            elif not stream.running:
-                udp_reason = "stream stopped"
-            elif not reachable:
-                udp_reason = f"{OUTPUT_HOST} unreachable"
-            else:
-                udp_reason = "starting"
-            requested_mode = stream.mode or default_mode(stream.video_codecs)
-            passthrough_active = stream.running and stream.passthrough_active
+            spec = encode_spec(stream)
+            video_codecs = (stream.profile or ffmpegcmd.UNKNOWN_PROFILE).video_codecs
+            requested_mode = stream.mode or default_mode(video_codecs)
+            passthrough_active = stream.rtsp.running and spec.passthrough
             if requested_mode != "passthrough" or passthrough_active:
                 passthrough_reason = None
-            elif stream.video_codecs is not None and not passthrough_eligible(stream.video_codecs):
+            elif video_codecs is not None and not passthrough_eligible(video_codecs):
                 # Permanent for this file, so report it ahead of the transient reasons.
-                blocked = sorted({c for c in stream.video_codecs if c not in PASSTHROUGH_CODECS})
+                blocked = sorted({c for c in video_codecs if c not in PASSTHROUGH_CODECS})
                 passthrough_reason = (f"video codec {', '.join(blocked)} cannot pass through "
                                       f"(H.264/H.265 only)")
-            elif not stream.running:
+            elif not stream.rtsp.running:
                 passthrough_reason = "stream stopped"
-            elif stream.video_codecs is None:
+            elif video_codecs is None:
                 passthrough_reason = "codec probe failed; transcoding"
             else:
                 passthrough_reason = "starting"
@@ -598,29 +773,50 @@ def get_stream_status():
                 "mode": requested_mode,
                 "passthrough_active": passthrough_active,
                 "passthrough_reason": passthrough_reason,
+                "encoder": spec.encoder_label,
                 "rtsp_url": urls["rtsp"],
                 "hls_url": urls["hls"],
                 "udp_url": urls["udp"],
-                "udp_active": udp_active,
-                "udp_reason": udp_reason,
+                "outputs": {output.name: _output_status(stream, output) for output in stream.outputs},
             })
     return result
+
+
+# ---- File events ----
+
+def _valid_override(stream_name, output_name, command):
+    """A remembered command, or None (with a warning) when a hand-edited state
+    file holds one that could never launch."""
+    if command is None:
+        return None
+    argv, error = parse_command(command)
+    if error:
+        log.warning("Ignoring remembered %s/%s command: %s", stream_name, output_name, error)
+        return None
+    return command
 
 
 def _claim_slot(stream_name, filename):
     """Register (or refresh) the slot binding stream_name to filename.
 
-    Returns True if the slot belongs to this filename after the call, False if
-    there was a collision with a different file (caller should skip).
-    Must be called under _state_lock.
+    A new slot adopts the remembered settings when they belong to the same
+    filename. Returns True if the slot belongs to this filename after the
+    call, False if there was a collision with a different file (caller should
+    skip). Must be called under _state_lock.
     """
     stream = _streams_by_name.get(stream_name)
     if stream is None:
-        _streams_by_name[stream_name] = Stream(
-            name=stream_name,
-            filename=filename,
-            udp_port=_udp_port_for(stream_name),
-        )
+        stream = Stream(name=stream_name, filename=filename, udp_port=_udp_port_for(stream_name))
+        remembered = _retained_streams.get(stream_name)
+        if remembered is not None and remembered.filename == filename:
+            del _retained_streams[stream_name]
+            stream.mode = remembered.mode
+            stream.loop_count = remembered.loop_count
+            for output, record in ((stream.rtsp, remembered.rtsp), (stream.udp, remembered.udp)):
+                output.enabled = record.enabled
+                output.command_override = _valid_override(stream_name, output.name, record.command)
+        _streams_by_name[stream_name] = stream
+        _persist()
         return True
     if stream.filename != filename:
         log.warning("Stream name collision: %s already owned by %r; skipping %r "
@@ -637,7 +833,7 @@ def handle_create(filepath):
         if not _claim_slot(stream_name, path.name):
             return
     log.info("Video added: %s", path.name)
-    start_stream(stream_name)
+    launch_enabled_outputs(stream_name)
 
 
 def handle_delete(filepath):
@@ -651,13 +847,16 @@ def handle_delete(filepath):
             owner = stream.filename if stream is not None else None
             log.debug("Ignoring delete of %s; slot %s owned by %r", path.name, stream_name, owner)
             return
-        was_occupied = stream.occupied
+        occupied = [output.name for output in stream.outputs if output.occupied]
 
     log.info("Video removed: %s", path.name)
-    if was_occupied:
-        stop_stream(stream_name)
+    for output_name in occupied:
+        stop_output(stream_name, output_name)
     with _state_lock:
-        _streams_by_name.pop(stream_name, None)
+        stream = _streams_by_name.pop(stream_name, None)
+        if stream is not None:
+            _retained_streams[stream_name] = _persisted_stream(stream)
+            _persist()
 
 
 def handle_modify(filepath):
@@ -666,83 +865,93 @@ def handle_modify(filepath):
     with _state_lock:
         if not _claim_slot(stream_name, path.name):
             return
-        running = _streams_by_name[stream_name].running
+        stream = _streams_by_name[stream_name]
+        running = [output.name for output in stream.outputs if output.running]
+        custom = [output.name for output in stream.outputs if output.command_override is not None]
 
     log.info("Video updated: %s", path.name)
+    if custom:
+        log.warning("File replaced; custom command kept for %s/%s",
+                    stream_name, ", ".join(custom))
     if running:
-        restart_stream(stream_name)
+        refresh_stream_probe(stream_name)
+    for output_name in running:
+        _relaunch_output(stream_name, output_name)
 
+
+# ---- Supervision ----
 
 def cleanup_dead_processes():
     with _state_lock:
-        snapshot = [(s.name, s.process) for s in _streams_by_name.values() if s.occupied]
+        snapshot = [(stream.name, output.name, output.process)
+                    for stream in _streams_by_name.values()
+                    for output in stream.outputs if output.occupied]
 
-    dead = []
-    for stream_name, process in snapshot:
-        if process.poll() is not None:
-            dead.append((stream_name, process))
+    dead = [(stream_name, output_name, process)
+            for stream_name, output_name, process in snapshot if process.poll() is not None]
 
     if dead:
-        by_exit_code = {}
-        for stream_name, process in dead:
-            by_exit_code.setdefault(process.returncode, []).append(stream_name)
-        for exit_code, stream_names in by_exit_code.items():
-            log.info("Processes ended (exit code %s): %s",
-                     exit_code, ", ".join(sorted(stream_names)))
+        by_exit_code = {}  # exit code -> labels, to log one line per distinct cause
+        for stream_name, output_name, process in dead:
+            by_exit_code.setdefault(process.returncode, []).append(f"{stream_name}/{output_name}")
+        for exit_code, labels in by_exit_code.items():
+            log.info("Processes ended (exit code %s): %s", exit_code, ", ".join(sorted(labels)))
 
     restarted = []
-    for stream_name, process in dead:
+    for stream_name, output_name, process in dead:
         with _state_lock:
             current = _streams_by_name.get(stream_name)
-            # If a concurrent /start replaced our entry with a fresh process,
+            output = current.output(output_name) if current is not None else None
+            # If a concurrent start replaced our entry with a fresh process,
             # don't orphan it — leave the new process alone.
-            if current is None or current.process is not process:
+            if output is None or output.process is not process:
                 continue
-            stopping = current.stopping
+            stopping = output.stopping
+            enabled = output.enabled
             loop_count = current.loop_count
             video_path = current.video_path
-            current.clear_process()
+            output.clear_process()
+            if loop_count != -1 and process.returncode == 0:
+                output.completed = True
 
-        if stopping:
+        if stopping or not enabled:
             continue
 
         if loop_count != -1 and process.returncode == 0:
-            log.info("Stream completed: %s", stream_name)
+            log.info("Output completed: %s/%s", stream_name, output_name)
             continue
 
-        _log_ffmpeg_tail(stream_name)
+        _log_ffmpeg_tail(stream_name, output_name)
 
         try:
             if not Path(video_path).exists():
-                log.warning("Cannot restart stream %s: file missing", stream_name)
+                log.warning("Cannot restart %s/%s: file missing", stream_name, output_name)
                 continue
-        except OSError as e:
-            log.warning("Cannot restart stream %s: %s", stream_name, e)
+        except OSError as error:
+            log.warning("Cannot restart %s/%s: %s", stream_name, output_name, error)
             continue
-        if not start_stream(stream_name, loop_count, log_start=False):
-            log.error("Failed to restart stream: %s", stream_name)
+        if not launch_output(stream_name, output_name, log_start=False):
+            log.error("Failed to restart %s/%s", stream_name, output_name)
             continue
-        restarted.append(stream_name)
+        restarted.append(f"{stream_name}/{output_name}")
 
     if restarted:
-        log.info("Restarted streams: %s", ", ".join(sorted(restarted)))
+        log.info("Restarted: %s", ", ".join(sorted(restarted)))
 
 
 def recover_udp_outputs():
-    """Restart running streams whose UDP feed is off, once OUTPUT_HOST resolves again.
+    """Launch udp outputs that were held back, once OUTPUT_HOST resolves.
 
-    Reachability is only sampled when a stream starts, so one that came up
-    before the consumer was on the network stays RTSP/HLS-only until restarted.
-    Restarting re-samples the cache and wires the UDP output back in.
-
-    Slots with no port from the range are skipped: restarting them would never
-    turn the feed on, so they would be relaunched on every poll forever.
+    Reachability is sampled at launch, so an enabled udp output that was
+    skipped while the consumer was off the network stays down until this
+    brings it up. Slots with no port from the range are skipped: launching
+    them would never succeed.
     """
     if not _output_reachable:
         return
     with _state_lock:
-        pending = [s.name for s in _streams_by_name.values()
-                   if s.running and not s.udp_enabled and s.udp_port is not None]
+        pending = [stream.name for stream in _streams_by_name.values()
+                   if stream.udp_port is not None and stream.udp.enabled
+                   and not stream.udp.occupied and not stream.udp.completed]
     for name in pending:
-        restart_stream(name)
-
+        launch_output(name, "udp")

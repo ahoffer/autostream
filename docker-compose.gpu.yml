@@ -9,7 +9,7 @@ services:
       - /dev/dri:/dev/dri
     group_add:
       - "${RENDER_GROUP_GID}"
-    # Tells stream-video.sh which node carries the integrated GPU, so the
+    # Tells ffmpegcmd.py which node carries the integrated GPU, so the
     # vaapi tier doesn't guess wrong on multi-GPU machines.
     environment:
       VAAPI_RENDER_NODE: ${VAAPI_RENDER_NODE}

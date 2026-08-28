@@ -4,6 +4,7 @@ services:
     volumes:
       - ./mediamtx.yml:/app/mediamtx.yml:ro
       - ./videos:/app/videos:ro
+      - ./state:/app/state
     container_name: ${CONTAINER_NAME}
     restart: unless-stopped
     stop_grace_period: 1s

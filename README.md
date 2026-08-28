@@ -45,7 +45,9 @@ stopped stream the choice is applied at the next Start. The modes:
   `MAX_VIDEO_BITRATE` does not apply.
 - **Transcode** (`Video: Transcode`): re-encode to H.264 with a clean 1-second
   GOP (fixes loop-point artifacts) and the bitrate cap applied, using the
-  hardware encoder when available (see below).
+  hardware encoder when available (see below). To change the GOP for one
+  output, edit its command (`-g` and `-keyint_min`, see "Custom ffmpeg
+  commands").
 
 Audio is handled automatically in both modes: copied when the source is
 already AAC, re-encoded to AAC otherwise.
@@ -63,8 +65,54 @@ in software. Macs and machines without an integrated GPU always get the
 software path.
 
 To see what happened: the container log shows the CPU and GPU devices the
-container sees at startup, and the chosen encoder is logged at the top of each
-stream's ffmpeg log (`/tmp/ffmpeg-logs/<stream>.log` inside the container).
+container sees at startup and the encoder chosen for each output start; the
+UI shows it per stream. Each output's ffmpeg log is at
+`/tmp/ffmpeg-logs/<stream>.<output>.log` inside the container.
+
+## Outputs
+
+Each stream runs two independent ffmpeg processes, shown as rows in the UI
+with their own Start and Stop:
+
+- **rtsp** publishes to MediaMTX, which serves it as RTSP and HLS. HLS has no
+  separate process: it is up whenever rtsp is.
+- **udp** pushes the KLV-preserving MPEG-TS feed to `OUTPUT_HOST`.
+
+Stopping one output leaves the other running, and the choice is remembered:
+a stopped output stays down through dead-process sweeps and container
+restarts until it is started again. The stream-level Start and Stop (and
+Start All / Stop All) apply to both outputs. Both processes decode and encode
+independently, so a transcoded stream costs about twice the CPU or GPU it
+did as a single process.
+
+## Custom ffmpeg commands
+
+The Command button on an output row opens the exact command line it runs
+(or would run). Edit it and Apply: the command is saved for that output and,
+if the output is running, it restarts with the new command right away. Reset
+to default discards the edit and regenerates the command from the stream's
+settings. Custom commands:
+
+- must start with `ffmpeg`; the supervisor runs the argument list directly,
+  with no shell, as the container user;
+- are kept verbatim, so later changes to mode, loop, or the bitrate cap do not
+  touch them until Reset;
+- survive the file being replaced (a warning is logged) and container
+  restarts;
+- embed the stream's UDP port, which is why port assignments are persisted;
+- are supervised by the stream's loop setting, not their own `-stream_loop`:
+  keep the two in agreement, or a finite custom loop that ends is treated as
+  a crash and relaunched;
+- should keep `-nostats`, or the per-output log file grows without bound.
+
+## State
+
+`state/streams.json` (bind-mounted to `/app/state`) remembers each stream's
+mode, loop setting, per-output enabled flag and custom command, and the UDP
+port assigned to each stream name. Settings for a video that was removed are
+kept so the same file gets them back when copied in again. Delete the file
+while the container is stopped to reset everything, including port
+assignments; edit its `udp_ports` to free ports once the range is used up.
 
 ## Stream URLs
 
@@ -75,8 +123,8 @@ service on the ports configured in `.env`:
 - **UDP (KLV)**: `udp://${OUTPUT_HOST}:<port>` — MPEG-TS with KLV/data streams
   preserved. Each stream gets its own port from `${UDP_BASE_PORT}` through
   `${UDP_LAST_PORT}`; the exact port per stream is shown in the control UI and
-  the `/api/streams` output. A port stays assigned for the life of the
-  supervisor so a consumer's registration keeps working across restarts, so a
+  the `/api/streams` output. A port stays assigned to its stream name (see
+  "State") so a consumer's registration keeps working across restarts, so a
   run that cycles through more videos than the range holds will use it up —
   later streams then publish RTSP/HLS only and say so in the UI.
 
@@ -99,9 +147,9 @@ inside video-streaming's own ingest range (`UDP_START_PORT`..`UDP_END_PORT`,
 `40000-40100` by default) or it will not be listening where autostream pushes.
 
 UDP is push, not pull. If `OUTPUT_HOST` does not resolve (for example the
-cx-search stack isn't running), autostream logs a warning and streams RTSP/HLS
-only rather than failing — the KLV feed simply starts once the consumer is
-reachable and the stream restarts. For standalone use, set `OUTPUT_HOST` to any
+cx-search stack isn't running), autostream logs a warning and holds the udp
+output back rather than failing — it starts on its own once the consumer is
+reachable, without touching the rtsp output. For standalone use, set `OUTPUT_HOST` to any
 reachable consumer or a multicast group like `239.0.0.1`. Verify a feed with, for
 example, `ffprobe udp://<host>:<port>` — the KLV stream appears as `Data: klv (KLVA)`.
 

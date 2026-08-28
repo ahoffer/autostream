@@ -16,13 +16,14 @@ RUN addgroup -g 1000 autostream && \
 
 WORKDIR /app
 
-# Pre-create the videos mount point so it exists owned by autostream
-# even when the container runs without a bind mount.
-RUN mkdir -p /app/videos
+# Pre-create the mount points so they exist owned by autostream even when
+# the container runs without the bind mounts.
+RUN mkdir -p /app/videos /app/state
 
-COPY stream-video.sh /app/stream-video.sh
 COPY stream_supervisor.py /app/stream_supervisor.py
 COPY streams.py /app/streams.py
+COPY ffmpegcmd.py /app/ffmpegcmd.py
+COPY statefile.py /app/statefile.py
 COPY streamapi.py /app/streamapi.py
 COPY filewatch.py /app/filewatch.py
 COPY index.html /app/index.html
