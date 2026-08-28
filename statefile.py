@@ -20,9 +20,8 @@ STATE_VERSION = 1
 
 @dataclass(frozen=True)
 class PersistedOutput:
-    """One output's desired state. command None means the generated default."""
+    """One output's desired state."""
     enabled: bool = True
-    command: str | None = None
 
 
 @dataclass(frozen=True)
@@ -32,6 +31,7 @@ class PersistedStream:
     filename: str
     mode: str | None = None
     loop_count: int = -1
+    gop_frames: int = 30
     rtsp: PersistedOutput = PersistedOutput()
     udp: PersistedOutput = PersistedOutput()
 
@@ -45,8 +45,7 @@ class PersistedState:
 
 
 def _output_from_json(data):
-    return PersistedOutput(enabled=bool(data.get("enabled", True)),
-                           command=data.get("command"))
+    return PersistedOutput(enabled=bool(data.get("enabled", True)))
 
 
 def _stream_from_json(data):
@@ -55,6 +54,7 @@ def _stream_from_json(data):
         filename=data["filename"],
         mode=data.get("mode"),
         loop_count=int(data.get("loop_count", -1)),
+        gop_frames=int(data.get("gop_frames", 30)),
         rtsp=_output_from_json(outputs.get("rtsp", {})),
         udp=_output_from_json(outputs.get("udp", {})),
     )
@@ -100,6 +100,7 @@ def save_state(path, state):
                 "filename": record.filename,
                 "mode": record.mode,
                 "loop_count": record.loop_count,
+                "gop_frames": record.gop_frames,
                 "outputs": {"rtsp": asdict(record.rtsp), "udp": asdict(record.udp)},
             }
             for name, record in state.streams.items()

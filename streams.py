@@ -131,15 +131,13 @@ class Output:
 
     enabled is the desired state — "supervision keeps this up" — and outlives
     the process, so a per-output Stop is remembered across a dead-process
-    sweep and a container restart. command_override is the user's edited
-    command line; None means the generated default. completed marks a finite
-    loop that ran to the end, which is not a failure to relaunch from.
-    launched_argv is what the running process was actually started with, so
-    the status can show it even if the default has since changed.
+    sweep and a container restart. completed marks a finite loop that ran to
+    the end, which is not a failure to relaunch from. launched_argv is what
+    the running process was actually started with, so the status can show it
+    even if the generated command has since changed.
     """
     name: str
     enabled: bool = True
-    command_override: str | None = None
     process: subprocess.Popen | None = None
     stopping: bool = False
     completed: bool = False
@@ -173,18 +171,20 @@ class Stream:
 
     A slot exists for as long as the file is present in VIDEOS_DIR. filename
     is the on-disk basename the slot belongs to, kept so a second file
-    sanitizing to the same name can't silently take the slot over. loop_count
-    and mode are the last requested values and deliberately outlive the
-    processes; mode None means "no explicit request yet" so the codec-derived
-    default applies until the user picks one. profile is the last probe of the
-    file — it describes the file, not a process. udp_port is None when the
-    configured range was already used up, which means RTSP/HLS only.
+    sanitizing to the same name can't silently take the slot over. loop_count,
+    mode, and gop_frames are the last requested values and deliberately
+    outlive the processes; mode None means "no explicit request yet" so the
+    codec-derived default applies until the user picks one. profile is the
+    last probe of the file — it describes the file, not a process. udp_port is
+    None when the configured range was already used up, which means RTSP/HLS
+    only.
     """
     name: str
     filename: str
     udp_port: int | None
     loop_count: int = -1
     mode: str | None = None
+    gop_frames: int = ffmpegcmd.DEFAULT_GOP_FRAMES
     profile: ffmpegcmd.FileProfile | None = None
     rtsp: Output = field(default_factory=lambda: Output("rtsp"))
     udp: Output = field(default_factory=lambda: Output("udp"))
@@ -232,7 +232,7 @@ _retained_streams = {}         # stream_name -> statefile.PersistedStream
 # UDP port allocator. Separate from Stream on purpose: an assignment lasts for
 # the whole process lifetime and is persisted, outliving the slot, so a video
 # that is removed and put back keeps the udp:// URL a downstream consumer
-# already registered — and a custom udp command keeps the port it embeds.
+# already registered.
 _udp_ports = {}               # stream_name -> UDP port for the KLV MPEG-TS feed
 _next_udp_port = UDP_BASE_PORT  # next port to hand out; protected by _state_lock
 
@@ -258,8 +258,9 @@ def load_persisted_state():
 def _persisted_stream(stream):
     return statefile.PersistedStream(
         filename=stream.filename, mode=stream.mode, loop_count=stream.loop_count,
-        rtsp=statefile.PersistedOutput(stream.rtsp.enabled, stream.rtsp.command_override),
-        udp=statefile.PersistedOutput(stream.udp.enabled, stream.udp.command_override),
+        gop_frames=stream.gop_frames,
+        rtsp=statefile.PersistedOutput(stream.rtsp.enabled),
+        udp=statefile.PersistedOutput(stream.udp.enabled),
     )
 
 
@@ -407,6 +408,7 @@ def encode_spec(stream):
         video_path=stream.video_path,
         stream_name=stream.name,
         loop_count=stream.loop_count,
+        gop_frames=stream.gop_frames,
         passthrough=passthrough,
         audio_copy=profile.audio_copyable,
         # Copied packets can't honor a cap.
@@ -422,27 +424,6 @@ def encode_spec(stream):
 def default_argv(stream, output_name):
     """The generated command for one output, or None when it cannot be built."""
     return ffmpegcmd.build_argv(encode_spec(stream), output_name)
-
-
-def effective_argv(stream, output):
-    """The command that launching this output would run: the override if the
-    user set one, else the generated default."""
-    if output.command_override is not None:
-        return shlex.split(output.command_override)
-    return default_argv(stream, output.name)
-
-
-def parse_command(text):
-    """Validate an edited command line. Returns (argv, None) or (None, error)."""
-    try:
-        argv = shlex.split(text or "")
-    except ValueError as error:
-        return None, f"command does not parse: {error}"
-    if not argv:
-        return None, "command is empty"
-    if Path(argv[0]).name != "ffmpeg":
-        return None, "command must start with ffmpeg"
-    return argv, None
 
 
 def udp_launchable(stream):
@@ -477,13 +458,8 @@ def launch_output(stream_name, output_name, log_start=True):
             if not launchable:
                 log.debug("Holding %s/udp back: %s", stream_name, reason)
                 return False
-        argv = effective_argv(stream, output)
-        if output.command_override is not None:
-            description = "custom command"
-        else:
-            spec = encode_spec(stream)
-            description = (f"encoder={spec.encoder_label} "
-                           f"audio={'copy' if spec.audio_copy else 'aac'}")
+        spec = encode_spec(stream)
+        argv = ffmpegcmd.build_argv(spec, output_name)
         try:
             if SHOW_FFMPEG_OUTPUT:
                 process = subprocess.Popen(argv)
@@ -498,7 +474,8 @@ def launch_output(stream_name, output_name, log_start=True):
         filename = stream.filename
 
     if log_start:
-        log.info("Started %s/%s video=%r %s", stream_name, output_name, filename, description)
+        log.info("Started %s/%s video=%r encoder=%s audio=%s", stream_name, output_name,
+                 filename, spec.encoder_label, "copy" if spec.audio_copy else "aac")
     return True
 
 
@@ -571,11 +548,11 @@ def refresh_stream_probe(stream_name):
 
 # ---- Operations: what the UI, API, and file events ask for ----
 
-def start_stream(stream_name, loop_count=None, mode=None):
+def start_stream(stream_name, loop_count=None, mode=None, gop_frames=None):
     """(Re)start every output of a stream, re-enabling both.
 
-    loop_count None keeps the last requested value; mode None keeps the last
-    requested mode (codec default when the user never picked one).
+    A None setting keeps the last requested value (for mode, the codec default
+    when the user never picked one).
     """
     with _state_lock:
         stream = _streams_by_name.get(stream_name)
@@ -586,6 +563,8 @@ def start_stream(stream_name, loop_count=None, mode=None):
             stream.loop_count = loop_count
         if mode is not None:
             stream.mode = mode
+        if gop_frames is not None:
+            stream.gop_frames = gop_frames
         for output in stream.outputs:
             output.enabled = True
             output.completed = False
@@ -647,33 +626,6 @@ def disable_output(stream_name, output_name):
     return True
 
 
-def set_command(stream_name, output_name, text):
-    """Store an edited command for one output; None to return to the default.
-
-    A running output is relaunched with the new command. Returns an error
-    message, or None on success.
-    """
-    if text is not None:
-        argv, error = parse_command(text)
-        if error:
-            return error
-        text = shlex.join(argv)
-    with _state_lock:
-        stream = _streams_by_name.get(stream_name)
-        if stream is None:
-            return "stream not found"
-        output = stream.output(output_name)
-        if output.command_override == text:
-            return None
-        output.command_override = text
-        _persist()
-        running = output.running
-    log.info("%s command for %s/%s", "Custom" if text is not None else "Default", stream_name, output_name)
-    if running:
-        _relaunch_output(stream_name, output_name)
-    return None
-
-
 def launch_enabled_outputs(stream_name):
     """Bring up whatever the stream's outputs say should be up."""
     refresh_stream_probe(stream_name)
@@ -731,13 +683,12 @@ def _output_reason(stream, output):
 
 
 def _output_status(stream, output):
-    argv = output.launched_argv if output.running else effective_argv(stream, output)
+    argv = output.launched_argv if output.running else default_argv(stream, output.name)
     return {
         "running": output.running,
         "enabled": output.enabled,
         "stopping": output.stopping,
         "command": shlex.join(argv) if argv else None,
-        "is_custom": output.command_override is not None,
         "reason": _output_reason(stream, output),
     }
 
@@ -770,6 +721,7 @@ def get_stream_status():
                 "running": stream.running,
                 "stopping": stream.stopping,
                 "loop_count": stream.loop_count,
+                "gop_frames": stream.gop_frames,
                 "mode": requested_mode,
                 "passthrough_active": passthrough_active,
                 "passthrough_reason": passthrough_reason,
@@ -783,18 +735,6 @@ def get_stream_status():
 
 
 # ---- File events ----
-
-def _valid_override(stream_name, output_name, command):
-    """A remembered command, or None (with a warning) when a hand-edited state
-    file holds one that could never launch."""
-    if command is None:
-        return None
-    argv, error = parse_command(command)
-    if error:
-        log.warning("Ignoring remembered %s/%s command: %s", stream_name, output_name, error)
-        return None
-    return command
-
 
 def _claim_slot(stream_name, filename):
     """Register (or refresh) the slot binding stream_name to filename.
@@ -812,9 +752,9 @@ def _claim_slot(stream_name, filename):
             del _retained_streams[stream_name]
             stream.mode = remembered.mode
             stream.loop_count = remembered.loop_count
-            for output, record in ((stream.rtsp, remembered.rtsp), (stream.udp, remembered.udp)):
-                output.enabled = record.enabled
-                output.command_override = _valid_override(stream_name, output.name, record.command)
+            stream.gop_frames = remembered.gop_frames
+            stream.rtsp.enabled = remembered.rtsp.enabled
+            stream.udp.enabled = remembered.udp.enabled
         _streams_by_name[stream_name] = stream
         _persist()
         return True
@@ -867,12 +807,8 @@ def handle_modify(filepath):
             return
         stream = _streams_by_name[stream_name]
         running = [output.name for output in stream.outputs if output.running]
-        custom = [output.name for output in stream.outputs if output.command_override is not None]
 
     log.info("Video updated: %s", path.name)
-    if custom:
-        log.warning("File replaced; custom command kept for %s/%s",
-                    stream_name, ", ".join(custom))
     if running:
         refresh_stream_probe(stream_name)
     for output_name in running:

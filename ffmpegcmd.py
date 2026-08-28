@@ -31,9 +31,9 @@ log = logging.getLogger(__name__)
 
 OUTPUT_NAMES = ("rtsp", "udp")
 
-# GOP size in frames (1s @ 30fps) for quick player join and loop recovery. To
-# change it for one output, edit that output's command in the UI.
-GOP_FRAMES = 30
+# GOP size in frames (1s @ 30fps) for quick player join and loop recovery;
+# each stream can set its own in the UI.
+DEFAULT_GOP_FRAMES = 30
 
 ENCODER_TIERS = ("qsv", "vaapi", "x264")
 # Keyed by tier: the label is looked up from the cached tier for logs and status.
@@ -133,8 +133,8 @@ def _vaapi_device_opts(render_node):
     return ["-init_hw_device", f"vaapi=va:{render_node}", "-filter_hw_device", "va"]
 
 
-def _tier_video_opts(tier):
-    gop = str(GOP_FRAMES)
+def _tier_video_opts(tier, gop_frames):
+    gop = str(gop_frames)
     if tier == "qsv":
         return ["-c:v", "h264_qsv", "-preset", "veryfast", "-async_depth", "1",
                 "-g", gop, "-keyint_min", gop, "-bf", "0"]
@@ -169,9 +169,10 @@ def detect_encoder_tier(vaapi_render_node):
     next tier stands. Trials run the full option string so an option this
     driver rejects can never pass the trial and then kill the real encode.
     """
-    if _trial_succeeds(_tier_video_opts("qsv")):
+    if _trial_succeeds(_tier_video_opts("qsv", DEFAULT_GOP_FRAMES)):
         return "qsv"
-    if _trial_succeeds([*_vaapi_device_opts(vaapi_render_node), *_tier_video_opts("vaapi")]):
+    if _trial_succeeds([*_vaapi_device_opts(vaapi_render_node),
+                        *_tier_video_opts("vaapi", DEFAULT_GOP_FRAMES)]):
         return "vaapi"
     return "x264"
 
@@ -186,6 +187,7 @@ class EncodeSpec:
     video_path: str
     stream_name: str
     loop_count: int
+    gop_frames: int
     passthrough: bool
     audio_copy: bool
     bitrate_cap: str
@@ -241,7 +243,7 @@ def build_argv(spec, output_name):
             input_opts = _vaapi_device_opts(spec.vaapi_render_node)
         else:
             input_opts = []
-        video_opts = _tier_video_opts(spec.encoder_tier)
+        video_opts = _tier_video_opts(spec.encoder_tier, spec.gop_frames)
         if spec.bitrate_cap:
             bitrate_opts = ["-b:v", spec.bitrate_cap, "-maxrate", spec.bitrate_cap,
                             "-bufsize", spec.bitrate_cap]
@@ -350,8 +352,9 @@ def build_argv(spec, output_name):
 # -sc_threshold 0                Disable scene detection (prevents unexpected keyframes)
 #
 # VIDEO ENCODING, all tiers:
-# -g 30                          GOP size: 30 frames (1s @ 30fps) for quick recovery
-# -keyint_min 30                 Minimum keyframe interval: 30 frames
+# -g <gop>                       GOP size in frames, the stream's GOP setting
+#                                (default 30 = 1s @ 30fps) for quick recovery
+# -keyint_min <gop>              Minimum keyframe interval, same value
 # -bf 0                          Disable B-frames (eliminates reference frame issues at loop)
 # -b:v/-maxrate/-bufsize <cap>   Cap the video bitrate (transcode only, when a cap is passed)
 #

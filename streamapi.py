@@ -8,12 +8,10 @@ Routes:
   GET    /                                        the UI
   GET    /api/streams                             status of every stream
   POST   /api/streams/start-all | stop-all
-  POST   /api/streams/{name}/start?loop=&mode=    restart every output
+  POST   /api/streams/{name}/start?loop=&mode=&gop=  restart every output
   POST   /api/streams/{name}/stop                 stop every output
   POST   /api/streams/{name}/outputs/{out}/start  restart one output
   POST   /api/streams/{name}/outputs/{out}/stop   stop one output
-  PUT    /api/streams/{name}/outputs/{out}/command  {"command": "ffmpeg ..."}
-  DELETE /api/streams/{name}/outputs/{out}/command  back to the default
 """
 from __future__ import annotations
 
@@ -47,14 +45,6 @@ class StreamHandler(BaseHTTPRequestHandler):
         self.send_header('Content-Type', 'text/html; charset=utf-8')
         self.end_headers()
         self.wfile.write(html.encode())
-
-    def read_json_body(self):
-        """The request body as JSON, or None when absent or malformed."""
-        try:
-            length = int(self.headers.get('Content-Length', 0))
-            return json.loads(self.rfile.read(length)) if length else None
-        except (ValueError, TypeError):
-            return None
 
     def output_route(self):
         """(stream_name, output_name, action) for /api/streams/{n}/outputs/{o}/{action},
@@ -131,47 +121,29 @@ class StreamHandler(BaseHTTPRequestHandler):
             if loop_count < -1:
                 self.send_json({"error": "Invalid loop count"}, 400)
                 return
-            # Absent loop defaults to -1, but absent mode keeps the stored value:
-            # mode has no universal default (it depends on the file's codec), so
-            # a bare start must not reset a stream's choice.
+            # Absent loop defaults to -1, but absent mode and gop keep the
+            # stored values: mode has no universal default (it depends on the
+            # file's codec), so a bare start must not reset a stream's choice.
             mode = query.get('mode', [None])[0]
             if mode is not None and mode not in ('passthrough', 'transcode'):
                 self.send_json({"error": "Invalid mode"}, 400)
                 return
-            success = streams.start_stream(stream_name, loop_count, mode)
+            gop_frames = query.get('gop', [None])[0]
+            if gop_frames is not None:
+                try:
+                    gop_frames = int(gop_frames)
+                except ValueError:
+                    gop_frames = 0
+                if gop_frames < 1:
+                    self.send_json({"error": "GOP length must be a whole number of frames, 1 or more"}, 400)
+                    return
+            success = streams.start_stream(stream_name, loop_count, mode, gop_frames)
             self.send_json({"success": success})
         elif action == 'stop':
             success = streams.stop_stream(stream_name)
             self.send_json({"success": success})
         else:
             self.send_json({"error": "Unknown action"}, 400)
-
-    def do_PUT(self):
-        route = self.output_route()
-        if route is None or route[2] != 'command':
-            self.send_json({"error": "Not found"}, 404)
-            return
-        stream_name, output_name, _ = route
-        body = self.read_json_body()
-        if not isinstance(body, dict) or not isinstance(body.get('command'), str):
-            self.send_json({"error": "Body must be JSON with a string \"command\""}, 400)
-            return
-        self.send_command_result(streams.set_command(stream_name, output_name, body['command']))
-
-    def do_DELETE(self):
-        route = self.output_route()
-        if route is None or route[2] != 'command':
-            self.send_json({"error": "Not found"}, 404)
-            return
-        stream_name, output_name, _ = route
-        self.send_command_result(streams.set_command(stream_name, output_name, None))
-
-    def send_command_result(self, error):
-        if error:
-            self.send_json({"error": error}, 400)
-        else:
-            self.send_json({"success": True})
-
 
 def serve(port):
     """Serve the control UI and API on port, until the process dies."""

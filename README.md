@@ -43,11 +43,12 @@ stopped stream the choice is applied at the next Start. The modes:
   passthrough streams follow the source file's keyframe cadence (players join
   and recover at source keyframes) instead of the enforced 1-second GOP, and
   `MAX_VIDEO_BITRATE` does not apply.
-- **Transcode** (`Video: Transcode`): re-encode to H.264 with a clean 1-second
-  GOP (fixes loop-point artifacts) and the bitrate cap applied, using the
-  hardware encoder when available (see below). To change the GOP for one
-  output, edit its command (`-g` and `-keyint_min`, see "Custom ffmpeg
-  commands").
+- **Transcode** (`Video: Transcode`): re-encode to H.264 with a clean GOP
+  (fixes loop-point artifacts) and the bitrate cap applied, using the
+  hardware encoder when available (see below). The GOP length is the
+  per-stream `GOP` field in the UI, in frames (default 30, one second at 30
+  fps); shorter means faster player join and loop recovery at some bitrate
+  cost.
 
 Audio is handled automatically in both modes: copied when the source is
 already AAC, re-encoded to AAC otherwise.
@@ -85,30 +86,14 @@ Start All / Stop All) apply to both outputs. Both processes decode and encode
 independently, so a transcoded stream costs about twice the CPU or GPU it
 did as a single process.
 
-## Custom ffmpeg commands
-
-The Command button on an output row opens the exact command line it runs
-(or would run). Edit it and Apply: the command is saved for that output and,
-if the output is running, it restarts with the new command right away. Reset
-to default discards the edit and regenerates the command from the stream's
-settings. Custom commands:
-
-- must start with `ffmpeg`; the supervisor runs the argument list directly,
-  with no shell, as the container user;
-- are kept verbatim, so later changes to mode, loop, or the bitrate cap do not
-  touch them until Reset;
-- survive the file being replaced (a warning is logged) and container
-  restarts;
-- embed the stream's UDP port, which is why port assignments are persisted;
-- are supervised by the stream's loop setting, not their own `-stream_loop`:
-  keep the two in agreement, or a finite custom loop that ends is treated as
-  a crash and relaunched;
-- should keep `-nostats`, or the per-output log file grows without bound.
+The Command button on an output row shows the exact ffmpeg command line that
+output runs (or would run), for inspection; every flag is explained in the
+table at the bottom of `ffmpegcmd.py`.
 
 ## State
 
 `state/streams.json` (bind-mounted to `/app/state`) remembers each stream's
-mode, loop setting, per-output enabled flag and custom command, and the UDP
+mode, loop and GOP settings, per-output enabled flags, and the UDP
 port assigned to each stream name. Settings for a video that was removed are
 kept so the same file gets them back when copied in again. Delete the file
 while the container is stopped to reset everything, including port
