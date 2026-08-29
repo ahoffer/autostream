@@ -237,7 +237,7 @@ def build_argv(spec, output_name):
         return None
 
     if spec.passthrough:
-        # The supervisor verified every video track is H.264/H.265: send the
+        # The supervisor verified every video track is one MediaMTX carries: send the
         # source bits unmodified. A bitrate cap cannot apply to copied packets
         # (the supervisor passes none), -vsync cfr is an encode-path operation
         # ffmpeg rejects with copy, and +igndts is dropped because copied
@@ -326,7 +326,7 @@ def build_argv(spec, output_name):
 # MODE SELECTION (passthrough / audio copy, decided by the supervisor):
 # -c:v copy                      (passthrough) Send the source video unmodified. The
 #                                supervisor only requests this after verifying every
-#                                video track is H.264/H.265 (all MediaMTX carries).
+#                                video track is one MediaMTX carries over RTSP.
 #                                No GOP normalization happens, so loop recovery and
 #                                HLS segmenting follow the source's keyframe cadence,
 #                                and the bitrate cap is inert.

@@ -34,12 +34,13 @@ setting) on a running stream restarts the stream with the new value; on a
 stopped stream the choice is applied at the next Start. The modes:
 
 - **Passthrough** (`Video: Passthrough`): the source video is sent unmodified —
-  no decode, no encode, near-zero CPU. Only H.264 and H.265 can pass through
-  (that is all MediaMTX carries). H.264 files default to passthrough; H.265
-  files default to transcode because browser HLS playback of H.265 is spotty,
-  but passthrough can be selected for RTSP-centric consumers. Files with any
-  other video codec always transcode; a passthrough request on them is kept
-  but runs as transcode, with the reason shown in the UI. Note that
+  no decode, no encode, near-zero CPU. H.264, H.265, MPEG-2, MPEG-4 part 2
+  and MJPEG can pass through (the codecs MediaMTX carries over RTSP). Only
+  H.264 files default to passthrough: the others reach RTSP consumers but not
+  browser HLS, so they take an explicit request — useful for imitating a
+  camera with that encoder. Files with any other video codec always
+  transcode; a passthrough request on them is kept but runs as transcode,
+  with the reason shown in the UI. Note that
   passthrough streams follow the source file's keyframe cadence (players join
   and recover at source keyframes) instead of the enforced 1-second GOP, and
   `MAX_VIDEO_BITRATE` does not apply.

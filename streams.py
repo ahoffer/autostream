@@ -76,10 +76,11 @@ MAX_VIDEO_BPS = parse_bitrate(MAX_VIDEO_BITRATE)  # malformed values fail here, 
 # default covers a hand-run container with the device mapped.
 VAAPI_RENDER_NODE = os.getenv("VAAPI_RENDER_NODE", "/dev/dri/renderD128")
 
-# Passthrough policy. MediaMTX only carries H.264/H.265, so nothing else may be
-# stream-copied. HEVC is eligible but not the default: RTSP consumers handle it,
-# but browser HLS playback of HEVC is spotty, so it takes an explicit request.
-PASSTHROUGH_CODECS = frozenset({"h264", "hevc"})
+# Passthrough policy: the codecs MediaMTX carries over RTSP unencoded. Only
+# H.264 passes through by default: HLS through MediaMTX and browsers need it,
+# while HEVC, MPEG-2, MPEG-4 part 2 and MJPEG reach RTSP consumers only (the
+# way a real camera with that encoder would), so they take an explicit request.
+PASSTHROUGH_CODECS = frozenset({"h264", "hevc", "mpeg2video", "mpeg4", "mjpeg"})
 PASSTHROUGH_DEFAULT_CODECS = frozenset({"h264"})
 
 
@@ -818,7 +819,7 @@ def get_stream_status():
                 # Permanent for this file, so report it ahead of the transient reasons.
                 blocked = sorted({c for c in video_codecs if c not in PASSTHROUGH_CODECS})
                 passthrough_reason = (f"video codec {', '.join(blocked)} cannot pass through "
-                                      f"(H.264/H.265 only)")
+                                      f"(H.264, H.265, MPEG-2, MPEG-4, MJPEG only)")
             elif not stream.rtsp.running:
                 passthrough_reason = "stream stopped"
             elif video_codecs is None:

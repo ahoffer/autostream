@@ -227,12 +227,12 @@
             const copying = v.mode === 'passthrough' && s.passthrough_eligible !== false;
             const off = copying ? 'disabled' : '';
             const modeNote = v.mode === 'passthrough' && s.passthrough_eligible === false
-                ? `<span class="reason">transcodes anyway: ${escapeHtml(s.ineligible_codecs.join(', '))} cannot pass through (H.264/H.265 only)</span>` : '';
+                ? `<span class="reason">transcodes anyway: ${escapeHtml(s.ineligible_codecs.join(', '))} cannot pass through (H.264, H.265, MPEG-2, MPEG-4, MJPEG only)</span>` : '';
             return `
                 <div class="row settings-row">
                 <div class="settings">
                     <label>Video
-                        <select id="mode" onchange="edit('mode', this.value)" title="Passthrough sends the source unmodified (H.264/H.265 only)">
+                        <select id="mode" onchange="edit('mode', this.value)" title="Passthrough sends the source unmodified (H.264, H.265, MPEG-2, MPEG-4, MJPEG)">
                             <option value="passthrough" ${v.mode === 'passthrough' ? 'selected' : ''}>Passthrough</option>
                             <option value="transcode" ${v.mode === 'transcode' ? 'selected' : ''}>Transcode</option>
                         </select>
