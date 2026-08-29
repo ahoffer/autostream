@@ -53,8 +53,6 @@
         .detail-title { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
         .detail-title h2 { margin: 0; font-size: 24px; }
         .detail-title span { font-size: 12px; color: #8a93a8; }
-        .header-buttons { display: flex; gap: 8px; }
-        .header-buttons button { padding: 8px 16px; }
         .settings { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
         .settings label { display: flex; flex-direction: column; gap: 6px; font-size: 12px; color: #8a93a8;
                           text-transform: uppercase; letter-spacing: 0.04em; }
@@ -280,10 +278,6 @@
                         <h2>${s.name}</h2>
                         <span class="mono">${escapeHtml(s.filename)} · ${escapeHtml(s.encoder)}</span>
                     </div>
-                    <div class="header-buttons">
-                        <button class="btn-stop" onclick="stopStream(this, '${s.name}')" ${s.running ? '' : 'disabled'}>Stop</button>
-                        <button class="btn-start" onclick="startStream(this, '${s.name}')">${s.running ? 'Restart' : 'Start'}</button>
-                    </div>
                 </div>
                 ${settingsRow(s)}
                 ${outputCard(s, 'rtsp', [['rtsp', s.rtsp_url], ['hls', s.hls_url]], 'RTSP and HLS through MediaMTX')}
@@ -459,8 +453,6 @@
             return ok;
         }
 
-        function startStream(button, name) { return command(button, `/api/streams/${name}/start`, `start ${name}`); }
-        function stopStream(button, name) { return command(button, `/api/streams/${name}/stop`, `stop ${name}`); }
         function stopAll(button) { return command(button, '/api/streams/stop-all', 'stop all streams'); }
         function startAll(button) { return command(button, '/api/streams/start-all', 'start all streams'); }
         function startOutput(button, name, output) { return command(button, `/api/streams/${name}/outputs/${output}/start`, `start ${name}/${output}`); }

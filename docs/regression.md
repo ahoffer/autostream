@@ -67,9 +67,10 @@ notices a dead process within one 2 s tick.
 ## Start, stop, restart semantics
 
 - Stop one output: the other keeps running; the UDP URL row goes inactive.
-- Stream-level Start on a fully stopped stream brings both outputs up;
-  Restart or a settings change on a running stream relaunches only the
-  outputs that are up (a deliberately stopped one stays down).
+- Stream-level start (`POST /api/streams/<name>/start`; the UI has only
+  per-output buttons) on a fully stopped stream brings both outputs up; on a
+  running stream it, like a settings change, relaunches only the outputs
+  that are up (a deliberately stopped one stays down).
 - Start All only launches outputs that are down (running PIDs unchanged);
   Stop All stops everything. Both buttons re-enable after the refresh.
 - A clicked button shows "…" and is disabled until the refresh; rapid
