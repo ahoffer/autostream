@@ -228,16 +228,18 @@
                     </label>
                     <label>FPS
                         <input type="number" id="fps" min="1" max="120" step="any" value="${Math.round(outputRate * 1000) / 1000 || ''}" ${off}
-                               oninput="edit('fps', this.value === '' ? null : Number(this.value))" title="Output frame rate. Transcode only.">
+                               oninput="typed('fps', this.value)" onchange="edit('fps', numberOrAuto(this.value))"
+                               title="Output frame rate; blank for the source rate. Transcode only.">
                         <span class="hint">${v.fps !== null
-                            ? `<a href="#" onclick="edit('fps', null); return false;">reset to source (${fmtRate(s.source_frame_rate)})</a>`
+                            ? `blank for the source rate (${fmtRate(s.source_frame_rate)})`
                             : `source rate (${fmtRate(s.source_frame_rate)})`}</span>
                     </label>
                     <label>GOP (frames)
                         <input type="number" id="gop" min="1" step="1" value="${v.gop ?? naturalGop}" ${off}
-                               oninput="edit('gop', this.value === '' ? null : Number(this.value))" title="Keyframe interval; one second of frames unless changed. Transcode only.">
+                               oninput="typed('gop', this.value)" onchange="edit('gop', numberOrAuto(this.value))"
+                               title="Keyframe interval; blank for one second of frames. Transcode only.">
                         <span class="hint">${v.gop !== null
-                            ? `<a href="#" onclick="edit('gop', null); return false;">reset to one second</a>`
+                            ? `blank for one second at the output rate (${naturalGop})`
                             : 'one second at the output rate'}</span>
                     </label>
                     <label>Playback
@@ -336,10 +338,24 @@
 
         // ---- Settings draft ----
 
-        function edit(key, value) {
+        function numberOrAuto(text) { return text === '' ? null : Number(text); }
+
+        function draftFor(key, value) {
             const s = streams.find(x => x.name === selectedName);
             if (draft === null) draft = currentSettings(s);
             draft[key] = value;
+        }
+
+        // A keystroke only records the draft and reveals Apply/Cancel; the
+        // pane is not rebuilt, so the caret stays where it is. The rebuild
+        // (hints, natural GOP) happens on change, when the field is left.
+        function typed(key, text) {
+            draftFor(key, numberOrAuto(text));
+            document.querySelector('.settings-actions').hidden = false;
+        }
+
+        function edit(key, value) {
+            draftFor(key, value);
             renderDetail();   // hints and Apply/Cancel follow the draft
         }
 
