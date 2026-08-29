@@ -47,8 +47,8 @@ stopped stream the choice is applied at the next Start. The modes:
   (fixes loop-point artifacts) and the bitrate cap applied, using the
   hardware encoder when available (see below). Two encoder settings sit
   beside the mode in the UI and only apply when transcoding (they are
-  disabled under passthrough): `FPS`, the output frame rate, which defaults
-  to the file's own rate; and `GOP`, the keyframe interval in frames, which
+  disabled under passthrough): `FPS`, the output frame rate (1 to 120, the
+  hardware encoders' limit), which defaults to the file's own rate; and `GOP`, the keyframe interval in frames, which
   defaults to one second at the output rate (25 for 25 fps). A shorter GOP
   means faster player join and loop recovery at some bitrate cost.
 
@@ -86,6 +86,16 @@ with their own Start and Stop:
   separate process: it is up whenever rtsp is.
 - **udp** pushes the KLV-preserving MPEG-TS feed to `OUTPUT_HOST`.
 
+Each output shows one of these states: **Running**; **Crashing** (the
+process died unexpectedly and was relaunched; the last lines of its ffmpeg
+log are shown, and the state clears once it has stayed up for a minute);
+**Restarting** (died, relaunch pending on the next sweep); **Starting**;
+**Waiting** (udp held back because `OUTPUT_HOST` is unreachable);
+**Failed** (could not be started, with the reason: no UDP port left, or
+the file has no video track, which is what a non-video file or a copy still
+in progress looks like; it is retried when the file changes); **Stopped**;
+**Completed** (a finite loop played to the end).
+
 Stopping one output leaves the other running, and the choice is remembered:
 a stopped output stays down through dead-process sweeps, settings changes,
 and container restarts until it is started again. The stream-level Stop
@@ -103,10 +113,13 @@ table at the bottom of `ffmpegcmd.py`.
 
 `state/streams.json` (bind-mounted to `/app/state`) remembers each stream's
 mode, loop and GOP settings, per-output enabled flags, and the UDP
-port assigned to each stream name. Settings for a video that was removed are
-kept so the same file gets them back when copied in again. Delete the file
-while the container is stopped to reset everything, including port
-assignments; edit its `udp_ports` to free ports once the range is used up.
+port assigned to each stream name. Settings and the port of a video that was
+removed are kept so the same file gets them back when copied in again; once
+the port range is full, the longest-removed file's port (and settings) are
+given to the newcomer. A file whose name sanitizes to nothing (for example
+`!!!.mp4`) is named after its modification time, like `20260828_231500`.
+Delete the state file while the container is stopped to reset everything,
+including port assignments.
 
 ## Stream URLs
 

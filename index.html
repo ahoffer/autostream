@@ -4,6 +4,7 @@
     <meta charset="utf-8">
     <title>Stream Control</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='3' fill='%2316213e'/%3E%3Cpath d='M5 3.5v9l7-4.5z' fill='%2300d4ff'/%3E%3C/svg%3E">
     <style>
         * { box-sizing: border-box; }
         /* The hidden attribute must beat the display rules below. */
@@ -38,8 +39,10 @@
         .dots { display: flex; gap: 6px; }
         .dot { width: 10px; height: 10px; border-radius: 50%; }
         .dot.running { background: #00c853; }
-        .dot.waiting { background: #ffb74d; }
-        .dot.stopped { background: #2a2f4a; border: 2px solid #ff5252; }
+        .dot.waiting, .dot.starting, .dot.restarting { background: #ffb74d; }
+        .dot.crashing, .dot.failed { background: #ff5252; }
+        .dot.stopped, .dot.completed { background: #2a2f4a; border: 2px solid #8a93a8; }
+        .dot.stopped { border-color: #ff5252; }
         .sidebar-footer { margin-top: auto; display: flex; gap: 8px; padding: 16px 18px 0; }
         .sidebar-footer button { flex: 1; padding: 8px 0; }
 
@@ -67,8 +70,13 @@
         .output-header .spacer { flex: 1; }
         .pill { padding: 3px 10px; border-radius: 10px; font-size: 12px; font-weight: 600; }
         .pill.running { background: #00c853; color: #000; }
-        .pill.waiting { background: #ffb74d; color: #000; }
+        .pill.waiting, .pill.starting, .pill.restarting { background: #ffb74d; color: #000; }
+        .pill.crashing { background: #ff5252; color: #fff; }
+        .pill.failed { background: #2a2f4a; color: #ff8a8a; border: 1px solid #ff5252; }
         .pill.stopped { background: #2a2f4a; color: #ff8a8a; border: 1px solid #ff5252; }
+        .pill.completed { background: #2a2f4a; color: #8a93a8; border: 1px solid #8a93a8; }
+        pre.err { margin: 0; padding: 8px 10px; background: #4a1e1e; color: #ffb4b4; border-radius: 4px;
+                  white-space: pre-wrap; word-break: break-all; font-size: 11.5px; }
         .url-grid { display: grid; grid-template-columns: 48px 1fr auto; gap: 8px; align-items: center; font-size: 13px; }
         .url-grid .label { color: #8a93a8; }
         .url-grid .url { color: #ccc; word-break: break-all; }
@@ -89,6 +97,18 @@
         .error-banner span { flex: 1; }
         .error-banner button { background: transparent; color: #ffb4b4; border: 1px solid #ff5252; padding: 2px 10px; }
         .empty { color: #8a93a8; }
+
+        /* Narrow windows: the stream list becomes a strip across the top. */
+        @media (max-width: 800px) {
+            body { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto 1fr; }
+            .sidebar { min-height: 0; border-right: none; border-bottom: 1px solid #0f3460; padding: 12px 0; }
+            #list { display: flex; overflow-x: auto; }
+            .stream-item { width: auto; flex: 0 0 auto; gap: 8px; border-left: none; border-bottom: 3px solid transparent; }
+            .stream-item.selected { border-bottom-color: #00d4ff; }
+            .sidebar-footer { margin-top: 12px; }
+            .detail { padding: 16px; }
+            .settings { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        }
     </style>
 </head>
 <body>
@@ -124,23 +144,25 @@
             return String(text).replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
         }
 
-        function outputState(output) {
-            return output.running ? 'running' : output.enabled ? 'waiting' : 'stopped';
-        }
+        const stateLabels = {running: 'Running', crashing: 'Crashing', restarting: 'Restarting', starting: 'Starting',
+                             waiting: 'Waiting', failed: 'Failed', stopped: 'Stopped', completed: 'Completed'};
 
         function fmtRate(rate) { return rate ? `${Math.round(rate * 100) / 100} fps` : 'unknown'; }
 
         function renderList() {
+            const focused = document.activeElement && document.activeElement.dataset.stream;
             document.getElementById('count').textContent = streams.length;
             document.getElementById('all-buttons').hidden = streams.length === 0;
             document.getElementById('list').innerHTML = streams.map(s => `
-                <button class="stream-item${s.name === selectedName ? ' selected' : ''}" onclick="select('${s.name}')">
+                <button class="stream-item${s.name === selectedName ? ' selected' : ''}" data-stream="${s.name}" onclick="select('${s.name}')">
                     <span>${s.name}</span>
                     <span class="dots">
-                        <span class="dot ${outputState(s.outputs.rtsp)}" title="rtsp: ${outputState(s.outputs.rtsp)}"></span>
-                        <span class="dot ${outputState(s.outputs.udp)}" title="udp: ${outputState(s.outputs.udp)}"></span>
+                        <span class="dot ${s.outputs.rtsp.state}" title="rtsp: ${s.outputs.rtsp.state}"></span>
+                        <span class="dot ${s.outputs.udp.state}" title="udp: ${s.outputs.udp.state}"></span>
                     </span>
                 </button>`).join('');
+            // A rewrite drops keyboard focus to the body; put it back on the same row.
+            if (focused) document.querySelector(`.stream-item[data-stream="${focused}"]`)?.focus();
         }
 
         function urlRow(label, url, active) {
@@ -151,17 +173,17 @@
 
         function outputCard(s, outputName, urls, note) {
             const output = s.outputs[outputName];
-            const state = outputState(output);
-            const label = {running: 'Running', waiting: 'Waiting', stopped: 'Stopped'}[state];
+            const state = output.state;
             return `<div class="output">
                 <div class="output-header">
                     <span class="name">${outputName.toUpperCase()}</span>
-                    <span class="pill ${state}">${label}</span>
+                    <span class="pill ${state}">${stateLabels[state] ?? state}</span>
                     ${output.reason && output.enabled ? `<span class="reason">${escapeHtml(output.reason)}</span>` : `<span class="note">${note}</span>`}
                     <span class="spacer"></span>
                     <button class="btn-stop" onclick="stopOutput(this, '${s.name}', '${outputName}')" ${output.enabled ? '' : 'disabled'}>Stop</button>
                     <button class="btn-start" onclick="startOutput(this, '${s.name}', '${outputName}')">${output.running ? 'Restart' : 'Start'}</button>
                 </div>
+                ${output.error ? `<pre class="err mono" title="Last lines of the ffmpeg log">${escapeHtml(output.error)}</pre>` : ''}
                 <div class="url-grid${output.running ? '' : ' inactive'}">
                     ${urls.map(([label, url]) => urlRow(label, url, output.running)).join('')}
                 </div>
@@ -194,7 +216,7 @@
             const copying = v.mode === 'passthrough' && s.passthrough_eligible !== false;
             const off = copying ? 'disabled' : '';
             const modeNote = v.mode === 'passthrough' && s.passthrough_eligible === false
-                ? `<span class="reason">transcodes — ${escapeHtml(s.passthrough_reason ?? 'not eligible')}</span>` : '';
+                ? `<span class="reason">transcodes anyway: ${escapeHtml(s.ineligible_codecs.join(', '))} cannot pass through (H.264/H.265 only)</span>` : '';
             return `
                 <div class="settings">
                     <label>Video
@@ -205,7 +227,7 @@
                         <span class="hint">${modeNote}</span>
                     </label>
                     <label>FPS
-                        <input type="number" id="fps" min="1" max="240" step="any" value="${Math.round(outputRate * 1000) / 1000 || ''}" ${off}
+                        <input type="number" id="fps" min="1" max="120" step="any" value="${Math.round(outputRate * 1000) / 1000 || ''}" ${off}
                                oninput="edit('fps', this.value === '' ? null : Number(this.value))" title="Output frame rate. Transcode only.">
                         <span class="hint">${v.fps !== null
                             ? `<a href="#" onclick="edit('fps', null); return false;">reset to source (${fmtRate(s.source_frame_rate)})</a>`
@@ -240,6 +262,13 @@
         function renderDetail() {
             const s = streams.find(x => x.name === selectedName);
             const detail = document.getElementById('detail');
+            const active = document.activeElement && document.activeElement.closest('#detail')
+                           ? document.activeElement.id : null;
+            renderDetailNow(s, detail);
+            if (active) document.getElementById(active)?.focus();
+        }
+
+        function renderDetailNow(s, detail) {
             if (!s) {
                 detail.innerHTML = `<p class="empty">${streams.length ? 'Select a stream' : 'No videos in the videos directory'}</p>`;
                 return;
@@ -266,11 +295,7 @@
                 draft = null;
             }
             renderList();
-            // Hold the detail pane while a value is being typed so the caret
-            // is not lost; the list above keeps updating.
-            const typing = document.activeElement && document.activeElement.closest('#detail')
-                           && document.activeElement.tagName === 'INPUT';
-            if (!typing) renderDetail();
+            renderDetail();
         }
 
         function showStale() {
@@ -314,11 +339,7 @@
             const s = streams.find(x => x.name === selectedName);
             if (draft === null) draft = currentSettings(s);
             draft[key] = value;
-            // Re-render everything but the control being typed in, so the
-            // hints and Apply/Cancel follow the draft.
-            const active = document.activeElement && document.activeElement.id;
-            renderDetail();
-            if (active && ['fps', 'gop'].includes(active)) document.getElementById(active).focus();
+            renderDetail();   // hints and Apply/Cancel follow the draft
         }
 
         function cancelSettings() {
@@ -327,12 +348,16 @@
             renderDetail();
         }
 
-        function applySettings(button, name) {
+        async function applySettings(button, name) {
             const v = draft;
             document.activeElement.blur();
             const query = `mode=${v.mode}&loop=${v.loop}&fps=${v.fps ?? 'auto'}&gop=${v.gop ?? 'auto'}`;
-            draft = null;
-            return command(button, `/api/streams/${name}/settings?${query}`, `apply ${name} settings`);
+            // The draft stays until the server accepts it, so a rejected
+            // value can be corrected rather than retyped.
+            if (await command(button, `/api/streams/${name}/settings?${query}`, `apply ${name} settings`)) {
+                draft = null;
+                renderDetail();
+            }
         }
 
         // ---- Commands ----
@@ -393,20 +418,30 @@
         // {"success": false} with a 200, so checking only the transport would
         // leave a failed click looking like it worked.
         async function command(button, path, description) {
+            const label = button && button.textContent;
             if (button) {
                 button.disabled = true;
-                button.textContent = button.textContent.replace(/…$/, '') + '…';
+                button.textContent = label + '…';
             }
+            let ok = false;
             try {
                 const res = await fetch(path, {method: 'POST'});
                 const result = await res.json().catch(() => ({}));
                 if (!res.ok) throw new Error(result.error || `HTTP ${res.status}`);
                 if (result.success === false) throw new Error('the supervisor could not complete it; check its log');
                 hideError();
+                ok = true;
             } catch (err) {
                 showError(`Could not ${description}: ${err.message}`);
             }
             await loadStreams(true);
+            // Buttons in re-rendered panes are gone by now; static ones (the
+            // sidebar footer) must be put back by hand.
+            if (button && button.isConnected) {
+                button.disabled = false;
+                button.textContent = label;
+            }
+            return ok;
         }
 
         function startStream(button, name) { return command(button, `/api/streams/${name}/start`, `start ${name}`); }

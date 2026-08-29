@@ -161,8 +161,9 @@ def parse_settings(query):
                 settings['frame_rate'] = float(query['fps'][0])
             except ValueError:
                 settings['frame_rate'] = 0
-            if not 0 < settings['frame_rate'] <= 240:
-                return None, "FPS must be a number between 0 and 240, or auto"
+            # The hardware encoders refuse rates above roughly 120.
+            if not 1 <= settings['frame_rate'] <= 120:
+                return None, "FPS must be a number from 1 to 120, or auto"
     return settings, None
 
 def serve(port):
