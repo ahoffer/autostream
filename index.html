@@ -52,6 +52,8 @@
         .detail-header { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
         .detail-title { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
         .detail-title h2 { margin: 0; font-size: 24px; }
+        .encoder { font-size: 12px; color: #8a93a8; border: 1px solid #8a93a8; border-radius: 8px; padding: 1px 8px; }
+        .encoder.hw { color: #00d4ff; border-color: #00d4ff; }
         .settings { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
         .settings label { display: flex; flex-direction: column; gap: 6px; font-size: 12px; color: #8a93a8;
                           text-transform: uppercase; letter-spacing: 0.04em; }
@@ -144,6 +146,14 @@
 
         const stateLabels = {running: 'Running', crashing: 'Crashing', restarting: 'Restarting', starting: 'Starting',
                              waiting: 'Waiting', failed: 'Failed', stopped: 'Stopped', completed: 'Completed'};
+
+        // Short form of the server's encoder label for the header tag.
+        function encoderTag(encoder) {
+            if (encoder.startsWith('copy')) return 'copy';
+            if (encoder.includes('_qsv')) return 'QSV';
+            if (encoder.includes('vaapi')) return 'VA-API';
+            return 'software';
+        }
 
         function fmtRate(rate) { return rate ? `${Math.round(rate * 100) / 100} fps` : 'unknown'; }
 
@@ -280,6 +290,7 @@
                 <div class="detail-header">
                     <div class="detail-title">
                         <h2>${s.name}</h2>
+                        <span class="encoder${s.encoder.includes('_qsv') || s.encoder.includes('vaapi') ? ' hw' : ''}" title="${escapeHtml(s.encoder)}">${encoderTag(s.encoder)}</span>
                     </div>
                 </div>
                 ${settingsRow(s)}
