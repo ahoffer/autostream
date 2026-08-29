@@ -238,9 +238,7 @@
                         <input type="number" id="gop" min="1" step="1" value="${v.gop ?? naturalGop}" ${off}
                                oninput="typed('gop', this.value)" onchange="edit('gop', numberOrAuto(this.value))"
                                title="Keyframe interval; blank for one second of frames. Transcode only.">
-                        <span class="hint">${v.gop !== null
-                            ? `blank for one second at the output rate (${naturalGop})`
-                            : 'one second at the output rate'}</span>
+                        <span class="hint"></span>
                     </label>
                     <label>Playback
                         <select id="loop" onchange="edit('loop', Number(this.value))">
