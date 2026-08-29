@@ -58,12 +58,16 @@
         .settings input:disabled { opacity: 0.4; }
         .hint { font-size: 12px; text-transform: none; letter-spacing: 0; min-height: 1.2em; }
         .hint a { color: #00d4ff; }
-        .settings-actions { display: flex; align-items: center; gap: 10px; font-size: 13px; color: #ffb74d; }
+        /* Every row of the pane: content on the left, the same actions column on the right. */
+        .row { display: grid; grid-template-columns: minmax(0, 1fr) 220px; gap: 16px; align-items: start; }
+        .settings-row { padding-right: 16px; }   /* the cards' inner padding, so the columns line up */
+        .pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+        .pair button { width: 100%; padding: 8px 0; }
         .reason { color: #ffb74d; font-style: italic; font-size: 13px; }
-        .output { display: flex; flex-direction: column; gap: 10px; padding: 14px 16px; background: #16213e; border-radius: 8px; }
+        .output { padding: 14px 16px; background: #16213e; border-radius: 8px; }
+        .output-body { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
         .output-header { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
         .output-header .name { font-weight: 700; color: #00d4ff; width: 48px; }
-        .output-header .spacer { flex: 1; }
         .pill { padding: 3px 10px; border-radius: 10px; font-size: 12px; font-weight: 600; }
         .pill.running { background: #00c853; color: #000; }
         .pill.waiting, .pill.starting, .pill.restarting { background: #ffb74d; color: #000; }
@@ -102,6 +106,7 @@
             .sidebar-footer { margin-top: 12px; }
             .detail { padding: 16px; }
             .settings { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+            .row { grid-template-columns: minmax(0, 1fr); }
         }
     </style>
 </head>
@@ -167,24 +172,27 @@
         function outputCard(s, outputName, urls) {
             const output = s.outputs[outputName];
             const state = output.state;
-            return `<div class="output">
-                <div class="output-header">
-                    <span class="name">${outputName.toUpperCase()}</span>
-                    <span class="pill ${state}">${stateLabels[state] ?? state}</span>
-                    ${output.reason && output.enabled ? `<span class="reason">${escapeHtml(output.reason)}</span>` : ''}
-                    <span class="spacer"></span>
+            return `<div class="output row">
+                <div class="output-body">
+                    <div class="output-header">
+                        <span class="name">${outputName.toUpperCase()}</span>
+                        <span class="pill ${state}">${stateLabels[state] ?? state}</span>
+                        ${output.reason && output.enabled ? `<span class="reason">${escapeHtml(output.reason)}</span>` : ''}
+                    </div>
+                    ${output.error ? `<pre class="err mono" title="Last lines of the ffmpeg log">${escapeHtml(output.error)}</pre>` : ''}
+                    <div class="url-grid">
+                        ${urls.map(([label, url]) => urlRow(label, url, output.running)).join('')}
+                    </div>
+                    ${output.command === null ? '' : `
+                    <details ${openCommands.has(outputName) ? 'open' : ''} ontoggle="toggleCommand('${outputName}', this.open)">
+                        <summary>Command</summary>
+                        <pre class="command mono">${escapeHtml(output.command)}</pre>
+                    </details>`}
+                </div>
+                <div class="pair">
                     <button class="btn-stop" onclick="stopOutput(this, '${s.name}', '${outputName}')" ${output.enabled ? '' : 'disabled'}>Stop</button>
-                    <button class="btn-start" onclick="startOutput(this, '${s.name}', '${outputName}')">${output.running ? 'Restart' : 'Start'}</button>
+                    <button class="btn-start" onclick="startOutput(this, '${s.name}', '${outputName}')" ${output.running ? 'disabled' : ''}>Start</button>
                 </div>
-                ${output.error ? `<pre class="err mono" title="Last lines of the ffmpeg log">${escapeHtml(output.error)}</pre>` : ''}
-                <div class="url-grid">
-                    ${urls.map(([label, url]) => urlRow(label, url, output.running)).join('')}
-                </div>
-                ${output.command === null ? '' : `
-                <details ${openCommands.has(outputName) ? 'open' : ''} ontoggle="toggleCommand('${outputName}', this.open)">
-                    <summary>Command</summary>
-                    <pre class="command mono">${escapeHtml(output.command)}</pre>
-                </details>`}
             </div>`;
         }
 
@@ -211,6 +219,7 @@
             const modeNote = v.mode === 'passthrough' && s.passthrough_eligible === false
                 ? `<span class="reason">transcodes anyway: ${escapeHtml(s.ineligible_codecs.join(', '))} cannot pass through (H.264/H.265 only)</span>` : '';
             return `
+                <div class="row settings-row">
                 <div class="settings">
                     <label>Video
                         <select id="mode" onchange="edit('mode', this.value)" title="Passthrough sends the source unmodified (H.264/H.265 only)">
@@ -246,9 +255,10 @@
                         <span class="hint"></span>
                     </label>
                 </div>
-                <div class="settings-actions" ${dirty ? '' : 'hidden'}>
-                    <button class="btn-start" onclick="applySettings(this, '${s.name}')">Apply</button>
+                <div class="pair settings-actions" ${dirty ? '' : 'hidden'}>
+                    <button class="btn-start" onclick="applySettings(this, '${s.name}')">${s.running ? 'Save & restart' : 'Save'}</button>
                     <button class="btn-plain" onclick="cancelSettings()">Cancel</button>
+                </div>
                 </div>`;
         }
 
@@ -332,7 +342,7 @@
             draft[key] = value;
         }
 
-        // A keystroke only records the draft and reveals Apply/Cancel; the
+        // A keystroke only records the draft and reveals Save/Cancel; the
         // pane is not rebuilt, so the caret stays where it is. The rebuild
         // (hints, natural GOP) happens on change, when the field is left.
         function typed(key, text) {
@@ -342,7 +352,7 @@
 
         function edit(key, value) {
             draftFor(key, value);
-            renderDetail();   // hints and Apply/Cancel follow the draft
+            renderDetail();   // hints and Save/Cancel follow the draft
         }
 
         function cancelSettings() {
@@ -358,7 +368,7 @@
             const query = `mode=${v.mode}&loop=${v.loop}&fps=${v.fps ?? 'auto'}&gop=${v.gop ?? 'auto'}`;
             // The draft stays until the server accepts it, so a rejected
             // value can be corrected rather than retyped.
-            if (await command(button, `/api/streams/${name}/settings?${query}`, `apply ${name} settings`)) {
+            if (await command(button, `/api/streams/${name}/settings?${query}`, `save ${name} settings`)) {
                 draft = null;
                 renderDetail();
             }
