@@ -103,8 +103,11 @@ notices a dead process within one 2 s tick.
   survives the list re-render, a visible ring appears only for keyboard focus.
 - 700 px window: no horizontal scroll, list becomes a top strip, no empty
   band under it.
-- Error banner stays until dismissed or the next successful command; a poll
-  failure never blanks the pane.
+- Error banner clears on its own: a "Failed to fetch" goes away on the next
+  successful poll, a refused Apply on the next successful command or on
+  Cancel; a poll failure never blanks the pane.
+- FPS/GOP apply their typed value when the field loses focus (Tab or click
+  away), not only on Enter.
 - Copy buttons work on the plain-HTTP origin and say "Copied".
 - No console errors other than expected 400s; no favicon 404.
 
