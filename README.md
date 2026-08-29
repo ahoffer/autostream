@@ -223,6 +223,17 @@ Access streams at:
 - **HLS**: `http://localhost:9322/<stream-name>/index.m3u8`
 - **Web UI**: `http://localhost:9080`
 
+To watch from the host, force RTSP over TCP:
+
+```bash
+ffplay -rtsp_transport tcp rtsp://localhost:9554/cargoship2
+```
+
+ffplay defaults to RTP over UDP, and MediaMTX advertises its internal RTP
+ports (8000/8001) while the host sees them as 9000/9001, so the UDP
+negotiation lands on the wrong ports and playback stalls. Over TCP the
+video rides the RTSP connection and the mapping does not matter.
+
 ## Supported Formats
 
 Every file in `videos/` gets a stream except hidden files and READMEs — there
