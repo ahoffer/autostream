@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import logging
 import threading
-import time
 
 import filewatch
 import streamapi
@@ -35,7 +34,6 @@ def main():
     threading.Thread(target=streamapi.serve, args=(streams.API_PORT,),
                      name="APIServer", daemon=True).start()
 
-    last_cleanup = time.time()
     for creates, modifies, deletions in filewatch.watch(streams.VIDEOS_DIR, streams.is_ignored):
         # Deletions first so a rename (delete + create sharing a stream_name)
         # frees the slot before the new file tries to claim it.
@@ -48,10 +46,9 @@ def main():
 
         streams.refresh_output_reachable()
         streams.recover_udp_outputs()
-
-        if time.time() - last_cleanup > 30:
-            streams.cleanup_dead_processes()
-            last_cleanup = time.time()
+        # Every tick: a poll() per process is cheap, and it keeps the status
+        # honest — a dead output is noticed within one poll interval.
+        streams.cleanup_dead_processes()
 
 
 if __name__ == "__main__":

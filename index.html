@@ -248,6 +248,7 @@
                             <option value="2" ${v.loop === 2 ? 'selected' : ''}>Play 3x</option>
                             <option value="4" ${v.loop === 4 ? 'selected' : ''}>Play 5x</option>
                             <option value="9" ${v.loop === 9 ? 'selected' : ''}>Play 10x</option>
+                            ${[-1, 0, 1, 2, 4, 9].includes(v.loop) ? '' : `<option value="${v.loop}" selected>Play ${v.loop + 1}x</option>`}
                         </select>
                         <span class="hint"></span>
                     </label>
