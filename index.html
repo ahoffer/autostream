@@ -52,7 +52,6 @@
         .detail-header { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
         .detail-title { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
         .detail-title h2 { margin: 0; font-size: 24px; }
-        .detail-title span { font-size: 12px; color: #8a93a8; }
         .settings { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
         .settings label { display: flex; flex-direction: column; gap: 6px; font-size: 12px; color: #8a93a8;
                           text-transform: uppercase; letter-spacing: 0.04em; }
@@ -64,7 +63,6 @@
         .output { display: flex; flex-direction: column; gap: 10px; padding: 14px 16px; background: #16213e; border-radius: 8px; }
         .output-header { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
         .output-header .name { font-weight: 700; color: #00d4ff; width: 48px; }
-        .output-header .note { color: #8a93a8; font-size: 13px; }
         .output-header .spacer { flex: 1; }
         .pill { padding: 3px 10px; border-radius: 10px; font-size: 12px; font-weight: 600; }
         .pill.running { background: #00c853; color: #000; }
@@ -169,14 +167,14 @@
                 ${active ? `<button class="copy-btn" title="Copy ${label} URL" onclick='copyUrl(this, ${JSON.stringify(url)})'>${copyIcon}</button>` : '<span></span>'}`;
         }
 
-        function outputCard(s, outputName, urls, note) {
+        function outputCard(s, outputName, urls) {
             const output = s.outputs[outputName];
             const state = output.state;
             return `<div class="output">
                 <div class="output-header">
                     <span class="name">${outputName.toUpperCase()}</span>
                     <span class="pill ${state}">${stateLabels[state] ?? state}</span>
-                    ${output.reason && output.enabled ? `<span class="reason">${escapeHtml(output.reason)}</span>` : `<span class="note">${note}</span>`}
+                    ${output.reason && output.enabled ? `<span class="reason">${escapeHtml(output.reason)}</span>` : ''}
                     <span class="spacer"></span>
                     <button class="btn-stop" onclick="stopOutput(this, '${s.name}', '${outputName}')" ${output.enabled ? '' : 'disabled'}>Stop</button>
                     <button class="btn-start" onclick="startOutput(this, '${s.name}', '${outputName}')">${output.running ? 'Restart' : 'Start'}</button>
@@ -254,7 +252,6 @@
                 <div class="settings-actions" ${dirty ? '' : 'hidden'}>
                     <button class="btn-start" onclick="applySettings(this, '${s.name}')">Apply</button>
                     <button class="btn-plain" onclick="cancelSettings()">Cancel</button>
-                    <span>${s.running ? 'Apply restarts the running stream with the new values' : 'Apply saves the values for the next start'}</span>
                 </div>`;
         }
 
@@ -276,12 +273,11 @@
                 <div class="detail-header">
                     <div class="detail-title">
                         <h2>${s.name}</h2>
-                        <span class="mono">${escapeHtml(s.filename)} · ${escapeHtml(s.encoder)}</span>
                     </div>
                 </div>
                 ${settingsRow(s)}
-                ${outputCard(s, 'rtsp', [['rtsp', s.rtsp_url], ['hls', s.hls_url]], 'RTSP and HLS through MediaMTX')}
-                ${outputCard(s, 'udp', [['udp', s.udp_url]], 'MPEG-TS with KLV metadata')}`;
+                ${outputCard(s, 'rtsp', [['rtsp', s.rtsp_url], ['hls', s.hls_url]])}
+                ${outputCard(s, 'udp', [['udp', s.udp_url]])}`;
         }
 
         function render() {
