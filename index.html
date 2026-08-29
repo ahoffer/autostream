@@ -76,8 +76,7 @@
         .url-grid { display: grid; grid-template-columns: 48px 1fr auto; gap: 8px; align-items: center; font-size: 13px; }
         .url-grid .label { color: #8a93a8; }
         .url-grid .url { color: #ccc; word-break: break-all; }
-        .url-grid.inactive .url { opacity: 0.45; text-decoration: line-through; }
-        .url-grid .url.none { text-decoration: none; opacity: 1; color: #8a93a8; }
+        .url-grid .url.none { color: #8a93a8; }
         .copy-btn { background: transparent; border: none; color: #8a93a8; cursor: pointer; padding: 2px 6px;
                     border-radius: 3px; display: inline-flex; align-items: center; gap: 4px; font-size: 12px; }
         .copy-btn:hover { color: #00d4ff; background: rgba(0, 212, 255, 0.1); opacity: 1; }
@@ -178,7 +177,7 @@
                     <button class="btn-start" onclick="startOutput(this, '${s.name}', '${outputName}')">${output.running ? 'Restart' : 'Start'}</button>
                 </div>
                 ${output.error ? `<pre class="err mono" title="Last lines of the ffmpeg log">${escapeHtml(output.error)}</pre>` : ''}
-                <div class="url-grid${output.running ? '' : ' inactive'}">
+                <div class="url-grid">
                     ${urls.map(([label, url]) => urlRow(label, url, output.running)).join('')}
                 </div>
                 ${output.command === null ? '' : `

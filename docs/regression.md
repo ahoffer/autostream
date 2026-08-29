@@ -66,7 +66,7 @@ notices a dead process within one 2 s tick.
 
 ## Start, stop, restart semantics
 
-- Stop one output: the other keeps running; the UDP URL row goes inactive.
+- Stop one output: the other keeps running.
 - Stream-level start (`POST /api/streams/<name>/start`; the UI has only
   per-output buttons) on a fully stopped stream brings both outputs up; on a
   running stream it, like a settings change, relaunches only the outputs
