@@ -170,7 +170,7 @@ def serve(port):
     """Serve the control UI and API on port, until the process dies."""
     try:
         server = ThreadingHTTPServer(('0.0.0.0', port), StreamHandler)  # type: ignore[arg-type]
-        log.info("Stream Control UI: http://localhost:%d", port)
+        log.debug("Stream Control UI: http://localhost:%d", port)
         server.serve_forever()
     except Exception as error:
         # The control UI is a primary feature; silent half-death (supervisor alive,

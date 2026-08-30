@@ -15,14 +15,25 @@ import streamapi
 import streams
 
 
+class OneLineFormatter(logging.Formatter):
+    """Keep every record on one line so the log stays scannable: a multi-line
+    argument (an exception text, an ffmpeg tail) is joined with "; "."""
+
+    def format(self, record):
+        return super().format(record).replace("\n", "; ")
+
+
+def configure_logging():
+    logging.addLevelName(logging.WARNING, "WARN")
+    handler = logging.StreamHandler()
+    handler.setFormatter(OneLineFormatter("%(asctime)s %(levelname)s %(message)s", "%H:%M:%S"))
+    logging.basicConfig(level=streams.LOG_LEVEL.upper(), handlers=[handler])
+
+
 def main():
-    logging.basicConfig(
-        level=streams.LOG_LEVEL.upper(),
-        format="%(asctime)s [%(threadName)s] %(levelname)s %(message)s",
-        datefmt="%Y-%m-%d %H:%M:%S",
-    )
+    configure_logging()
     log = logging.getLogger(__name__)
-    log.info("Stream supervisor starting...")
+    log.info("Supervisor starting, UI http://localhost:%d", streams.API_PORT)
 
     streams.wait_for_mediamtx()
     # Before the first poll: its creates claim slots, which assign UDP ports
@@ -34,13 +45,19 @@ def main():
     threading.Thread(target=streamapi.serve, args=(streams.API_PORT,),
                      name="APIServer", daemon=True).start()
 
+    # The files already present arrive together in the first poll that reports
+    # creates (the watcher holds them for its quiet period first); those are
+    # the boot list, not additions.
+    booting = True
     for creates, modifies, deletions in filewatch.watch(streams.VIDEOS_DIR, streams.is_ignored):
         # Deletions first so a rename (delete + create sharing a stream_name)
         # frees the slot before the new file tries to claim it.
         for filename in deletions:
             streams.handle_delete(streams.VIDEOS_DIR / filename)
         for filename in creates:
-            streams.handle_create(streams.VIDEOS_DIR / filename)
+            streams.handle_create(streams.VIDEOS_DIR / filename, added=not booting)
+        if creates:
+            booting = False
         for filename in modifies:
             streams.handle_modify(streams.VIDEOS_DIR / filename)
 

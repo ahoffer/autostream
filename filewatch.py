@@ -84,7 +84,7 @@ def watch(directory, ignore, poll_interval=POLL_INTERVAL_SEC, quiet_period=QUIET
     entries that vanish mid-scan — the next poll picks those up as deletions.
     Scans in name order so events for simultaneous files arrive deterministically.
     """
-    log.info("Watching %s for changes (polling mode)...", directory)
+    log.debug("Watching %s for changes (polling mode)...", directory)
     debouncer = FileChangeDebouncer(math.ceil(quiet_period / poll_interval))
     while True:
         # filename -> (mtime, size): keyed by name for O(1) diffing between polls.

@@ -269,7 +269,7 @@ def load_persisted_state():
         if _udp_ports:
             _next_udp_port = max(UDP_BASE_PORT, max(_udp_ports.values()) + 1)
     if state.streams:
-        log.info("Loaded settings for %d stream(s) from %s", len(state.streams), STATE_PATH)
+        log.debug("Loaded settings for %d stream(s) from %s", len(state.streams), STATE_PATH)
 
 
 def _persisted_stream(stream, removed_at=None):
@@ -295,7 +295,7 @@ def refresh_encoder_tier():
     global _encoder_tier
     tier = ffmpegcmd.detect_encoder_tier(VAAPI_RENDER_NODE)
     if tier != _encoder_tier:
-        log.info("Video encoder: %s", ffmpegcmd.ENCODER_LABELS[tier])
+        log.debug("Video encoder: %s", ffmpegcmd.ENCODER_LABELS[tier])
     _encoder_tier = tier
 
 
@@ -320,8 +320,8 @@ def refresh_output_reachable():
         _output_reachable = True
     except OSError:
         if not _output_host_warned:
-            log.warning("OUTPUT_HOST %r does not resolve; streaming RTSP/HLS only, "
-                        "no KLV/UDP feed until it becomes reachable", OUTPUT_HOST)
+            log.warning("OUTPUT_HOST %r does not resolve, rtsp/hls only until reachable",
+                        OUTPUT_HOST)
             _output_host_warned = True
         _output_reachable = False
 
@@ -412,23 +412,30 @@ def _last_lines(text, count):
     return "\n".join(lines[-count:])
 
 
-def _log_ffmpeg_tail(stream_name, output_name):
-    """Replay the end of an output's ffmpeg log after an unexpected death.
+FFMPEG_REASON_CHARS = 80   # how much of ffmpeg's last line a crash log line quotes
+
+
+def _ffmpeg_death_reason(stream_name, output_name):
+    """Why an output's ffmpeg died: (line for the log, lines for the UI).
 
     ffmpeg output goes to a per-output file rather than the console (except in
-    debug mode, where it was already visible), so without this the reason a
-    process died would be invisible. Returns the last two lines for the UI.
+    debug mode, where it was already visible), so the reason is read back from
+    that file. The log gets the last line, cut short to stay on one line; the
+    UI gets the last two lines whole.
     """
     if SHOW_FFMPEG_OUTPUT:
-        return "see the container log"
+        return "see the container log", "see the container log"
     tail = _ffmpeg_tail(stream_name, output_name)
-    if tail:
-        log.warning("ffmpeg output for %s/%s before it died:\n%s", stream_name, output_name, tail)
-    return _last_lines(tail, 2) or "ffmpeg exited without output"
+    if not tail:
+        return "ffmpeg exited without output", "ffmpeg exited without output"
+    last_line = _last_lines(tail, 1)
+    if len(last_line) > FFMPEG_REASON_CHARS:
+        last_line = last_line[:FFMPEG_REASON_CHARS - 1] + "…"
+    return last_line, _last_lines(tail, 2)
 
 
 def wait_for_mediamtx():
-    log.info("Waiting for MediaMTX to be available on port %d...", RTSP_PORT)
+    log.debug("Waiting for MediaMTX to be available on port %d...", RTSP_PORT)
     while True:
         try:
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
@@ -437,7 +444,7 @@ def wait_for_mediamtx():
                 break
         except (ConnectionRefusedError, socket.timeout, OSError):
             time.sleep(1)
-    log.info("MediaMTX is ready")
+    log.debug("MediaMTX is ready")
 
 
 # ---- Pure helpers: from a stream's state to a command line ----
@@ -517,7 +524,7 @@ def launch_output(stream_name, output_name, log_start=True):
             # still being copied) — ffmpeg would only die at once. Say so and
             # wait for the file to change.
             output.last_error = "no video track found: not a video file, or still being copied"
-            log.warning("Not starting %s/%s: %s", stream_name, output_name, output.last_error)
+            log.warning("%s/%s cannot start: %s", stream_name, output_name, output.last_error)
             return False
         spec = encode_spec(stream)
         argv = ffmpegcmd.build_argv(spec, output_name)
@@ -530,14 +537,17 @@ def launch_output(stream_name, output_name, log_start=True):
                     process = subprocess.Popen(argv, stdout=ffmpeg_log, stderr=ffmpeg_log)
         except Exception as error:
             output.last_error = f"could not start ffmpeg: {error}"
-            log.error("Failed to start %s/%s: %s", stream_name, output_name, error)
+            log.error("%s/%s cannot start: %s", stream_name, output_name, error)
             return False
         output.mark_started(process, argv)
-        filename = stream.filename
+        rtsp_url = stream.urls()["rtsp"]
 
-    if log_start:
-        log.info("Started %s/%s video=%r encoder=%s audio=%s", stream_name, output_name,
-                 filename, spec.encoder_label, "copy" if spec.audio_copy else "aac")
+    # The rtsp output coming up is the moment the stream is watchable, so
+    # that is the one line a stream gets: the URL to open.
+    if log_start and output_name == "rtsp":
+        log.info("%s", rtsp_url)
+    else:
+        log.debug("Started %s/%s", stream_name, output_name)
     return True
 
 
@@ -569,27 +579,27 @@ def stop_output(stream_name, output_name):
                 # Better to leak a wedged process than to hang the supervisor forever
                 # (can happen on stuck NFS/CIFS reads inside ffmpeg). Keep the output
                 # blocked so a second ffmpeg process can't reuse the same destination.
-                log.error("Output %s/%s did not die after SIGKILL; leaking pid %d",
+                log.error("%s/%s did not die after SIGKILL, leaking pid %d",
                           stream_name, output_name, process.pid)
                 return True
         with _state_lock:
             current = _streams_by_name.get(stream_name)
             if current is not None and current.output(output_name).process is process:
                 current.output(output_name).clear_process()
-        log.info("Stopped %s/%s", stream_name, output_name)
+        log.debug("Stopped %s/%s", stream_name, output_name)
     except Exception as error:
         log.error("Error stopping %s/%s: %s", stream_name, output_name, error)
 
     return True
 
 
-def _relaunch_output(stream_name, output_name):
+def _relaunch_output(stream_name, output_name, log_start=True):
     with _state_lock:
         stream = _streams_by_name.get(stream_name)
         occupied = stream is not None and stream.output(output_name).occupied
     if occupied:
         stop_output(stream_name, output_name)
-    return launch_output(stream_name, output_name)
+    return launch_output(stream_name, output_name, log_start)
 
 
 def refresh_stream_probe(stream_name):
@@ -637,12 +647,13 @@ def update_settings(stream_name, loop_count=KEEP, mode=KEEP, gop_frames=KEEP, fr
             output.reset_health()
         _persist()
         running = [output.name for output in stream.outputs if output.running]
-        log.info("Settings for %s: mode=%s loop=%s fps=%s gop=%s", stream_name,
-                 stream.mode, stream.loop_count, stream.frame_rate, stream.gop_frames)
+        log.info("%s settings changed (mode=%s loop=%s fps=%s gop=%s)%s", stream_name,
+                 stream.mode, stream.loop_count, stream.frame_rate, stream.gop_frames,
+                 ", restarted" if running else "")
     if running:
         refresh_stream_probe(stream_name)
     for output_name in running:
-        _relaunch_output(stream_name, output_name)
+        _relaunch_output(stream_name, output_name, log_start=False)
     return True
 
 
@@ -684,6 +695,8 @@ def stop_stream(stream_name):
         occupied = [output.name for output in stream.outputs if output.occupied]
     for output_name in occupied:
         stop_output(stream_name, output_name)
+    if occupied:
+        log.info("%s stopped", stream_name)
     return True
 
 
@@ -721,10 +734,11 @@ def disable_output(stream_name, output_name):
         occupied = output.occupied
     if occupied:
         stop_output(stream_name, output_name)
+        log.info("%s/%s stopped", stream_name, output_name)
     return True
 
 
-def launch_enabled_outputs(stream_name):
+def launch_enabled_outputs(stream_name, log_start=True):
     """Bring up whatever the stream's outputs say should be up."""
     refresh_stream_probe(stream_name)
     with _state_lock:
@@ -734,7 +748,7 @@ def launch_enabled_outputs(stream_name):
         pending = [output.name for output in stream.outputs
                    if output.enabled and not output.occupied and not output.completed]
     for output_name in pending:
-        launch_output(stream_name, output_name)
+        launch_output(stream_name, output_name, log_start)
 
 
 def stream_exists(stream_name):
@@ -886,14 +900,18 @@ def _claim_slot(stream_name, filename):
     return True
 
 
-def handle_create(filepath):
+def handle_create(filepath, added=True):
+    """Claim a slot for a file and bring it up. added is False for the files
+    found at boot, which are listed by URL rather than announced."""
     path = Path(filepath)
     stream_name = stream_name_for(path)
     with _state_lock:
         if not _claim_slot(stream_name, path.name):
             return
-    log.info("Video added: %s", path.name)
-    launch_enabled_outputs(stream_name)
+        rtsp_url = _streams_by_name[stream_name].urls()["rtsp"]
+    if added:
+        log.info("Added %s  %s", path.name, rtsp_url)
+    launch_enabled_outputs(stream_name, log_start=not added)
 
 
 def handle_delete(filepath):
@@ -909,7 +927,7 @@ def handle_delete(filepath):
         stream_name = stream.name
         occupied = [output.name for output in stream.outputs if output.occupied]
 
-    log.info("Video removed: %s", path.name)
+    log.info("Removed %s", path.name)
     for output_name in occupied:
         stop_output(stream_name, output_name)
     with _state_lock:
@@ -930,12 +948,12 @@ def handle_modify(filepath):
         for output in stream.outputs:
             output.reset_health()
 
-    log.info("Video updated: %s", path.name)
+    log.info("Updated %s%s", path.name, ", restarted" if running else "")
     # Re-probe, relaunch what is running, and bring up enabled outputs that
     # were held back (for example a file that was still being copied).
-    launch_enabled_outputs(stream_name)
+    launch_enabled_outputs(stream_name, log_start=False)
     for output_name in running:
-        _relaunch_output(stream_name, output_name)
+        _relaunch_output(stream_name, output_name, log_start=False)
 
 
 # ---- Supervision ----
@@ -953,20 +971,12 @@ def cleanup_dead_processes():
             for output in stream.outputs:
                 if (output.running and output.crashes
                         and now - (output.started_at or now) > STABLE_AFTER_SEC):
-                    log.info("Output stable again: %s/%s", stream.name, output.name)
+                    log.info("%s/%s stable", stream.name, output.name)
                     output.reset_health()
 
     dead = [(stream_name, output_name, process)
             for stream_name, output_name, process in snapshot if process.poll() is not None]
 
-    if dead:
-        by_exit_code = {}  # exit code -> labels, to log one line per distinct cause
-        for stream_name, output_name, process in dead:
-            by_exit_code.setdefault(process.returncode, []).append(f"{stream_name}/{output_name}")
-        for exit_code, labels in by_exit_code.items():
-            log.info("Processes ended (exit code %s): %s", exit_code, ", ".join(sorted(labels)))
-
-    restarted = []
     for stream_name, output_name, process in dead:
         with _state_lock:
             current = _streams_by_name.get(stream_name)
@@ -987,31 +997,31 @@ def cleanup_dead_processes():
             continue
 
         if loop_count != -1 and process.returncode == 0:
-            log.info("Output completed: %s/%s", stream_name, output_name)
+            log.info("%s/%s finished (loop off)", stream_name, output_name)
             continue
 
-        error = _log_ffmpeg_tail(stream_name, output_name)
+        reason, error = _ffmpeg_death_reason(stream_name, output_name)
+        crashes = 0
         with _state_lock:
             current = _streams_by_name.get(stream_name)
             if current is not None:
                 output = current.output(output_name)
                 output.crashes += 1
+                crashes = output.crashes
                 output.last_error = f"ffmpeg exited with code {process.returncode}\n{error}"
+        crashed = f"{stream_name}/{output_name} crashed (rc={process.returncode})"
 
         try:
             if not Path(video_path).exists():
-                log.warning("Cannot restart %s/%s: file missing", stream_name, output_name)
+                log.warning("%s, not restarted: file missing", crashed)
                 continue
         except OSError as error:
-            log.warning("Cannot restart %s/%s: %s", stream_name, output_name, error)
+            log.warning("%s, not restarted: %s", crashed, error)
             continue
         if not launch_output(stream_name, output_name, log_start=False):
-            log.error("Failed to restart %s/%s", stream_name, output_name)
+            log.error("%s, not restarted", crashed)
             continue
-        restarted.append(f"{stream_name}/{output_name}")
-
-    if restarted:
-        log.info("Restarted: %s", ", ".join(sorted(restarted)))
+        log.warning("%s, restarted; crash %d: %s", crashed, crashes, reason)
 
 
 def recover_udp_outputs():
