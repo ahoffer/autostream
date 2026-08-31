@@ -219,12 +219,16 @@
         function settingsRow(s) {
             const v = currentSettings(s);
             const dirty = draft !== null;
-            const outputRate = v.fps ?? s.source_frame_rate;
-            const naturalGop = outputRate ? Math.max(1, Math.round(outputRate)) : 30;
             // FPS and GOP are encoder settings: nothing to set when the source
             // is copied. A passthrough request on an ineligible file still
             // transcodes, so follow what would actually run.
             const copying = v.mode === 'passthrough' && s.passthrough_eligible !== false;
+            // While copying, the fields show what actually streams: the
+            // source's own rate, and no GOP figure (the file's own GOP is
+            // never probed). Stored overrides apply only to transcode.
+            const fpsOverride = copying ? null : v.fps;
+            const outputRate = fpsOverride ?? s.source_frame_rate;
+            const naturalGop = outputRate ? Math.max(1, Math.round(outputRate)) : 30;
             const off = copying ? 'disabled' : '';
             const modeNote = v.mode === 'passthrough' && s.passthrough_eligible === false
                 ? `<span class="reason">transcodes anyway: ${escapeHtml(s.ineligible_codecs.join(', '))} cannot pass through (H.264, H.265, MPEG-2, MPEG-4, MJPEG only)</span>` : '';
@@ -242,12 +246,12 @@
                         <input type="number" id="fps" min="1" max="120" step="any" value="${Math.round(outputRate * 1000) / 1000 || ''}" ${off}
                                oninput="typed('fps', this.value)" onblur="edit('fps', numberOrAuto(this.value))"
                                title="Output frame rate; blank for the source rate. Transcode only.">
-                        <span class="hint">${v.fps !== null
+                        <span class="hint">${fpsOverride !== null
                             ? `blank for the source rate (${fmtRate(s.source_frame_rate)})`
                             : `source rate (${fmtRate(s.source_frame_rate)})`}</span>
                     </label>
                     <label>GOP (frames)
-                        <input type="number" id="gop" min="1" step="1" value="${v.gop ?? naturalGop}" ${off}
+                        <input type="number" id="gop" min="1" step="1" value="${copying ? '' : v.gop ?? naturalGop}" ${off}
                                oninput="typed('gop', this.value)" onblur="edit('gop', numberOrAuto(this.value))"
                                title="Keyframe interval; blank for one second of frames. Transcode only.">
                         <span class="hint"></span>
@@ -363,6 +367,12 @@
 
         function edit(key, value) {
             draftFor(key, value);
+            // Passthrough streams the file as-is, so switching to it abandons
+            // any fps/gop overrides; the fields fall back to the source values.
+            if (key === 'mode' && value === 'passthrough') {
+                draft.fps = null;
+                draft.gop = null;
+            }
             renderDetail();   // hints and Save/Cancel follow the draft
         }
 
