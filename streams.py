@@ -72,9 +72,6 @@ FFMPEG_LOG_DIR.mkdir(exist_ok=True)
 FFMPEG_LOG_TAIL_BYTES = 4096
 MAX_VIDEO_BITRATE = os.getenv("MAX_VIDEO_BITRATE", "")  # empty disables the cap
 MAX_VIDEO_BPS = parse_bitrate(MAX_VIDEO_BITRATE)  # malformed values fail here, at boot
-# gpuconfig passes the integrated GPU's render node through compose; the
-# default covers a hand-run container with the device mapped.
-VAAPI_RENDER_NODE = os.getenv("VAAPI_RENDER_NODE", "/dev/dri/renderD128")
 
 # Passthrough policy: the codecs MediaMTX carries over RTSP unencoded. Only
 # H.264 passes through by default: HLS through MediaMTX and browsers need it,
@@ -253,7 +250,6 @@ _retained_streams = {}         # stream_name -> statefile.PersistedStream
 _udp_ports = {}               # stream_name -> UDP port for the KLV MPEG-TS feed
 _next_udp_port = UDP_BASE_PORT  # next port to hand out; protected by _state_lock
 
-_encoder_tier = "x264"        # last trial result; the API reads it, never runs trials
 _output_host_warned = False   # so we log the "unresolved OUTPUT_HOST" warning once
 _output_reachable = False     # cached OUTPUT_HOST reachability; the poll loop refreshes it so the status API never blocks on DNS
 
@@ -287,16 +283,6 @@ def _persist():
     for stream in _streams_by_name.values():
         records[stream.name] = _persisted_stream(stream)
     statefile.save_state(STATE_PATH, statefile.PersistedState(dict(_udp_ports), records))
-
-
-def refresh_encoder_tier():
-    """Re-run the encoder trials and cache the winner. Runs ffmpeg; keep it off
-    the lock and off the API path."""
-    global _encoder_tier
-    tier = ffmpegcmd.detect_encoder_tier(VAAPI_RENDER_NODE)
-    if tier != _encoder_tier:
-        log.debug("Video encoder: %s", ffmpegcmd.ENCODER_LABELS[tier])
-    _encoder_tier = tier
 
 
 def refresh_output_reachable():
@@ -461,9 +447,6 @@ def encode_spec(stream):
     output_rate = stream.frame_rate or profile.frame_rate
     gop_frames = stream.gop_frames or ffmpegcmd.natural_gop_frames(output_rate)
     passthrough = requested_mode == "passthrough" and passthrough_eligible(profile.video_codecs)
-    qsv_decoder = None
-    if _encoder_tier == "qsv" and profile.video_codecs:
-        qsv_decoder = ffmpegcmd.qsv_decoder_for(profile.video_codecs[0], profile.pix_fmt)
     return ffmpegcmd.EncodeSpec(
         video_path=stream.video_path,
         stream_name=stream.name,
@@ -474,9 +457,6 @@ def encode_spec(stream):
         audio_copy=profile.audio_copyable,
         # Copied packets can't honor a cap.
         bitrate_cap="" if passthrough else bitrate_cap_for(profile.bitrate_bps),
-        encoder_tier=_encoder_tier,
-        qsv_decoder=qsv_decoder,
-        vaapi_render_node=VAAPI_RENDER_NODE,
         rtsp_port=RTSP_PORT,
         udp_target=f"{OUTPUT_HOST}:{stream.udp_port}" if stream.udp_port else None,
     )
@@ -603,7 +583,7 @@ def _relaunch_output(stream_name, output_name, log_start=True):
 
 
 def refresh_stream_probe(stream_name):
-    """Re-probe the file and the encoder. Runs ffprobe/ffmpeg — outside the lock
+    """Re-probe the file. Runs ffprobe outside the lock
     so other threads don't stall on I/O."""
     with _state_lock:
         stream = _streams_by_name.get(stream_name)
@@ -611,7 +591,6 @@ def refresh_stream_probe(stream_name):
             return
         video_path = stream.video_path
     profile = ffmpegcmd.probe_file(video_path)
-    refresh_encoder_tier()
     with _state_lock:
         stream = _streams_by_name.get(stream_name)
         if stream is not None:

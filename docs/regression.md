@@ -18,7 +18,7 @@ notices a dead process within one 2 s tick.
 ## Boot and persistence
 
 - Fresh boot: every video gets two ffmpeg processes (rtsp, udp); the log
-  shows the encoder tier once and one "Started" line per output.
+  reports software encoding at startup and one "Started" line per output.
 - `state/streams.json` exists, owned by UID 1000, one UDP port per stream.
 - Stop one output, `docker restart autostream`: that output stays stopped,
   the other returns, the stream keeps the same UDP port.

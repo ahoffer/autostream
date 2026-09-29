@@ -39,7 +39,6 @@ def main():
     # Before the first poll: its creates claim slots, which assign UDP ports
     # and adopt remembered settings.
     streams.load_persisted_state()
-    streams.refresh_encoder_tier()
     streams.refresh_output_reachable()
 
     threading.Thread(target=streamapi.serve, args=(streams.API_PORT,),

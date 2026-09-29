@@ -7,6 +7,9 @@ services:
       - ./state:/app/state
     container_name: ${CONTAINER_NAME}
     restart: unless-stopped
+    # Bound runaway ffmpeg allocations to this container; equal limits disable swap.
+    mem_limit: 6g
+    memswap_limit: 6g
     stop_grace_period: 1s
     # .env is the single source of truth: pass it through whole rather than
     # restating each key here.

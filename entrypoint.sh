@@ -13,15 +13,9 @@ if [ ! -f "$MEDIAMTX_CONFIG" ]; then
   exit 1
 fi
 
-# Report the hardware this container actually sees, so "did hardware encoding
-# engage and why not" is answerable from the container log alone.
+# Report the CPU used for software transcoding.
 echo "entrypoint: CPU: $(awk -F': ' '/^model name/ {print $2; exit}' /proc/cpuinfo)"
-if [ -d /dev/dri ]; then
-  echo "entrypoint: GPU devices:"
-  ls -l /dev/dri | tail -n +2 | sed 's/^/entrypoint:   /'
-else
-  echo "entrypoint: no /dev/dri mapped; hardware video encoding unavailable"
-fi
+echo "entrypoint: video encoding: libx264 (software)"
 echo "entrypoint: running as: $(id)"
 
 # .env owns the listener ports (compose passes them through). Hand them to

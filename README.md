@@ -46,10 +46,10 @@ stopped stream the choice is applied at the next Start. The modes:
   `MAX_VIDEO_BITRATE` does not apply.
 - **Transcode** (`Video: Transcode`): re-encode to H.264 with a clean GOP
   (fixes loop-point artifacts) and the bitrate cap applied, using the
-  hardware encoder when available (see below). Two encoder settings sit
+  `libx264` software encoder. Two encoder settings sit
   beside the mode in the UI and only apply when transcoding (they are
   disabled under passthrough): `FPS`, the output frame rate (1 to 120, the
-  hardware encoders' limit), which defaults to the file's own rate; and `GOP`, the keyframe interval in frames, which
+  UI/API limit), which defaults to the file's own rate; and `GOP`, the keyframe interval in frames, which
   defaults to one second at the output rate (25 for 25 fps). A shorter GOP
   means faster player join and loop recovery at some bitrate cost.
 
@@ -61,21 +61,30 @@ settings produce.
 Audio is handled automatically in both modes: copied when the source is
 already AAC, re-encoded to AAC otherwise.
 
-## Hardware video encoding
+## Video encoding
 
-Fully automatic, no configuration. `make build` and `make compose-up` run
-`gpuconfig`, which looks for the CPU's integrated GPU (Intel iGPU or AMD APU —
-discrete cards are never used) and records its access details in
-`.generated/gpu.env`; `composeup` then chains `docker-compose.gpu.yml` into the
-compose invocation only when that file exists. Inside the container, each
-stream start runs a one-frame trial encode and picks the first tier that
-works: `h264_qsv` (Intel Quick Sync), then `h264_vaapi` (AMD), then `libx264`
-in software. Macs and machines without an integrated GPU always get the
-software path.
+Transcoding uses software decoding and `libx264` encoding on every machine.
+The container does not map GPU devices or install GPU drivers, and there is
+no hardware encoder detection or selection.
 
-To see what happened: the container log shows the CPU and GPU devices the
-container sees at startup and the encoder chosen for each output start; the
-UI shows it per stream. Each output's ffmpeg log is at
+**Project note (2026-09-29):** Hardware acceleration was removed after a
+memory leak in looping QSV decoding exhausted host RAM and swap, causing
+host-wide OOM kills and application crashes. The measured leak was in
+decoding; removing hardware encoding as well is the project's reliability
+decision. FFmpeg 8.1.2 still reproduced the leak. See
+[the incident measurements](docs/memory-leak.md). Software transcoding uses
+more CPU.
+
+Compose limits the entire container to 6 GiB of RAM with no swap. This
+contains any future runaway allocations.
+For host socket-memory diagnostics, run `python3 socket_memory.py` to capture
+host slab counters and socket queues/owners in every running container once
+per minute. It requires Docker access and host `ss`; logs rotate under
+`.generated/socket-memory.jsonl` (approximately 80 MiB maximum). Use `--once`
+for one snapshot, and Ctrl-C to stop continuous capture.
+
+The container log reports software encoding at startup, and the UI shows the
+encoder per stream. Each output's ffmpeg log is at
 `/tmp/ffmpeg-logs/<stream>.<output>.log` inside the container.
 
 ## Outputs
@@ -103,7 +112,7 @@ and container restarts until it is started again. The stream-level Stop
 stops both outputs; Start on a fully stopped stream brings both up, while
 Restart (or a settings change) on a running stream relaunches only the
 outputs that are up. Start All / Stop All apply to every output. Both processes decode and encode
-independently, so a transcoded stream costs about twice the CPU or GPU it
+independently, so a transcoded stream costs about twice the CPU it
 did as a single process.
 
 The Command button on an output row shows the exact ffmpeg command line that
@@ -213,9 +222,7 @@ make systemd-uninstall # Remove the systemd unit
 
 Plain `docker compose up -d` also works after the image is built; `make
 compose-up` adds config-change detection so `mediamtx.yml` edits recreate the
-container when needed, plus the GPU detection described under "Hardware video
-encoding" (a plain `up` runs without the GPU mapping, so streams encode in
-software).
+container when needed.
 
 **Note:** Docker Compose uses an external network `octo-cx-network`. Create it first if it doesn't exist:
 ```bash

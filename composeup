@@ -15,18 +15,6 @@ set -a
 . ./.env
 set +a
 
-# Refresh the iGPU detection, then chain in the GPU compose file only when a
-# supported integrated GPU is present. The base compose file never references
-# /dev/dri, so machines without the hardware can never fail on it.
-./gpuconfig
-COMPOSE_FILES="-f docker-compose.yml"
-if [ -f .generated/gpu.env ]; then
-  set -a
-  . .generated/gpu.env
-  set +a
-  COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.gpu.yml"
-fi
-
 mkdir -p "$(dirname "$CONFIG_CACHE")"
 # Create the state bind source first: if Docker creates it, it is root-owned
 # and the container user (UID 1000) cannot write the state file.
@@ -50,7 +38,7 @@ if docker inspect "$CONTAINER_NAME" >/dev/null 2>&1; then
       done
 fi
 
-docker compose $COMPOSE_FILES up -d $recreate
+docker compose -f docker-compose.yml up -d $recreate
 
 # Record the config only once the stack is actually running on it. Caching it
 # earlier would mark a failed run's config as deployed, so the next run would

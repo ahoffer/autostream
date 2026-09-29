@@ -161,7 +161,7 @@ def parse_settings(query):
                 settings['frame_rate'] = float(query['fps'][0])
             except ValueError:
                 settings['frame_rate'] = 0
-            # The hardware encoders refuse rates above roughly 120.
+            # Keep frame-rate validation consistent with the control UI.
             if not 1 <= settings['frame_rate'] <= 120:
                 return None, "FPS must be a number from 1 to 120, or auto"
     return settings, None
