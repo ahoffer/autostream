@@ -201,7 +201,7 @@ shipped `.env.example` values.
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `CONTAINER_NAME` | Image name and service/hostname used in stream URLs | `autostream` |
-| `VERSION` | Image version tag | `2.2.0` (see `.env.example`) |
+| `VERSION` | Image version tag | `2.2.1` (see `.env.example`) |
 | `MAX_VIDEO_BITRATE` | Cap video bitrate (for example `3M`, `5M`); transcode mode only — passthrough sends the source bitrate unchanged | `2M` |
 | `OUTPUT_HOST` | Host/service the KLV UDP feeds are pushed to (cx-search `video-streaming`, or an IP/multicast group) | `video-streaming` |
 | `UDP_BASE_PORT` | First UDP port; each stream gets the next one | `40000` |
@@ -228,6 +228,12 @@ make systemd-uninstall # Remove the systemd unit
 ```
 
 ## Docker Compose
+
+The Dockerfile pins the MediaMTX release and rebuilds its binary with patched
+Go and networking dependencies. The release archive is verified by SHA-256;
+update its checksum together with `MEDIAMTX_VERSION`. The build also applies
+available Alpine package fixes before installing Python. The compiler and
+source files stay in the build stage, outside the runtime image.
 
 Plain `docker compose up -d` also works after the image is built; `make
 compose-up` adds config-change detection so `mediamtx.yml` edits recreate the
