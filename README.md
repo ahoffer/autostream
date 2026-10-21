@@ -7,12 +7,18 @@ metadata that RTSP and HLS cannot carry).
 
 ## Quickstart
 
-1. **Place your videos** in the `videos/` directory:
+1. **Create your local configuration** (once per checkout), then edit `.env`
+   for your environment:
+   ```bash
+   cp .env.example .env
+   ```
+
+2. **Place your videos** in the `videos/` directory:
    ```bash
    cp your-video.mp4 videos/
    ```
 
-2. **Build and deploy** via Docker Compose:
+3. **Build and deploy** via Docker Compose:
    ```bash
    make build       # Only needed once, or after code changes
    make compose-up
@@ -181,18 +187,21 @@ Stream names are sanitized from filenames:
 
 ## Configuration
 
-Edit `.env` file:
+Copy `.env.example` to `.env` if you have not created it yet, then edit `.env`
+for your environment. `.env` is ignored by Git; `.env.example` contains the
+shared defaults. When adding configuration variables, update `.env.example`
+and add the new settings to existing installations' local `.env` files.
 
 Docker Compose reads `.env` directly and passes the whole file through to the
 container; `mediamtx.yml` is mounted in as-is. `.env` is the single source of
 truth: every variable must be set, and the only one that may be empty is
 `MAX_VIDEO_BITRATE` (empty disables the cap). The Default column shows the
-shipped `.env` values.
+shipped `.env.example` values.
 
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `CONTAINER_NAME` | Image name and service/hostname used in stream URLs | `autostream` |
-| `VERSION` | Image version tag | `2.2.0` (see `.env`) |
+| `VERSION` | Image version tag | `2.2.0` (see `.env.example`) |
 | `MAX_VIDEO_BITRATE` | Cap video bitrate (for example `3M`, `5M`); transcode mode only — passthrough sends the source bitrate unchanged | `2M` |
 | `OUTPUT_HOST` | Host/service the KLV UDP feeds are pushed to (cx-search `video-streaming`, or an IP/multicast group) | `video-streaming` |
 | `UDP_BASE_PORT` | First UDP port; each stream gets the next one | `40000` |

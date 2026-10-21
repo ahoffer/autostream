@@ -5,3 +5,5 @@ state/
 .generated/
 __pycache__/
 *.pyc
+/.env
+/.playwright-mcp/
