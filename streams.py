@@ -332,8 +332,16 @@ def _udp_port_for(stream_name):
         port = _next_udp_port
         _next_udp_port += 1
     else:
+        # Saved files may still be waiting for discovery at startup. Their
+        # ports remain reserved even before they have an active slot.
+        try:
+            present_filenames = {path.name for path in VIDEOS_DIR.iterdir()}
+        except OSError as error:
+            log.warning("Cannot check which UDP ports can be reclaimed: %s", error)
+            return None
         removed = [(record.removed_at or 0, name) for name, record in _retained_streams.items()
-                   if name in _udp_ports]
+                   if name in _udp_ports and name not in _streams_by_name
+                   and record.filename not in present_filenames]
         if not removed:
             log.warning("UDP port range %d-%d is used up; %s streams RTSP/HLS only",
                         UDP_BASE_PORT, UDP_LAST_PORT, stream_name)
@@ -364,17 +372,8 @@ def sanitize_name(filepath):
 
 
 def stream_name_for(path):
-    """The stream name for a file: its sanitized stem, or, when nothing of
-    the stem survives sanitizing, the file's modification time — stable
-    across restarts for the same file, unlike the clock."""
-    name = sanitize_name(path)
-    if name:
-        return name
-    try:
-        modified = path.stat().st_mtime
-    except OSError:
-        modified = time.time()
-    return time.strftime("%Y%m%d_%H%M%S", time.localtime(modified))
+    """The sanitized file stem, or an empty string for an invalid name."""
+    return sanitize_name(path)
 
 
 def _ffmpeg_log_path(stream_name, output_name):
@@ -490,6 +489,8 @@ def launch_output(stream_name, output_name, log_start=True):
             log.warning("Cannot start unclaimed stream: %s", stream_name)
             return False
         output = stream.output(output_name)
+        if not output.enabled:
+            return False
         if output.occupied:
             log.warning("Output already %s: %s/%s",
                         "stopping" if output.stopping else "running", stream_name, output_name)
@@ -698,6 +699,7 @@ def start_output(stream_name, output_name):
     with _state_lock:
         stream = _streams_by_name.get(stream_name)
         return (output_name == "udp" and stream is not None
+                and stream.udp.enabled
                 and not udp_launchable(stream)[0])
 
 
@@ -853,9 +855,12 @@ def _claim_slot(stream_name, filename):
 
     A new slot adopts the remembered settings when they belong to the same
     filename. Returns True if the slot belongs to this filename after the
-    call, False if there was a collision with a different file (caller should
-    skip). Must be called under _state_lock.
+    call, False if the name is invalid or belongs to a different file (caller
+    should skip). Must be called under _state_lock.
     """
+    if not stream_name:
+        log.warning("Skipping invalid video filename: %r", filename)
+        return False
     stream = _streams_by_name.get(stream_name)
     if stream is None:
         stream = Stream(name=stream_name, filename=filename, udp_port=_udp_port_for(stream_name))
@@ -896,9 +901,8 @@ def handle_create(filepath, added=True):
 def handle_delete(filepath):
     path = Path(filepath)
     with _state_lock:
-        # By filename, not by re-deriving the name: the file is gone (so its
-        # mtime-based name cannot be recomputed) and a name refused for a
-        # collision never owned a slot.
+        # Match the owning filename so deleting a file refused for a name
+        # collision cannot remove another file's slot.
         stream = next((s for s in _streams_by_name.values() if s.filename == path.name), None)
         if stream is None:
             log.debug("Ignoring delete of %s; it owned no slot", path.name)
@@ -925,6 +929,8 @@ def handle_modify(filepath):
         stream = _streams_by_name[stream_name]
         running = [output.name for output in stream.outputs if output.running]
         for output in stream.outputs:
+            # Completion belongs to the old file; preserve explicit Stop choices.
+            output.completed = False
             output.reset_health()
 
     log.info("Updated %s%s", path.name, ", restarted" if running else "")

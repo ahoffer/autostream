@@ -132,8 +132,8 @@ mode, loop and GOP settings, per-output enabled flags, and the UDP
 port assigned to each stream name. Settings and the port of a video that was
 removed are kept so the same file gets them back when copied in again; once
 the port range is full, the longest-removed file's port (and settings) are
-given to the newcomer. A file whose name sanitizes to nothing (for example
-`!!!.mp4`) is named after its modification time, like `20260828_231500`.
+given to the newcomer. A file whose stem sanitizes to nothing (for example
+`!!!.mp4`) has an invalid stream name and is skipped with a warning.
 Delete the state file while the container is stopped to reset everything,
 including port assignments.
 
@@ -201,7 +201,7 @@ shipped `.env.example` values.
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `CONTAINER_NAME` | Image name and service/hostname used in stream URLs | `autostream` |
-| `VERSION` | Image version tag | `2.2.1` (see `.env.example`) |
+| `VERSION` | Image version tag | `2.2.2` (see `.env.example`) |
 | `MAX_VIDEO_BITRATE` | Cap video bitrate (for example `3M`, `5M`); transcode mode only — passthrough sends the source bitrate unchanged | `2M` |
 | `OUTPUT_HOST` | Host/service the KLV UDP feeds are pushed to (cx-search `video-streaming`, or an IP/multicast group) | `video-streaming` |
 | `UDP_BASE_PORT` | First UDP port; each stream gets the next one | `40000` |

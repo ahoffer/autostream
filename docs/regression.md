@@ -37,8 +37,8 @@ notices a dead process within one 2 s tick.
 - Names: spaces, unicode, apostrophes, 200 characters; a name that sanitizes
   to an existing stream name (`Cargoship.MP4`) is refused with a warning and
   the original slot is untouched; a name that sanitizes to nothing
-  (`!!!.mp4`) streams under a timestamp name and leaves no empty entry in the
-  state file.
+  (`!!!.mp4`) is skipped with a warning and gets no stream slot or UDP port,
+  including after modification.
 - Non-video content (`.mp4` holding text, a zero-byte file, a `.part` copy in
   progress) shows Failed with "no video track found" and is not launched;
   when the file becomes a real video it starts on its own.
