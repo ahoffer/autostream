@@ -1,30 +1,15 @@
-"""HTTP control API and the web UI it serves.
-
-The transport for the stream operations: routing, JSON encoding, status codes,
-and the index.html page live here, so streams.py never has to know it is
-reachable over HTTP.
-
-Routes:
-  GET    /                                        the UI
-  GET    /api/streams                             status of every stream
-  POST   /api/streams/start-all | stop-all
-  POST   /api/streams/{name}/settings?loop=&mode=&gop=&fps=  store settings, apply if running
-  POST   /api/streams/{name}/start                start (or restart) with stored settings
-  POST   /api/streams/{name}/stop                 stop every output
-  POST   /api/streams/{name}/outputs/{out}/start  restart one output
-  POST   /api/streams/{name}/outputs/{out}/stop   stop one output
-"""
+"""HTTP transport: resolve an output and request its behavior directly."""
 from __future__ import annotations
 
 import json
 import logging
-import os
 from functools import partial
-from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
+from concurrent.futures import Future
+from queue import Full
+from http.server import BaseHTTPRequestHandler
 from pathlib import Path
 from urllib.parse import urlparse, parse_qs
 
-import ffmpegcmd
 
 log = logging.getLogger(__name__)
 
@@ -32,8 +17,10 @@ INDEX_HTML_PATH = Path(__file__).resolve().parent / "index.html"
 
 
 class StreamHandler(BaseHTTPRequestHandler):
-    def __init__(self, *args, streams, **kwargs):
-        self.streams = streams
+    def __init__(self, *args, requests, read_status, execute, **kwargs):
+        self.requests = requests
+        self.read_status = read_status
+        self.execute = execute
         super().__init__(*args, **kwargs)
 
     def log_message(self, format, *args):
@@ -51,17 +38,6 @@ class StreamHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(html.encode())
 
-    def output_route(self):
-        """(stream_name, output_name, action) for /api/streams/{n}/outputs/{o}/{action},
-        or None when the path is not that shape or names an unknown stream/output."""
-        parts = urlparse(self.path).path.strip('/').split('/')
-        if len(parts) != 6 or parts[:2] != ['api', 'streams'] or parts[3] != 'outputs':
-            return None
-        stream_name, output_name, action = parts[2], parts[4], parts[5]
-        if output_name not in ffmpegcmd.OUTPUT_NAMES or not self.streams.stream_exists(stream_name):
-            return None
-        return stream_name, output_name, action
-
     def do_GET(self):
         parsed = urlparse(self.path)
         if parsed.path == '/' or parsed.path == '/index.html':
@@ -72,67 +48,80 @@ class StreamHandler(BaseHTTPRequestHandler):
                 return
             self.send_html(html)
         elif parsed.path == '/api/streams':
-            self.send_json(self.streams.get_stream_status())
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/json')
+            self.end_headers()
+            self.wfile.write(self.read_status())
         else:
             self.send_json({"error": "Not found"}, 404)
 
     def do_POST(self):
         parsed = urlparse(self.path)
-        path_parts = parsed.path.strip('/').split('/')
-
-        if path_parts[:2] != ['api', 'streams'] or len(path_parts) not in (3, 4, 6):
-            self.send_json({"error": "Not found"}, 404)
+        parts = parsed.path.strip('/').split('/')
+        if parts[:2] != ['api', 'streams']:
+            self.send_json({'error': 'Not found'}, 404)
             return
-
-        if len(path_parts) == 3:
-            # No action segment means a collective operation. Individual streams
-            # always carry an action segment, so a stream that happens to be
-            # named stop-all keeps its own start/stop routes.
-            if path_parts[2] == 'stop-all':
-                self.streams.stop_all_streams()
-                self.send_json({"success": True})
-            elif path_parts[2] == 'start-all':
-                self.streams.start_all_streams()
-                self.send_json({"success": True})
-            else:
-                self.send_json({"error": "Unknown action"}, 400)
+        if len(parts) == 3 and parts[2] in ('start-all', 'stop-all'):
+            self._submit(parts[2])
             return
-
-        if len(path_parts) == 6:
-            route = self.output_route()
-            if route is None:
-                self.send_json({"error": "Not found"}, 404)
-                return
-            stream_name, output_name, action = route
-            if action == 'start':
-                self.send_json({"success": self.streams.start_output(stream_name, output_name)})
-            elif action == 'stop':
-                self.send_json({"success": self.streams.disable_output(stream_name, output_name)})
-            else:
-                self.send_json({"error": "Unknown action"}, 400)
+        if len(parts) == 4:
+            self.send_json({'error': 'Choose an output: /api/streams/{name}/outputs/{rtsp|udp}/{action}'}, 410)
             return
-
-        stream_name, action = path_parts[2], path_parts[3]
-        if not self.streams.stream_exists(stream_name):
-            self.send_json({"error": "Stream not found"}, 404)
+        if len(parts) != 6 or parts[3] != 'outputs':
+            self.send_json({'error': 'Not found'}, 404)
             return
-        if action == 'start':
-            self.send_json({"success": self.streams.start_stream(stream_name)})
-        elif action == 'stop':
-            self.send_json({"success": self.streams.stop_stream(stream_name)})
-        elif action == 'settings':
-            settings, error = parse_settings(parse_qs(parsed.query))
+        action = parts[5]
+        changes = {}
+        if action == 'settings':
+            changes, error = parse_settings(parse_qs(parsed.query, keep_blank_values=True))
             if error:
-                self.send_json({"error": error}, 400)
+                self.send_json({'error': error}, 400)
                 return
-            self.send_json({"success": self.streams.update_settings(stream_name, **settings)})
+        elif action not in ('start', 'stop'):
+            self.send_json({'error': 'Unknown action'}, 400)
+            return
+        self._submit(action, f'{parts[2]}/{parts[4]}', changes)
+
+    def _submit(self, action, output_id=None, changes=None):
+        future = Future()
+        operation = partial(self.execute, action, output_id, changes)
+        try:
+            self.requests.put_nowait((operation, future))
+        except Full:
+            self.send_json({'error': 'Supervisor queue is full; request was not accepted'}, 503)
+            return
+        try:
+            data, status = future.result()
+        except Exception as error:
+            log.exception('Output request failed')
+            data, status = {'success': False, 'error': str(error)}, 500
+        self.send_json(data, status)
+
+
+def _execute_request(registry, action, output_id, changes):
+    """Runs on the supervisor thread, never on the submitting HTTP thread."""
+    if action == 'start-all':
+        success = registry.start_all_outputs()
+    elif action == 'stop-all':
+        success = registry.stop_all_outputs()
+    else:
+        output = registry.get_output(output_id)
+        if output is None:
+            return {'error': 'Output not found'}, 404
+        if action == 'start':
+            success = output.start_streaming()
+        elif action == 'stop':
+            success = output.stop_streaming()
         else:
-            self.send_json({"error": "Unknown action"}, 400)
+            success = output.update_settings(changes)
+    if not success:
+        return {'success': False, 'error': 'Operation could not finish; check output status'}, 409
+    return {'success': True}, 200
 
 
 def parse_settings(query):
     """The settings named in a ?loop=&mode=&gop=&fps= query as update_settings
-    keyword arguments, or an error message. An absent key leaves that setting
+    a mapping, or an error message. An absent key leaves that setting
     alone; fps=auto returns to the file's own rate and gop=auto to one second
     at the output rate."""
     settings = {}
@@ -169,16 +158,3 @@ def parse_settings(query):
             if not 1 <= settings['frame_rate'] <= 120:
                 return None, "FPS must be a number from 1 to 120, or auto"
     return settings, None
-
-def serve(port, streams):
-    """Serve the control UI and API on port, until the process dies."""
-    try:
-        handler = partial(StreamHandler, streams=streams)
-        server = ThreadingHTTPServer(('0.0.0.0', port), handler)
-        log.debug("Stream Control UI: http://localhost:%d", port)
-        server.serve_forever()
-    except Exception as error:
-        # The control UI is a primary feature; silent half-death (supervisor alive,
-        # UI gone) is worse than a hard exit that systemd/compose can restart.
-        log.critical("API server failed: %s", error)
-        os._exit(1)

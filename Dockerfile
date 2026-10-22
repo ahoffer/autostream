@@ -32,8 +32,7 @@ WORKDIR /app
 RUN mkdir -p /app/videos /app/state
 
 COPY stream_supervisor.py /app/stream_supervisor.py
-COPY streams.py /app/streams.py
-COPY appconfig.py streammodel.py streamregistry.py streampolicy.py streamstatus.py ffmpegprocess.py /app/
+COPY appconfig.py mediaoutput.py outputregistry.py streamresponses.py udphost.py ffmpegprocess.py /app/
 COPY ffmpegcmd.py /app/ffmpegcmd.py
 COPY statefile.py /app/statefile.py
 COPY streamapi.py /app/streamapi.py

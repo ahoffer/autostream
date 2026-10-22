@@ -5,16 +5,16 @@ inotify does not see changes made by other clients on network filesystems
 (CIFS/NFS), so this watcher polls: it periodically snapshots the directory's
 (mtime, size) state and diffs successive snapshots into events.
 
-The single entry point is watch(), a generator that yields the debounced
-(creates, modifies, deletions) after every poll — empty lists when nothing
-changed. Files present when the watch starts are reported as creates once
+The entry point watch() yields detached changes and present/stable inventories
+after successful scans, including scans with no new changes. Files present when the watch starts are reported as creates once
 they pass the same stability check as any other file — to the caller,
 startup looks exactly like someone dropping files into an already-watched
 directory.
 """
 import logging
 import math
-import time
+import threading
+import stat as stat_module
 
 log = logging.getLogger(__name__)
 
@@ -40,7 +40,7 @@ class FileChangeDebouncer:
         self._pending = {}  # filename -> (candidate snapshot, confirmations so far)
 
     def poll(self, current_files):
-        """Return (creates, modifies, deletions) for this snapshot."""
+        """Return detached changes and present/stable inventories for this scan."""
         deletions = [name for name in self._known if name not in current_files]
         for name in deletions:
             del self._known[name]
@@ -71,36 +71,39 @@ class FileChangeDebouncer:
             self._known[name] = current
             del self._pending[name]
 
-        return creates, modifies, deletions
+        return {'creates': tuple(creates), 'modifies': tuple(modifies), 'deletes': tuple(deletions),
+                'present': tuple(current_files),
+                'stable': tuple(name for name, value in current_files.items() if self._known.get(name) == value)}
 
 
-def watch(directory, ignore, poll_interval=POLL_INTERVAL_SEC, quiet_period=QUIET_PERIOD):
-    """Yield (creates, modifies, deletions) filename lists after every poll.
-
-    quiet_period is in seconds, rounded up to whole polls, so a change is
-    reported at most one poll after the file has held steady that long.
-
-    Non-files and entries rejected by the ignore predicate are skipped, as are
-    entries that vanish mid-scan — the next poll picks those up as deletions.
-    Scans in name order so events for simultaneous files arrive deterministically.
-    """
-    log.debug("Watching %s for changes (polling mode)...", directory)
-    debouncer = FileChangeDebouncer(math.ceil(quiet_period / poll_interval))
-    while True:
-        # filename -> (mtime, size): keyed by name for O(1) diffing between polls.
-        files = {}
+def _scan(directory, ignore):
+    files = {}
+    for path in sorted(directory.iterdir(), key=lambda entry: entry.name):
+        if ignore(path):
+            continue
         try:
-            for path in sorted(directory.iterdir(), key=lambda entry: entry.name):
-                try:
-                    if not path.is_file() or ignore(path):
-                        continue
-                    stat = path.stat()
-                except OSError:
-                    continue  # vanished between the scan and the stat; next poll sees the delete
-                files[path.name] = (stat.st_mtime, stat.st_size)
+            stat = path.stat()
+        except FileNotFoundError:
+            continue  # A concurrent deletion is reflected in this observation.
+        # Other stat errors abort the entire scan; unreadable is not deleted.
+        if stat_module.S_ISREG(stat.st_mode):
+            files[path.name] = (stat.st_mtime_ns, stat.st_size)
+    return files
+
+
+def watch(directory, ignore, poll_interval=POLL_INTERVAL_SEC, quiet_period=QUIET_PERIOD, *, stop_event=None):
+    """Yield detached event/inventory batches; intended for one watcher thread.
+
+    Startup files pass the same stability check as additions. An unsuccessful
+    scan preserves the last successful observation and yields no deletion events.
+    """
+    stop_event = stop_event if stop_event is not None else threading.Event()
+    debouncer = FileChangeDebouncer(math.ceil(quiet_period / poll_interval))
+    while not stop_event.is_set():
+        try:
+            files = _scan(directory, ignore)
         except OSError as error:
-            log.error("Cannot read %s: %s", directory, error)
-            yield [], [], []
+            log.error('Cannot scan %s: %s', directory, error)
         else:
             yield debouncer.poll(files)
-        time.sleep(poll_interval)
+        stop_event.wait(poll_interval)

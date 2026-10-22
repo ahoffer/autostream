@@ -131,9 +131,9 @@
 
         let streams = [];
         let selectedName = null;
-        // Unapplied settings edits for the selected stream: null when the
-        // controls show the server's values. fps/gop null means "automatic".
-        let draft = null;
+        // Separate unapplied settings for each output of the selected source.
+        // Missing entries use the server values. fps/gop null means "automatic".
+        let drafts = {};
         // Output names whose command view is open, so a rewrite keeps it open.
         const openCommands = new Set();
         let lastPayload = '';
@@ -144,13 +144,7 @@
         }
 
         const stateLabels = {running: 'Running', crashing: 'Crashing', restarting: 'Restarting', starting: 'Starting',
-                             waiting: 'Waiting', failed: 'Failed', stopped: 'Stopped', completed: 'Completed'};
-
-        // Short form of the server's encoder label for the header tag.
-        function encoderTag(encoder) {
-            if (encoder.startsWith('copy')) return 'copy';
-            return 'software';
-        }
+                             waiting: 'Waiting', failed: 'Failed', stopped: 'Stopped', completed: 'Completed', stopping: 'Stopping', retiring: 'Retiring'};
 
         function fmtRate(rate) { return rate ? `${Math.round(rate * 100) / 100} fps` : 'unknown'; }
 
@@ -183,10 +177,12 @@
                 <div class="output-body">
                     <div class="output-header">
                         <span class="name">${outputName.toUpperCase()}</span>
+                        <span class="encoder">${escapeHtml(output.encoder ?? "not prepared")}</span>
                         <span class="pill ${state}">${stateLabels[state] ?? state}</span>
                         ${output.reason && output.enabled ? `<span class="reason">${escapeHtml(output.reason)}</span>` : ''}
                     </div>
                     ${output.error ? `<pre class="err mono" title="Last lines of the ffmpeg log">${escapeHtml(output.error)}</pre>` : ''}
+                    ${settingsRow(s, outputName)}
                     <div class="url-grid">
                         ${urls.map(([label, url]) => urlRow(label, url, output.running)).join('')}
                     </div>
@@ -197,25 +193,27 @@
                     </details>`}
                 </div>
                 <div class="pair">
-                    <button class="btn-stop" onclick="stopOutput(this, '${s.name}', '${outputName}')" ${output.enabled ? '' : 'disabled'}>Stop</button>
-                    <button class="btn-start" onclick="startOutput(this, '${s.name}', '${outputName}')" ${output.running ? 'disabled' : ''}>Start</button>
+                    <button class="btn-stop" onclick="stopOutput(this, '${s.name}', '${outputName}')" ${state !== 'retiring' && (output.enabled || output.running) ? '' : 'disabled'}>Stop</button>
+                    <button class="btn-start" onclick="startOutput(this, '${s.name}', '${outputName}')" ${output.running || state === 'retiring' ? 'disabled' : ''}>Start</button>
                 </div>
             </div>`;
         }
 
         // The settings the controls should show: the draft while editing,
         // else the server's values.
-        function currentSettings(s) {
-            return draft ?? {
-                mode: s.mode, loop: s.loop_count,
+        function currentSettings(s, outputName) {
+            s = s.outputs[outputName];
+            return drafts[outputName] ?? {
+                mode: s.mode ?? 'transcode', loop: s.loop_count,
                 fps: s.frame_rate_explicit ? s.frame_rate : null,
                 gop: s.gop_explicit ? s.gop_frames : null,
             };
         }
 
-        function settingsRow(s) {
-            const v = currentSettings(s);
-            const dirty = draft !== null;
+        function settingsRow(source, outputName) {
+            const s = source.outputs[outputName];
+            const v = currentSettings(source, outputName);
+            const dirty = !!drafts[outputName];
             // FPS and GOP are encoder settings: nothing to set when the source
             // is copied. A passthrough request on an ineligible file still
             // transcodes, so follow what would actually run.
@@ -228,33 +226,33 @@
             const naturalGop = outputRate ? Math.max(1, Math.round(outputRate)) : 30;
             const off = copying ? 'disabled' : '';
             const modeNote = v.mode === 'passthrough' && s.passthrough_eligible === false
-                ? `<span class="reason">transcodes anyway: ${escapeHtml(s.ineligible_codecs.join(', '))} cannot pass through (H.264, H.265, MPEG-2, MPEG-4, MJPEG only)</span>` : '';
+                ? `<span class="reason">transcodes anyway: ${escapeHtml((s.ineligible_codecs ?? []).join(', '))} cannot pass through (H.264, H.265, MPEG-2, MPEG-4, MJPEG only)</span>` : '';
             return `
                 <div class="row settings-row">
                 <div class="settings">
                     <label>Video
-                        <select id="mode" onchange="edit('mode', this.value)" title="Passthrough sends the source unmodified (H.264, H.265, MPEG-2, MPEG-4, MJPEG)">
+                        <select id="${outputName}-mode" onchange="edit('${outputName}', 'mode', this.value)" title="Passthrough sends the source unmodified (H.264, H.265, MPEG-2, MPEG-4, MJPEG)">
                             <option value="passthrough" ${v.mode === 'passthrough' ? 'selected' : ''}>Passthrough</option>
                             <option value="transcode" ${v.mode === 'transcode' ? 'selected' : ''}>Transcode</option>
                         </select>
                         <span class="hint">${modeNote}</span>
                     </label>
                     <label>FPS
-                        <input type="number" id="fps" min="1" max="120" step="any" value="${Math.round(outputRate * 1000) / 1000 || ''}" ${off}
-                               oninput="typed('fps', this.value)" onblur="edit('fps', numberOrAuto(this.value))"
+                        <input type="number" id="${outputName}-fps" min="1" max="120" step="any" value="${Math.round(outputRate * 1000) / 1000 || ''}" ${off}
+                               oninput="typed('${outputName}', 'fps', this.value)" onblur="edit('${outputName}', 'fps', numberOrAuto(this.value))"
                                title="Output frame rate; blank for the source rate. Transcode only.">
                         <span class="hint">${fpsOverride !== null
                             ? `blank for the source rate (${fmtRate(s.source_frame_rate)})`
                             : `source rate (${fmtRate(s.source_frame_rate)})`}</span>
                     </label>
                     <label>GOP (frames)
-                        <input type="number" id="gop" min="1" step="1" value="${copying ? '' : v.gop ?? naturalGop}" ${off}
-                               oninput="typed('gop', this.value)" onblur="edit('gop', numberOrAuto(this.value))"
+                        <input type="number" id="${outputName}-gop" min="1" step="1" value="${copying ? '' : v.gop ?? naturalGop}" ${off}
+                               oninput="typed('${outputName}', 'gop', this.value)" onblur="edit('${outputName}', 'gop', numberOrAuto(this.value))"
                                title="Keyframe interval; blank for one second of frames. Transcode only.">
                         <span class="hint"></span>
                     </label>
                     <label>Playback
-                        <select id="loop" onchange="edit('loop', Number(this.value))">
+                        <select id="${outputName}-loop" onchange="edit('${outputName}', 'loop', Number(this.value))">
                             <option value="-1" ${v.loop === -1 ? 'selected' : ''}>Loop forever</option>
                             <option value="0" ${v.loop === 0 ? 'selected' : ''}>Play once</option>
                             <option value="1" ${v.loop === 1 ? 'selected' : ''}>Play 2x</option>
@@ -266,9 +264,9 @@
                         <span class="hint"></span>
                     </label>
                 </div>
-                <div class="pair settings-actions" ${dirty ? '' : 'hidden'}>
-                    <button class="btn-start" onclick="applySettings(this, '${s.name}')">${s.running ? 'Save & restart' : 'Save'}</button>
-                    <button class="btn-plain" onclick="cancelSettings()">Cancel</button>
+                <div class="pair settings-actions" id="${outputName}-actions" ${dirty ? '' : 'hidden'}>
+                    <button class="btn-start" onclick="applySettings(this, '${source.name}', '${outputName}')">${s.running ? 'Save & restart' : 'Save'}</button>
+                    <button class="btn-plain" onclick="cancelSettings('${outputName}')">Cancel</button>
                 </div>
                 </div>`;
         }
@@ -291,10 +289,8 @@
                 <div class="detail-header">
                     <div class="detail-title">
                         <h2>${s.name}</h2>
-                        <span class="encoder" title="${escapeHtml(s.encoder)}">${encoderTag(s.encoder)}</span>
                     </div>
                 </div>
-                ${settingsRow(s)}
                 ${outputCard(s, 'rtsp', [['rtsp', s.rtsp_url], ['hls', s.hls_url]])}
                 ${outputCard(s, 'udp', [['udp', s.udp_url]])}`;
         }
@@ -302,7 +298,7 @@
         function render() {
             if (!streams.some(s => s.name === selectedName)) {
                 selectedName = streams.length ? streams[0].name : null;
-                draft = null;
+                drafts = {};
             }
             renderList();
             renderDetail();
@@ -340,7 +336,7 @@
         function select(name) {
             if (name === selectedName) return;
             selectedName = name;
-            draft = null;
+            drafts = {};
             render();
         }
 
@@ -348,46 +344,46 @@
 
         function numberOrAuto(text) { return text === '' ? null : Number(text); }
 
-        function draftFor(key, value) {
+        function draftFor(outputName, key, value) {
             const s = streams.find(x => x.name === selectedName);
-            if (draft === null) draft = currentSettings(s);
-            draft[key] = value;
+            if (!drafts[outputName]) drafts[outputName] = currentSettings(s, outputName);
+            drafts[outputName][key] = value;
         }
 
         // A keystroke only records the draft and reveals Save/Cancel; the
         // pane is not rebuilt, so the caret stays where it is. The rebuild
         // (hints, natural GOP) happens on change, when the field is left.
-        function typed(key, text) {
-            draftFor(key, numberOrAuto(text));
-            document.querySelector('.settings-actions').hidden = false;
+        function typed(outputName, key, text) {
+            draftFor(outputName, key, numberOrAuto(text));
+            document.getElementById(`${outputName}-actions`).hidden = false;
         }
 
-        function edit(key, value) {
-            draftFor(key, value);
+        function edit(outputName, key, value) {
+            draftFor(outputName, key, value);
             // Passthrough streams the file as-is, so switching to it abandons
             // any fps/gop overrides; the fields fall back to the source values.
             if (key === 'mode' && value === 'passthrough') {
-                draft.fps = null;
-                draft.gop = null;
+                drafts[outputName].fps = null;
+                drafts[outputName].gop = null;
             }
             renderDetail();   // hints and Save/Cancel follow the draft
         }
 
-        function cancelSettings() {
-            draft = null;
+        function cancelSettings(outputName) {
+            delete drafts[outputName];
             if (errorKind === 'command') hideError();
             document.activeElement.blur();
             renderDetail();
         }
 
-        async function applySettings(button, name) {
-            const v = draft;
+        async function applySettings(button, name, outputName) {
+            const v = drafts[outputName];
             document.activeElement.blur();
             const query = `mode=${v.mode}&loop=${v.loop}&fps=${v.fps ?? 'auto'}&gop=${v.gop ?? 'auto'}`;
             // The draft stays until the server accepts it, so a rejected
             // value can be corrected rather than retyped.
-            if (await command(button, `/api/streams/${name}/settings?${query}`, `save ${name} settings`)) {
-                draft = null;
+            if (await command(button, `/api/streams/${name}/outputs/${outputName}/settings?${query}`, `save ${name} ${outputName} settings`)) {
+                delete drafts[outputName];
                 renderDetail();
             }
         }
@@ -453,9 +449,8 @@
 
         // Every control goes through here. The clicked button is disabled
         // and relabelled until the refresh lands, so a second click cannot
-        // fire the same command twice. A refused operation comes back as
-        // {"success": false} with a 200, so checking only the transport would
-        // leave a failed click looking like it worked.
+        // fire the same command twice. Check both the HTTP result and the
+        // operation result, and do not automatically retry mutations.
         async function command(button, path, description) {
             const label = button && button.textContent;
             if (button) {

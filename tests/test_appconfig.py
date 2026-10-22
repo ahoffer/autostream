@@ -42,7 +42,9 @@ os.environ.clear()
 with patch.object(Path, 'mkdir', side_effect=AssertionError('import wrote to disk')):
     import stream_supervisor
     import streamapi
-    import streams
+    import mediaoutput
+    import outputregistry
+    import statefile
 """],
             cwd=Path(__file__).resolve().parents[1], capture_output=True, text=True,
         )

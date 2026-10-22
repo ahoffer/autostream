@@ -1,11 +1,498 @@
 # Plan: reduce argument complexity and improve encapsulation
 
-Status: proposal only. No application implementation or deployment changes are included.
+> Historical architecture and measurements: use [Autostream: simplified
+> responsibility-driven design](responsibility-driven-design.md) for the current
+> plan. It assigns all lifecycle changes and persistence to the existing
+> supervisor loop, using Popen for process facts. The interfaces, concurrency
+> guidance, and projected scores below are superseded, including generation
+> checks and shared lifecycle locks. Preserve the scoring discussion and baseline
+> measurements as context; do not implement the historical design below.
 
-Recommendation: use Approach A to remove oversized inputs first, then apply the
-ownership changes in Approach B. Keep the current HTTP API, state-file format,
-codec decisions, and lifecycle behavior. The primary benefit of B should be
-stronger ownership and fewer exposed internals, not just fewer explicit arguments.
+Status: historical record. The concurrent implementation attempt was rejected;
+the subsequently approved simplified RDD design is implemented in the working tree.
+
+Selected design: Approach A's narrow inputs and pure decision functions, plus
+registry encapsulation and a logger-injected FFmpegProcess class. Use
+subprocess.Popen inside that class. StreamOutput does not own process lifecycle,
+command construction, or API response formatting. The broader object-oriented
+Approach B below is historical and is not the selected implementation.
+
+Keep the current HTTP API, state-file format, codec decisions, and lifecycle
+behavior. The benefit of encapsulation should be stronger ownership and fewer
+exposed internals, not just fewer explicit arguments.
+
+## Accepted terminology and file layout
+
+These names supersede the provisional names in the historical comparisons below.
+Renaming alone changes none of the argument, cohesion, coupling, or complexity
+scores. Apply the names consistently to imports, internal callers, tests, build
+file lists, and architecture documentation when implementation is authorized.
+
+| Existing or earlier proposed name | Accepted name | Precise meaning |
+|---|---|---|
+| Output | StreamOutput | One stream's RTSP or UDP output record, including desired state and failure history |
+| FileProfile | MediaProbeResult | Media information obtained by probing a source file |
+| EncodeSpec | FFmpegCommandSettings | Decisions used to construct an FFmpeg command, including playback and destinations |
+| OutputAvailability | OutputStartBlockers | Permanent failure or transient waiting reason that prevents starting an output |
+| UdpDestination | UdpLaunchConditions | Host, configured port range, and cached hostname-resolution result; not one endpoint |
+| output_reachable | udp_host_resolves | Whether the configured UDP hostname resolves, not whether a receiver is reachable |
+| refresh_output_reachable() | refresh_udp_host_resolution() | Refresh the cached hostname-resolution result |
+| claim_slot() | register_stream() | Register a stream, reject name collisions, and restore retained settings |
+| cleanup_dead_processes() | handle_process_exits() | Handle expected completion, deliberate stops, and failures needing restart |
+| reset_health() | clear_failure_history() | Clear the crash count and last failure |
+| occupied | has_process | A process is still associated with this output, including while stopping |
+| handle_create() | handle_file_added() | Handle a source file appearing |
+| handle_modify() | handle_file_changed() | Handle a source file changing |
+| handle_delete() | handle_file_removed() | Handle a source file disappearing |
+| streams.py | streammanager.py | Application coordination |
+| streampolicy.py | streamdecisions.py | Pure encoding and launch decisions |
+| streamstatus.py | streamresponses.py | API response construction, as verified in the current module |
+
+Keep StreamRegistry, BitrateLimit, and FileChangeDebouncer. Use FFmpegProcess
+for the process wrapper. Distinguish a stream, its protocol-specific outputs,
+their destination addresses, and the subprocesses serving them. Existing HTTP
+routes, JSON keys, environment variables, and persisted keys are not renamed
+by this internal terminology change.
+
+| File after refactoring | Classes and responsibilities |
+|---|---|
+| appconfig.py | Config: startup configuration and validation |
+| streammodel.py | Stream and StreamOutput: identity, requested settings, output choices, and application state |
+| streamregistry.py | StreamRegistry: registration, retained settings, UDP allocation, and synchronized access |
+| streammanager.py | StreamManager: file events, user requests, restart decisions, and lifecycle coordination |
+| streamdecisions.py | BitrateLimit, UdpLaunchConditions, OutputStartBlockers: immutable values used by pure decision functions |
+| ffmpegcmd.py | MediaProbeResult and FFmpegCommandSettings; media probing and command construction functions |
+| ffmpegprocess.py | FFmpegProcess: Popen lifecycle, bounded shutdown, and process diagnostics using an injected logger |
+| streamresponses.py | Functions constructing stream and output API responses |
+| statefile.py | PersistedOutput, PersistedStream, PersistedState and JSON storage |
+| streamapi.py | StreamHandler and HTTP transport |
+| filewatch.py | FileChangeDebouncer and source file watching |
+| stream_supervisor.py | OneLineFormatter, logging configuration, composition, and polling loop |
+
+This keeps twelve application modules. socket_memory.py remains a separate
+diagnostic. Record constructor and stored-field counts will be remeasured after
+process ownership is moved; the old Output field count is not a commitment to
+duplicate process state in StreamOutput and FFmpegProcess.
+
+## Selected ownership boundaries
+
+### Process lifecycle and logging
+
+Proposed use:
+
+```python
+process = FFmpegProcess(logger)
+process.start(argv)
+process.stop()
+```
+
+Inject a configured logger once, rather than passing log_path through recurring
+process calls. Keep logging configuration at startup. The wrapper owns its Popen
+handle and process lifecycle, including terminate/wait/kill escalation. It retains
+ownership when a process cannot be reaped and must not permit a replacement to
+reuse that process's destination prematurely. The manager decides whether an
+exited stream should restart or is complete.
+
+The logger records application diagnostics. FFmpeg stdout/stderr capture still
+needs an explicit implementation: a Logger is not a subprocess file descriptor
+and does not provide log-tail retrieval. Resolve capture, bounded diagnostic
+retention, and any reader-thread lifecycle before implementing this boundary.
+Preserve per-output diagnostics and debug visibility; do not infer a path from
+arbitrary logger handlers or hide global configuration in the wrapper. Count any
+additional dependencies and stored capture state in the final argument audit.
+
+At the application boundary, start_streaming(stream_name) describes starting a
+stream's enabled destinations; FFmpegProcess.start(argv) starts one subprocess.
+These are separate operations, not interchangeable names for one helper.
+
+### Registry encapsulation
+
+StreamRegistry owns its dictionaries, registration, retained settings, port
+assignments, and lock. Expose complete registration/removal operations, copied
+name lists, and short guarded access to a Stream. This may expose the Stream
+record intentionally; it does not expose the registry's storage or lock fields.
+StreamManager must no longer access registry.streams or registry.lock directly.
+
+Keep probing, hostname resolution, and process waits outside guarded access.
+After I/O, verify that the original stream/output/process still owns the
+operation before changing state. Preserve the existing synchronization model
+behind the registry boundary initially; do not add per-stream locks unnecessarily.
+
+### Narrow values and pure functions
+
+- BitrateLimit: text and bits_per_second, two stored fields.
+- UdpLaunchConditions: host, first_port, last_port, udp_host_resolves, four fields.
+- OutputStartBlockers: failure_reason and waiting_reason, two optional fields
+  with at most one populated.
+
+Keep these records passive. Keep bitrate selection, launch checks, command
+construction, and response construction as functions with narrow inputs.
+Continue using the validated settings mapping intact, preserving absent keys
+versus explicit automatic values and one atomic settings update.
+
+StreamOutput retains application output state and failure history. It does not
+launch or stop subprocesses, select codecs, allocate ports, or format responses.
+Define the exact field split with FFmpegProcess before implementation so there
+is one authoritative copy of process state.
+
+## Proposed public interface in UML
+
+This is the proposed interface, not implemented code. There are seventeen
+application classes across twelve files. The diagrams separate lifecycle,
+value records, and supporting infrastructure for readability. Logger and Popen
+are standard-library dependencies and are not additional application classes.
+The diagram labels identify the files containing each class.
+
+UML notation: `+` means public, a filled diamond means ownership, an open
+diamond means a shared reference, and a dashed arrow means a dependency.
+Methods omit `self`. All attributes in the lifecycle diagram are read-only
+properties without public setters.
+Dataclass-generated equality/repr methods and inherited framework methods are
+omitted. Names introduced in this interface beyond the accepted rename table
+remain proposals, including locked_stream and failure_details.
+
+### Lifecycle and application coordination
+
+```mermaid
+classDiagram
+    direction TB
+
+    class StreamManager {
+        <<streammanager.py>>
+        +StreamManager(config)
+        +load_persisted_state()
+        +get_stream_status()
+        +stream_exists(stream_name)
+        +start_streaming(stream_name)
+        +stop_streaming(stream_name)
+        +start_all_streams()
+        +stop_all_streams()
+        +start_output(stream_name, output_name)
+        +disable_output(stream_name, output_name)
+        +update_settings(stream_name, changes)
+        +handle_file_added(filepath, announce=True)
+        +handle_file_changed(filepath)
+        +handle_file_removed(filepath)
+        +refresh_udp_host_resolution()
+        +handle_process_exits()
+        +recover_udp_outputs()
+    }
+
+    class StreamRegistry {
+        <<streamregistry.py>>
+        +StreamRegistry(config)
+        +load_persisted_state()
+        +save_persisted_state()
+        +register_stream(stream_name, filename) bool
+        +remove_stream(expected_stream) bool
+        +contains(stream_name) bool
+        +stream_names() list
+        +locked_stream(stream_name) contextmanager
+        +locked_streams() contextmanager
+    }
+
+    class Stream {
+        <<streammodel.py>>
+        +Stream(name, filename, udp_port, config, loop_count, mode, gop_frames, frame_rate, profile)
+        +output(output_name) StreamOutput
+        +urls() dict
+        +video_path : str
+        +outputs : tuple
+        +running : bool
+        +stopping : bool
+    }
+
+    class StreamOutput {
+        <<streammodel.py>>
+        +StreamOutput(name)
+        +clear_failure_history()
+        +running : bool
+        +has_process : bool
+        +stopping : bool
+    }
+
+    class FFmpegProcess {
+        <<ffmpegprocess.py>>
+        +FFmpegProcess(logger)
+        +start(argv)
+        +poll() Optional~int~
+        +stop() bool
+        +failure_details() str
+        +pid : Optional~int~
+        +returncode : Optional~int~
+        +argv : list
+        +started_at : Optional~float~
+        +stopping : bool
+    }
+
+    class Logger {
+        <<stdlib>>
+    }
+    class Popen {
+        <<stdlib>>
+    }
+
+    StreamManager "1" *-- "1" StreamRegistry : owns
+    StreamRegistry "1" *-- "0..*" Stream : registers
+    Stream "1" *-- "2" StreamOutput : RTSP and UDP
+    StreamOutput "1" *-- "0..1" FFmpegProcess : current run
+    FFmpegProcess "1" o-- "1" Logger : injected
+    FFmpegProcess "1" *-- "0..1" Popen : controls
+    StreamManager ..> FFmpegProcess : starts and stops
+```
+
+The Stream constructor is shown without defaults in the diagram. Its exact
+proposed signature, including keyword-only settings, is:
+
+```python
+Stream(name, filename, udp_port, *, config,
+       loop_count=-1, mode=None, gop_frames=None,
+       frame_rate=None, profile=None)
+```
+
+RTSP and UDP records are created internally. handle_file_added has the exact
+signature `handle_file_added(filepath, *, announce=True)`; announce controls
+the file-added message during initial discovery.
+
+StreamManager.start_output enables and starts or restarts one output;
+disable_output stops it and records that supervision should leave it stopped.
+Launch helpers, probe refresh, and restart mechanics become private methods.
+
+StreamRegistry.remove_stream verifies object identity before removal and retains
+the stream's settings. This prevents a stale operation from removing a newer
+registration with the same name. The explicit object argument has a field-based
+cost under the agreed metric and is not treated as a one-point identifier.
+locked_stream yields Stream or None; locked_streams yields a tuple of records.
+Access to mutable records occurs only inside these short contexts. A retained
+reference outside a context may be used as an identity token, not for unguarded
+mutation. Port allocation and retained-record conversion remain private.
+
+FFmpegProcess.stop returns whether the subprocess exited after bounded shutdown.
+poll returns the exit code or None while running. Define pre-start handling
+explicitly when implementing the lifecycle. A new run uses a new FFmpegProcess
+instance; do not recycle a wrapper while another operation may retain its
+identity. failure_details returns diagnostic text, leaving API response assembly
+to streamresponses.py. Capturing subprocess stdout/stderr remains an unresolved
+implementation detail; Logger injection alone does not supply capture.
+
+StreamOutput stores desired enabled state, completion, failure history, and its
+process association. Process arguments, timing, and stopping state come from
+FFmpegProcess rather than duplicate fields. clear_failure_history clears the
+crash count and last failure; it does not start or stop a process.
+
+### Configuration and immutable value records
+
+These records retain generated constructors for their declared fields. Config
+is normally constructed through from_env; max_video_bps is derived and excluded
+from its generated constructor. Optional values and existing defaults follow
+the current declarations unless explicitly shown otherwise below.
+
+```mermaid
+classDiagram
+    direction TB
+
+    class Config {
+        <<appconfig.py>>
+        +hostname : str
+        +rtsp_port : int
+        +hls_port : int
+        +api_port : int
+        +log_level : str
+        +output_host : str
+        +udp_base_port : int
+        +udp_last_port : int
+        +max_video_bitrate : str
+        +videos_dir : Path
+        +state_path : Path
+        +ffmpeg_log_dir : Path
+        +max_video_bps : Optional~int~
+        +from_env(environ=None) Config$
+        +show_ffmpeg_output : bool
+    }
+
+    class BitrateLimit {
+        <<streamdecisions.py>>
+        +text : str
+        +bits_per_second : Optional~int~
+        +BitrateLimit(text, bits_per_second)
+    }
+
+    class UdpLaunchConditions {
+        <<streamdecisions.py>>
+        +host : str
+        +first_port : int
+        +last_port : int
+        +udp_host_resolves : bool
+        +UdpLaunchConditions(host, first_port, last_port, udp_host_resolves)
+    }
+
+    class OutputStartBlockers {
+        <<streamdecisions.py>>
+        +failure_reason : Optional~str~
+        +waiting_reason : Optional~str~
+        +OutputStartBlockers(failure_reason=None, waiting_reason=None)
+    }
+
+    class MediaProbeResult {
+        <<ffmpegcmd.py>>
+        +video_codecs : Optional~tuple~
+        +audio_codecs : Optional~tuple~
+        +audio_copyable : bool
+        +pix_fmt : Optional~str~
+        +bitrate_bps : Optional~int~
+        +frame_rate : Optional~float~
+    }
+
+    class FFmpegCommandSettings {
+        <<ffmpegcmd.py>>
+        +video_path : str
+        +stream_name : str
+        +loop_count : int
+        +gop_frames : int
+        +frame_rate : Optional~float~
+        +passthrough : bool
+        +audio_copy : bool
+        +bitrate_cap : str
+        +rtsp_port : int
+        +udp_target : Optional~str~
+        +encoder_label : str
+    }
+```
+
+Config.from_env is a class method; Mermaid's `$` classifier indicates that it
+is called on the class. show_ffmpeg_output and encoder_label are read-only properties.
+The other records are passive values, not services.
+OutputStartBlockers permits at most one populated reason.
+
+### Persistence, HTTP, file watching, and logging
+
+Persisted records retain their existing generated constructors and defaults.
+They describe saved choices, not live processes. StreamHandler's HTTP framework
+callbacks and OneLineFormatter.format retain their framework-required names.
+
+```mermaid
+classDiagram
+    direction TB
+
+    class PersistedOutput {
+        <<statefile.py>>
+        +enabled : bool
+    }
+
+    class PersistedStream {
+        <<statefile.py>>
+        +filename : str
+        +mode : Optional~str~
+        +loop_count : int
+        +gop_frames : Optional~int~
+        +frame_rate : Optional~float~
+        +removed_at : Optional~float~
+        +rtsp : PersistedOutput
+        +udp : PersistedOutput
+    }
+
+    class PersistedState {
+        <<statefile.py>>
+        +udp_ports : dict
+        +streams : dict
+    }
+
+    class FileChangeDebouncer {
+        <<filewatch.py>>
+        +FileChangeDebouncer(confirmations_needed)
+        +poll(current_files) tuple
+    }
+
+    class StreamHandler {
+        <<streamapi.py>>
+        +StreamHandler(request, client_address, server, manager)
+        +do_GET()
+        +do_POST()
+        +log_message(format, args)
+    }
+
+    class OneLineFormatter {
+        <<stream_supervisor.py>>
+        +format(record) str
+    }
+
+    PersistedState "1" *-- "0..*" PersistedStream : saved streams
+    PersistedStream "1" *-- "2" PersistedOutput : RTSP and UDP choices
+```
+
+StreamHandler's constructor accepts the standard HTTP handler arguments and a
+keyword-only manager dependency. log_message retains the actual variadic
+signature `log_message(format, *args)`. JSON/HTML sending and route parsing are
+private helpers. OneLineFormatter inherits the standard formatter constructor.
+No custom interface base classes are proposed.
+
+### Public module-level functions
+
+These functions have no independent object lifecycle and remain module-level
+interfaces. They are listed separately so the class diagram does not invent
+classes solely to contain functions. Private helpers are omitted.
+
+| File | Public functions |
+|---|---|
+| appconfig.py | parse_bitrate(text) |
+| streammodel.py | is_ignored(path), stream_name_for(path) |
+| streamdecisions.py | default_mode(video_codecs), passthrough_eligible(video_codecs), bitrate_cap_for(source_bps, limit), command_settings(stream), udp_start_blockers(udp_port, conditions) |
+| ffmpegcmd.py | probe_file(video_path), natural_gop_frames(frame_rate), build_argv(settings, output_name) |
+| streamresponses.py | get_stream_status(streams, udp_conditions) |
+| statefile.py | load_state(path), save_state(path, state) |
+| streamapi.py | parse_settings(query), serve(port, manager) |
+| filewatch.py | watch(directory, ignore, poll_interval=2, quiet_period=4) |
+| stream_supervisor.py | configure_logging(log_level), wait_for_mediamtx(rtsp_port), main() |
+
+The module-level get_stream_status formats records; the manager method acquires
+guarded access and delegates to it. Configuration requirements and filename
+normalization become private helpers behind from_env and stream_name_for.
+
+Naming recommendations for newly introduced interfaces: locked_stream makes
+the held-lock contract clearer than access_stream; failure_details exposes the
+diagnostic purpose without coupling callers to a particular stderr-tail capture
+implementation. The exact capture design and lifecycle state transitions must
+be resolved before the full refactor is approved for implementation.
+
+## Selected implementation sequence and validation
+
+Implementation starts only after approval of the full refactor.
+
+1. Finalize FFmpeg stdout/stderr capture and the process/output field split.
+   Record constructor inputs, receiver fields, and the scoring convention for
+   Logger and other third-party objects before making quantitative claims.
+2. Apply the accepted internal names, imports, test references, build file
+   lists, and architecture documentation consistently.
+3. Introduce FFmpegProcess with logger injection and the existing bounded
+   shutdown behavior. Preserve process identity checks and stuck-process
+   ownership, keeping the restart decision in StreamManager.
+4. Encapsulate the registry's storage and locking behind complete operations
+   and short guarded access. Preserve collision handling and port retention.
+5. Introduce the narrow value records, reuse command settings during response
+   construction, and pass settings edits as one validated mapping.
+6. Run the existing tests and focused regressions for stop during probing,
+   replacement during shutdown, stuck processes, finite completion, output
+   enablement, UDP hostname recovery, settings updates, and port retention.
+   Compare API responses, commands, and persisted state with the baseline.
+7. Rerun argument scoring, pydeps, cohesion, and Radon. Report constructors,
+   forwarding calls, receiver fields, and direct representation access alongside
+   explicit argument costs. Target zero external registry dictionary/lock
+   accesses and zero import cycles; do not promise unmeasured future scores.
+
+Build and deployment are separate from this planning approval. Do not start the
+container as part of the naming update.
+
+## Historical alternatives and measurement baseline
+
+The following sections preserve the original A/B analysis and baseline figures.
+Their old type and file names identify the design at the time of measurement.
+They are not implementation instructions where they conflict with the selected
+design above. In particular, the log_path-based A process API and B's broad
+Output ownership, behavior-bearing records, and 9-argument/14-point projection
+have been superseded. Neither original total is a prediction for the selected
+hybrid. Logger construction/capture costs and the final receiver fields remain
+to be measured; an injected Logger must not be assigned an arbitrary one-point
+weight.
 
 ## Scoring contract
 

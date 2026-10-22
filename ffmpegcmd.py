@@ -1,8 +1,7 @@
 """Everything ffmpeg: probing a file and building argv.
 
-The supervisor decides WHETHER (mode, bitrate cap, eligibility, which outputs
-run); this module owns the ffmpeg syntax that turns those decisions into a
-command line. Each output of a stream is its own ffmpeg process, so build_argv
+MediaOutput decides whether delivery is enabled. This module probes media,
+resolves encoding choices, and renders the resulting command line. Each output of a stream is its own ffmpeg process, so build_argv
 produces one complete command per output:
 
   rtsp  RTSP -> MediaMTX (which also republishes it as HLS). This is the
@@ -42,7 +41,7 @@ def natural_gop_frames(frame_rate):
     return DEFAULT_GOP_FRAMES
 
 @dataclass(frozen=True)
-class FileProfile:
+class MediaProbeResult:
     """What ffprobe says about a video file; the inputs to every encode decision.
 
     None in a field means the probe failed or the file has no such track.
@@ -60,7 +59,7 @@ class FileProfile:
     frame_rate: float | None
 
 
-UNKNOWN_PROFILE = FileProfile(None, None, False, None, None, None)
+UNKNOWN_PROFILE = MediaProbeResult(None, None, False, None, None, None)
 
 
 def _parse_frame_rate(text):
@@ -111,7 +110,7 @@ def probe_file(video_path):
         if isinstance(candidate, str) and candidate.isdigit():
             bitrate = int(candidate)
             break
-    return FileProfile(
+    return MediaProbeResult(
         video_codecs=tuple(entry.get("codec_name", "") for entry in video_streams),
         audio_codecs=tuple(entry.get("codec_name", "") for entry in audio_streams),
         audio_copyable=all(entry.get("codec_name") == "aac" and entry.get("extradata_size", 0) > 0
@@ -123,22 +122,14 @@ def probe_file(video_path):
 
 
 @dataclass(frozen=True)
-class EncodeSpec:
-    """Every decision the supervisor made for one stream, ready to become argv.
-
-    udp_target is None when the stream has no UDP port, in which case the udp
-    command cannot be built.
-    """
-    video_path: str
-    stream_name: str
+class FFmpegCommandSettings:
+    """Immutable encoding decisions for one command, after media inspection."""
     loop_count: int
     gop_frames: int
     frame_rate: float | None    # output rate under transcode; None keeps the source's
     passthrough: bool
     audio_copy: bool
     bitrate_cap: str
-    rtsp_port: int
-    udp_target: str | None
 
     @property
     def encoder_label(self):
@@ -147,14 +138,9 @@ class EncodeSpec:
         return "libx264 (software)"
 
 
-def build_argv(spec, output_name):
-    """The complete ffmpeg command for one output of a stream, or None.
-
-    None only for the udp output of a stream without a UDP target.
-    """
-    if output_name == "udp" and spec.udp_target is None:
-        return None
-
+def build_argv(source_path, spec, destination):
+    """Render the prepared decisions as one complete FFmpeg command."""
+    output_name = destination.split(':', 1)[0]
     if spec.passthrough:
         # The supervisor verified every video track is one MediaMTX carries: send the
         # source bits unmodified. A bitrate cap cannot apply to copied packets
@@ -185,18 +171,50 @@ def build_argv(spec, output_name):
     audio_opts = ["-c:a", "copy"] if spec.audio_copy else ["-c:a", "aac", "-b:a", "128k"]
 
     argv = ["ffmpeg", "-hide_banner", "-nostats",
-            "-re", "-stream_loop", str(spec.loop_count), "-i", spec.video_path]
+            "-re", "-stream_loop", str(spec.loop_count), "-i", str(source_path)]
     if output_name == "rtsp":
         argv += ["-map", "0:v?", "-map", "0:a?", *video_opts, *bitrate_opts, *audio_opts,
                  *ts_fix, *vsync_opts,
                  "-f", "rtsp", "-rtsp_transport", "tcp",
-                 f"rtsp://localhost:{spec.rtsp_port}/{spec.stream_name}"]
+                 destination]
     else:
         argv += ["-map", "0", "-copy_unknown", *video_opts, *bitrate_opts, *audio_opts,
                  "-c:d", "copy", "-max_interleave_delta", "1000",
                  "-bsf:d", "setts=dts=max(DTS\\,PREV_OUTDTS)",
-                 *ts_fix, "-f", "mpegts", f"udp://{spec.udp_target}?pkt_size=1316"]
+                 *ts_fix, "-f", "mpegts", destination + "?pkt_size=1316"]
     return argv
+
+
+PASSTHROUGH_CODECS = frozenset({'h264', 'hevc', 'mpeg2video', 'mpeg4', 'mjpeg'})
+
+
+def prepare(source_path, settings, destination):
+    """Probe once and prepare one output, with no live domain objects."""
+    profile = probe_file(source_path)
+    return _command_for_profile(source_path, settings, destination, profile)
+
+
+def _command_for_profile(source_path, settings, destination, profile):
+    """Keep decisions reproducible from a probe and explicit command inputs."""
+    eligible = bool(profile.video_codecs) and all(c in PASSTHROUGH_CODECS for c in profile.video_codecs)
+    default_mode = 'passthrough' if profile.video_codecs and set(profile.video_codecs) == {'h264'} else 'transcode'
+    mode = settings.get('mode') or default_mode
+    passthrough = mode == 'passthrough' and eligible
+    fps = settings.get('frame_rate')
+    gop = settings.get('gop_frames') or natural_gop_frames(fps or profile.frame_rate)
+    limit = settings.get('max_video_bps')
+    cap = str(limit) if limit and profile.bitrate_bps and profile.bitrate_bps > limit and not passthrough else ''
+    spec = FFmpegCommandSettings(settings['loop_count'], gop, fps, passthrough, profile.audio_copyable, cap)
+    return {
+        'argv': tuple(build_argv(source_path, spec, destination)) if destination else (),
+        'error': None if profile.video_codecs else 'No video track found; waiting for the file to change',
+        'mode': mode, 'effective_mode': 'passthrough' if passthrough else 'transcode',
+        'encoder': spec.encoder_label, 'passthrough_eligible': eligible if profile.video_codecs is not None else None,
+        'ineligible_codecs': sorted(set(profile.video_codecs or ()) - PASSTHROUGH_CODECS),
+        'source_frame_rate': profile.frame_rate,
+        'frame_rate': fps or profile.frame_rate, 'frame_rate_explicit': fps is not None,
+        'gop_frames': gop, 'gop_explicit': settings.get('gop_frames') is not None,
+    }
 
 
 # FLAG EXPLANATIONS

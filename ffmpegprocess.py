@@ -1,84 +1,83 @@
-"""Launch, stop, and diagnose FFmpeg processes without owning stream state."""
-import logging
+"""One Popen run with file-backed diagnostics and bounded termination.
+
+Called only by the supervisor thread. The injected logger is borrowed.
+"""
 import os
 import subprocess
-
-log = logging.getLogger(__name__)
-
-FFMPEG_LOG_TAIL_BYTES = 4096
-FFMPEG_REASON_CHARS = 80
+import tempfile
+import time
 
 
-def _ffmpeg_log_path(stream_name, output_name, config):
-    return config.ffmpeg_log_dir / f"{stream_name}.{output_name}.log"
+class FFmpegProcess:
+    STOP_TIMEOUT = 5
+    TAIL_BYTES = 4096
+    READ_BYTES = 65536
 
+    def __init__(self, logger):
+        self._logger = logger
+        self._process = None
+        self._argv = ()
+        self._started_at = None
+        self._capture = None
+        self._offset = 0
+        self._tail = b''
 
-def _ffmpeg_tail(stream_name, output_name, config):
-    """The end of an output's ffmpeg log, or "" when there is none."""
-    try:
-        with open(_ffmpeg_log_path(stream_name, output_name, config), "rb") as log_file:
-            log_file.seek(0, os.SEEK_END)
-            log_file.seek(max(0, log_file.tell() - FFMPEG_LOG_TAIL_BYTES))
-            return log_file.read().decode(errors="replace").strip()
-    except OSError as error:
-        log.warning("No ffmpeg log for %s/%s: %s", stream_name, output_name, error)
-        return ""
-
-
-def _last_lines(text, count):
-    lines = [line for line in text.splitlines() if line.strip()]
-    return "\n".join(lines[-count:])
-
-
-def ffmpeg_death_reason(stream_name, output_name, config):
-    """Why an output's ffmpeg died: (line for the log, lines for the UI).
-
-    ffmpeg output goes to a per-output file rather than the console (except in
-    debug mode, where it was already visible), so the reason is read back from
-    that file. The log gets the last line, cut short to stay on one line; the
-    UI gets the last two lines whole.
-    """
-    if config.show_ffmpeg_output:
-        return "see the container log", "see the container log"
-    tail = _ffmpeg_tail(stream_name, output_name, config)
-    if not tail:
-        return "ffmpeg exited without output", "ffmpeg exited without output"
-    last_line = _last_lines(tail, 1)
-    if len(last_line) > FFMPEG_REASON_CHARS:
-        last_line = last_line[:FFMPEG_REASON_CHARS - 1] + "…"
-    return last_line, _last_lines(tail, 2)
-
-
-def launch_output(argv, stream_name, output_name, config):
-    """Launch one command, directing its output to the configured destination."""
-    if config.show_ffmpeg_output:
-        process = subprocess.Popen(argv)
-    else:
-        config.ffmpeg_log_dir.mkdir(exist_ok=True)
-        # The child keeps its own fd, so closing ours right away is safe.
-        with open(_ffmpeg_log_path(stream_name, output_name, config), "wb") as ffmpeg_log:
-            process = subprocess.Popen(argv, stdout=ffmpeg_log, stderr=ffmpeg_log)
-    return process
-
-
-def stop_output(process, stream_name, output_name, should_terminate):
-    """Return whether the process exited; a wedged process still owns its slot."""
-    if should_terminate:
-        process.terminate()
-    try:
-        process.wait(timeout=5)
-    except subprocess.TimeoutExpired:
-        if not should_terminate:
-            log.warning("Output still stopping: %s/%s", stream_name, output_name)
-            return False
-        process.kill()
+    def start(self, argv):
+        if self._argv:
+            raise RuntimeError('A process wrapper owns only one run')
+        self._argv = tuple(argv)
+        self._capture = tempfile.TemporaryFile()
         try:
-            process.wait(timeout=5)
-        except subprocess.TimeoutExpired:
-            # Better to leak a wedged process than to hang the supervisor forever
-            # (can happen on stuck NFS/CIFS reads inside ffmpeg). Keep the output
-            # blocked so a second ffmpeg process can't reuse the same destination.
-            log.error("%s/%s did not die after SIGKILL, leaking pid %d",
-                      stream_name, output_name, process.pid)
+            self._process = subprocess.Popen(argv, stdout=self._capture,
+                                             stderr=subprocess.STDOUT)
+        except OSError:
+            self._capture.close()
+            self._capture = None
+            raise
+        self._started_at = time.monotonic()
+
+    def _read_diagnostics(self, finished):
+        if self._capture is None:
+            return
+        try:
+            size = os.fstat(self._capture.fileno()).st_size
+            # Bound work per tick, including the final drain after exit. Keep the
+            # newest diagnostics if the child produced more than we can forward.
+            offset = max(self._offset, size - self.READ_BYTES)
+            if offset > self._offset:
+                self._logger.warning('Skipped %d bytes of FFmpeg diagnostic backlog', offset - self._offset)
+            chunk = os.pread(self._capture.fileno(), self.READ_BYTES, offset)
+            self._offset = offset + len(chunk)
+            if chunk:
+                self._tail = (self._tail + chunk)[-self.TAIL_BYTES:]
+                self._logger.info('%s', chunk.decode('utf-8', errors='replace').rstrip())
+        except Exception as error:
+            # Capture/logging failure must not prevent process cleanup.
+            self._tail = f'Diagnostic capture failed: {error}'.encode()[-self.TAIL_BYTES:]
+        finally:
+            if finished:
+                self._capture.close()
+                self._capture = None
+
+    def observe(self):
+        code = self._process.poll() if self._process is not None else None
+        self._read_diagnostics(code is not None)
+        return {'returncode': code, 'argv': self._argv, 'started_at': self._started_at,
+                'diagnostics': self._tail.decode('utf-8', errors='replace')}
+
+    def stop(self):
+        if self._process is None:
+            return True
+        try:
+            if self._process.poll() is None:
+                self._process.terminate()
+                try:
+                    self._process.wait(timeout=self.STOP_TIMEOUT)
+                except subprocess.TimeoutExpired:
+                    self._process.kill()
+                    self._process.wait(timeout=self.STOP_TIMEOUT)
+        except ProcessLookupError:
+            pass
+        except (OSError, subprocess.TimeoutExpired):
             return False
-    return True
+        return self.observe()['returncode'] is not None

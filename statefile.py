@@ -1,121 +1,98 @@
-"""The on-disk memory of the supervisor: what survives a container restart.
-
-Answers one question — which per-stream choices and port assignments must
-outlive the process — and knows nothing about running streams. streamregistry.py
-translates its slots to and from these records; this module only reads
-and writes them.
-"""
-from __future__ import annotations
-
+"""Atomic, scoped persistence of output choices and stable assignments."""
+from copy import deepcopy
 import json
-import logging
 import os
-from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
-log = logging.getLogger(__name__)
-
-STATE_VERSION = 1
+STATE_VERSION = 2
 
 
-@dataclass(frozen=True)
-class PersistedOutput:
-    """One output's desired state."""
-    enabled: bool = True
+class StreamStateStore:
+    """One writer: the supervisor loop. Failed writes leave the prior data intact."""
+    def __init__(self, path):
+        self._path = Path(path)
+        self._document = None
 
+    def load(self):
+        if self._document is None:
+            self._document = self._read()
+        return deepcopy(self._document)
 
-@dataclass(frozen=True)
-class PersistedStream:
-    """A stream's choices. filename guards against a different file with the
-    same sanitized name inheriting them."""
-    filename: str
-    mode: str | None = None
-    loop_count: int = -1
-    gop_frames: int | None = None    # None: one second at the output frame rate
-    frame_rate: float | None = None  # None: the file's own frame rate
-    removed_at: float | None = None  # epoch seconds the file vanished; None while present
-    rtsp: PersistedOutput = PersistedOutput()
-    udp: PersistedOutput = PersistedOutput()
-
-
-@dataclass(frozen=True)
-class PersistedState:
-    # Both keyed by stream name: lookup by name is the only access pattern,
-    # and the JSON file reads naturally as a name -> record table.
-    udp_ports: dict = field(default_factory=dict)      # stream name -> UDP port
-    streams: dict = field(default_factory=dict)        # stream name -> PersistedStream
-
-
-def _output_from_json(data):
-    return PersistedOutput(enabled=bool(data.get("enabled", True)))
-
-
-def _stream_from_json(data):
-    outputs = data.get("outputs", {})
-    return PersistedStream(
-        filename=data["filename"],
-        mode=data.get("mode"),
-        loop_count=int(data.get("loop_count", -1)),
-        gop_frames=int(data["gop_frames"]) if data.get("gop_frames") is not None else None,
-        frame_rate=float(data["frame_rate"]) if data.get("frame_rate") is not None else None,
-        removed_at=float(data["removed_at"]) if data.get("removed_at") is not None else None,
-        rtsp=_output_from_json(outputs.get("rtsp", {})),
-        udp=_output_from_json(outputs.get("udp", {})),
-    )
-
-
-def load_state(path):
-    """Read the state file; an absent or unreadable file is an empty state.
-
-    Refusing to boot over a damaged state file would take every stream down
-    for the sake of remembered settings, so damage is logged and forgotten.
-    """
-    try:
-        raw = Path(path).read_text(encoding="utf-8")
-    except FileNotFoundError:
-        return PersistedState()
-    except OSError as error:
-        log.warning("Cannot read state file %s: %s", path, error)
-        return PersistedState()
-    try:
+    def _read(self):
+        try:
+            raw = self._path.read_text(encoding='utf-8')
+        except FileNotFoundError:
+            return {'version': STATE_VERSION, 'assignments': {}, 'outputs': {}}
         data = json.loads(raw)
-        if data.get("version") != STATE_VERSION:
-            log.warning("State file %s has version %r, expected %d; starting fresh",
-                        path, data.get("version"), STATE_VERSION)
-            return PersistedState()
-        return PersistedState(
-            udp_ports={name: int(port) for name, port in data.get("udp_ports", {}).items()},
-            streams={name: _stream_from_json(record)
-                     for name, record in data.get("streams", {}).items()},
-        )
-    except (ValueError, KeyError, TypeError, AttributeError) as error:
-        log.warning("State file %s is unreadable (%s); starting fresh", path, error)
-        return PersistedState()
+        if data.get('version') == 1:
+            data = self._migrate(data)
+            self._validate(data)
+            backup = self._path.with_suffix(self._path.suffix + '.v1.bak')
+            # Never overwrite an earlier migration backup.
+            try:
+                with backup.open('x', encoding='utf-8') as file:
+                    file.write(raw)
+            except FileExistsError:
+                if backup.read_text(encoding='utf-8') != raw:
+                    raise ValueError(f'Migration backup already differs: {backup}')
+            self._write(data)
+        self._validate(data)
+        return data
 
+    def _validate(self, data):
+        if data.get('version') != STATE_VERSION:
+            raise ValueError(f'Unsupported state version: {data.get("version")}')
+        if not isinstance(data.get('assignments'), dict) or not isinstance(data.get('outputs'), dict):
+            raise ValueError('Invalid state document')
+        for record in data['assignments'].values():
+            if not isinstance(record.get('filename'), str):
+                raise ValueError('Assignment must name a file')
+            port = record.get('udp_port')
+            if port is not None and (type(port) is not int or not 1 <= port <= 65535):
+                raise ValueError('Invalid saved UDP port')
+        for choices in data['outputs'].values():
+            if not isinstance(choices.get('filename'), str) or type(choices.get('enabled')) is not bool:
+                raise ValueError('Invalid saved output')
+            if choices.get('mode') not in (None, 'passthrough', 'transcode'):
+                raise ValueError('Invalid saved mode')
+            if type(choices.get('loop_count')) is not int or choices['loop_count'] < -1:
+                raise ValueError('Invalid saved loop count')
+            for key, maximum in [('frame_rate', 120), ('gop_frames', None)]:
+                value = choices.get(key)
+                if value is not None and (not isinstance(value, (int, float)) or not value >= 1 or (maximum and not value <= maximum)):
+                    raise ValueError(f'Invalid saved {key}')
 
-def save_state(path, state):
-    """Write the state atomically: a crash mid-write never truncates the file."""
-    path = Path(path)
-    document = {
-        "version": STATE_VERSION,
-        "udp_ports": dict(state.udp_ports),
-        "streams": {
-            name: {
-                "filename": record.filename,
-                "mode": record.mode,
-                "loop_count": record.loop_count,
-                "gop_frames": record.gop_frames,
-                "frame_rate": record.frame_rate,
-                "removed_at": record.removed_at,
-                "outputs": {"rtsp": asdict(record.rtsp), "udp": asdict(record.udp)},
+    def _migrate(self, data):
+        migrated = {'version': STATE_VERSION, 'assignments': {}, 'outputs': {}}
+        for name, record in data.get('streams', {}).items():
+            migrated['assignments'][name] = {
+                'filename': record['filename'], 'removed_at': record.get('removed_at'),
+                'udp_port': data.get('udp_ports', {}).get(name),
             }
-            for name, record in state.streams.items()
-        },
-    }
-    temp_path = path.with_suffix(".tmp")
-    try:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        temp_path.write_text(json.dumps(document, indent=2) + "\n", encoding="utf-8")
-        os.replace(temp_path, path)
-    except OSError as error:
-        log.error("Cannot write state file %s: %s", path, error)
+            for protocol in ('rtsp', 'udp'):
+                choices = {key: record.get(key, default) for key, default in
+                           [('mode', None), ('loop_count', -1), ('frame_rate', None), ('gop_frames', None)]}
+                choices.update(filename=record['filename'],
+                               enabled=record.get('outputs', {}).get(protocol, {}).get('enabled', True))
+                migrated['outputs'][f'{name}/{protocol}'] = choices
+        return migrated
+
+    def _write(self, document):
+        self._path.parent.mkdir(parents=True, exist_ok=True)
+        temp = self._path.with_suffix('.tmp')
+        temp.write_text(json.dumps(document, indent=2) + '\n', encoding='utf-8')
+        os.replace(temp, self._path)
+
+    def save_output(self, output_id, choices):
+        document = self.load()
+        document['outputs'][output_id] = deepcopy(choices)
+        self._write(document)
+        self._document = document
+        return True
+
+    def save_assignments(self, assignments):
+        document = self.load()
+        document['assignments'] = deepcopy(assignments)
+        self._write(document)
+        self._document = document
+        return True
