@@ -227,6 +227,37 @@ make systemd-install   # Build the image, then install the systemd unit
 make systemd-uninstall # Remove the systemd unit
 ```
 
+## Python code structure
+
+`stream_supervisor.py` loads `Config` and creates one `StreamManager`, then
+passes that manager to the HTTP server and feeds it file events. Modules can
+be imported without deployment environment variables or filesystem writes.
+
+| Module | Responsibility |
+|--------|----------------|
+| `appconfig.py` | Immutable configuration and startup validation |
+| `streammodel.py` | Stream/output state, endpoint URLs, and filename rules |
+| `streamregistry.py` | Slot ownership, retained settings, UDP port allocation, and the shared state lock |
+| `streams.py` | `StreamManager`: start/stop/settings operations, file events, and process supervision |
+| `streampolicy.py` | Pure encoding and launch decisions |
+| `streamstatus.py` | API status formatting from stream state |
+| `ffmpegcmd.py` | Media probing and FFmpeg command syntax |
+| `ffmpegprocess.py` | Process launch/termination and per-output diagnostic logs |
+| `statefile.py` | Versioned state records and atomic JSON storage |
+| `streamapi.py` | HTTP routes and UI serving, using the supplied manager |
+| `filewatch.py` | Directory polling and file-change debouncing |
+
+The manager and registry share one lock for stream state. Probing and waiting
+for processes to stop happen outside that lock. Policy and status functions
+receive their inputs explicitly and do not access the registry or perform I/O.
+HTTP routes and the saved-state format are unchanged by this module split.
+
+Run the tests with the Python standard library:
+
+```bash
+python3 -B -m unittest discover -s tests -v
+```
+
 ## Docker Compose
 
 The Dockerfile pins the MediaMTX release and rebuilds its binary with patched

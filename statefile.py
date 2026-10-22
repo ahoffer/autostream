@@ -1,8 +1,8 @@
 """The on-disk memory of the supervisor: what survives a container restart.
 
 Answers one question — which per-stream choices and port assignments must
-outlive the process — and knows nothing about running streams. streams.py
-translates its registry to and from these records; this module only reads
+outlive the process — and knows nothing about running streams. streamregistry.py
+translates its slots to and from these records; this module only reads
 and writes them.
 """
 from __future__ import annotations

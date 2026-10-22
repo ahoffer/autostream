@@ -19,12 +19,12 @@ from __future__ import annotations
 import json
 import logging
 import os
+from functools import partial
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from pathlib import Path
 from urllib.parse import urlparse, parse_qs
 
 import ffmpegcmd
-import streams
 
 log = logging.getLogger(__name__)
 
@@ -32,6 +32,10 @@ INDEX_HTML_PATH = Path(__file__).resolve().parent / "index.html"
 
 
 class StreamHandler(BaseHTTPRequestHandler):
+    def __init__(self, *args, streams, **kwargs):
+        self.streams = streams
+        super().__init__(*args, **kwargs)
+
     def log_message(self, format, *args):
         pass  # Suppress default access logging; we have our own.
 
@@ -54,7 +58,7 @@ class StreamHandler(BaseHTTPRequestHandler):
         if len(parts) != 6 or parts[:2] != ['api', 'streams'] or parts[3] != 'outputs':
             return None
         stream_name, output_name, action = parts[2], parts[4], parts[5]
-        if output_name not in ffmpegcmd.OUTPUT_NAMES or not streams.stream_exists(stream_name):
+        if output_name not in ffmpegcmd.OUTPUT_NAMES or not self.streams.stream_exists(stream_name):
             return None
         return stream_name, output_name, action
 
@@ -68,7 +72,7 @@ class StreamHandler(BaseHTTPRequestHandler):
                 return
             self.send_html(html)
         elif parsed.path == '/api/streams':
-            self.send_json(streams.get_stream_status())
+            self.send_json(self.streams.get_stream_status())
         else:
             self.send_json({"error": "Not found"}, 404)
 
@@ -85,10 +89,10 @@ class StreamHandler(BaseHTTPRequestHandler):
             # always carry an action segment, so a stream that happens to be
             # named stop-all keeps its own start/stop routes.
             if path_parts[2] == 'stop-all':
-                streams.stop_all_streams()
+                self.streams.stop_all_streams()
                 self.send_json({"success": True})
             elif path_parts[2] == 'start-all':
-                streams.start_all_streams()
+                self.streams.start_all_streams()
                 self.send_json({"success": True})
             else:
                 self.send_json({"error": "Unknown action"}, 400)
@@ -101,27 +105,27 @@ class StreamHandler(BaseHTTPRequestHandler):
                 return
             stream_name, output_name, action = route
             if action == 'start':
-                self.send_json({"success": streams.start_output(stream_name, output_name)})
+                self.send_json({"success": self.streams.start_output(stream_name, output_name)})
             elif action == 'stop':
-                self.send_json({"success": streams.disable_output(stream_name, output_name)})
+                self.send_json({"success": self.streams.disable_output(stream_name, output_name)})
             else:
                 self.send_json({"error": "Unknown action"}, 400)
             return
 
         stream_name, action = path_parts[2], path_parts[3]
-        if not streams.stream_exists(stream_name):
+        if not self.streams.stream_exists(stream_name):
             self.send_json({"error": "Stream not found"}, 404)
             return
         if action == 'start':
-            self.send_json({"success": streams.start_stream(stream_name)})
+            self.send_json({"success": self.streams.start_stream(stream_name)})
         elif action == 'stop':
-            self.send_json({"success": streams.stop_stream(stream_name)})
+            self.send_json({"success": self.streams.stop_stream(stream_name)})
         elif action == 'settings':
             settings, error = parse_settings(parse_qs(parsed.query))
             if error:
                 self.send_json({"error": error}, 400)
                 return
-            self.send_json({"success": streams.update_settings(stream_name, **settings)})
+            self.send_json({"success": self.streams.update_settings(stream_name, **settings)})
         else:
             self.send_json({"error": "Unknown action"}, 400)
 
@@ -166,10 +170,11 @@ def parse_settings(query):
                 return None, "FPS must be a number from 1 to 120, or auto"
     return settings, None
 
-def serve(port):
+def serve(port, streams):
     """Serve the control UI and API on port, until the process dies."""
     try:
-        server = ThreadingHTTPServer(('0.0.0.0', port), StreamHandler)  # type: ignore[arg-type]
+        handler = partial(StreamHandler, streams=streams)
+        server = ThreadingHTTPServer(('0.0.0.0', port), handler)
         log.debug("Stream Control UI: http://localhost:%d", port)
         server.serve_forever()
     except Exception as error:
