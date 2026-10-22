@@ -8,6 +8,12 @@ logLevel: error
 # Enable HLS
 hls: yes
 
+# Only RTSP and HLS are served. The other protocols stay off so they open no
+# ports, which matters under host networking.
+rtmp: no
+webrtc: no
+srt: no
+
 # Paths configuration
 # All videos in /app/videos are automatically discovered and streamed
 # by the stream_supervisor.py process

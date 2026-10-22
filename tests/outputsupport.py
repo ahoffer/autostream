@@ -1,14 +1,19 @@
 """Deterministic process and DNS collaborators for behavioral tests."""
 import logging
 from pathlib import Path
+import shutil
 import tempfile
 import time
 from unittest.mock import patch
 
 import ffmpegcmd
 from outputregistry import OutputRegistry
+from runtimesettings import RuntimeSettings
 from statefile import StreamStateStore
 from testsupport import make_config, state_path
+
+TEST_SETTINGS = RuntimeSettings(destination_host='receiver', udp_base_port=40000, udp_last_port=40100,
+                                max_video_bitrate='2M')
 
 
 class FakeProcess:
@@ -41,9 +46,10 @@ class FakeProcess:
 
 class FakeResolver:
     blocked = False
+    refreshed = frozenset()
 
     def refresh(self, hosts):
-        pass
+        self.refreshed = frozenset(hosts)
 
     def start_blocker(self, host):
         return 'DNS unresolved' if self.blocked else None
@@ -56,14 +62,15 @@ def inventory(*paths, deletes=(), modifies=(), unstable=()):
             'stable': names}
 
 
-def setup_outputs(test, **config_changes):
-    root = Path('.generated/rdd-refactor/tests').resolve()
-    root.mkdir(parents=True, exist_ok=True)
+def setup_outputs(test, settings=TEST_SETTINGS, **config_changes):
+    root = Path(tempfile.mkdtemp(prefix='autostream-videos-'))
+    test.addCleanup(shutil.rmtree, root, ignore_errors=True)
     with tempfile.NamedTemporaryFile(dir=root, suffix='.mp4', delete=False) as file:
         source = Path(file.name)
     test.addCleanup(source.unlink, missing_ok=True)
     config = make_config(videos_dir=root, state_path=state_path(test), **config_changes)
     store = StreamStateStore(config.state_path)
+    store.save_settings(settings.to_document())
     resolver = FakeResolver()
     registry = OutputRegistry(config, store, resolver, lambda name: logging.Logger(name))
     registry.load_persisted_state()

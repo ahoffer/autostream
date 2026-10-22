@@ -1,57 +1,37 @@
-# Typical flow: build -> compose-up. Install the systemd unit (systemd-install)
-# to run the stack on boot.
+# Typical flow: build -> test -> up. MODE=host or MODE=octo-cx selects the
+# networking mode in .env; later runs can omit it.
 
-.PHONY: help build compose-up compose-down compose-logs clean systemd-install systemd-uninstall
+.PHONY: help build test up
 
 .DEFAULT_GOAL := help
-
-# .generated/ holds composeup's copy of the last-applied mediamtx config, kept
-# so it can force-recreate the container only when the config changed.
 
 help:  ## List available targets
 	@awk 'BEGIN {FS = ":.*## "} /^[a-zA-Z0-9_-]+:.*## / {printf "  %-20s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 
-# ---- Docker / Compose ----
-
 build:  ## Build the container image
-	@# DOCKER_BUILDKIT=0 forces the legacy builder on purpose: this host has no
-	@# buildx component, so the default BuildKit path fails with "buildx is
-	@# missing or broken". Drop the override only once buildx is installed.
-	set -a && . ./.env && DOCKER_BUILDKIT=0 docker build -t $$CONTAINER_NAME:$$VERSION .
+	set -a && . ./.env && docker build -t $$CONTAINER_NAME:$$VERSION .
 
-compose-up:  ## Start via docker compose (recreates on config change; see composeup)
-	./composeup
+test: build  ## Run the unit tests inside the freshly built image
+	@# The image carries the app, not the tests; the tests and the example
+	@# settings they check are mounted in read-only, so the suite runs against
+	@# the shipped Python and ffmpeg without shipping itself.
+	set -a && . ./.env && docker run --rm \
+	  -v '$(CURDIR)/tests:/app/tests:ro' -v '$(CURDIR)/.env.example:/app/.env.example:ro' \
+	  --entrypoint python3 $$CONTAINER_NAME:$$VERSION -B -m unittest discover -s /app/tests -v
 
-compose-down:  ## Stop the docker compose stack
-	docker compose down
-
-compose-logs:  ## Tail docker compose logs
-	docker compose logs -f
-
-clean:  ## Remove the config cache
-	rm -rf .generated
-
-# ---- systemd service ----
-# Install autostream as a systemd service that wraps the docker compose flow.
-# Runs as the invoking user (not root) so docker socket access uses the same
-# group membership the user already has. Re-run to refresh the unit.
-
-SYSTEMD_UNIT_NAME := autostream.service
-SYSTEMD_UNIT_PATH := /etc/systemd/system/$(SYSTEMD_UNIT_NAME)
-
-systemd-install: build  ## Build the image, then install the systemd unit
-	@command -v envsubst >/dev/null || { echo "envsubst not found (install gettext-base)"; exit 1; }
-	@command -v systemctl >/dev/null || { echo "systemctl not found"; exit 1; }
-	@MAKE_BIN=$$(command -v make); \
-	[ -n "$$MAKE_BIN" ] || { echo "make not found in PATH"; exit 1; }; \
-	REPO_DIR='$(CURDIR)' SERVICE_USER="$${SUDO_USER:-$$(id -un)}" MAKE_BIN="$$MAKE_BIN" \
-	  envsubst '$$REPO_DIR $$SERVICE_USER $$MAKE_BIN' < autostream.service.tmpl | \
-	  sudo tee $(SYSTEMD_UNIT_PATH) > /dev/null
-	sudo systemctl daemon-reload
-	sudo systemctl enable --now $(SYSTEMD_UNIT_NAME)
-	@echo "Installed $(SYSTEMD_UNIT_NAME). Check: sudo systemctl status $(SYSTEMD_UNIT_NAME)"
-
-systemd-uninstall:  ## Remove the systemd unit
-	-sudo systemctl disable --now $(SYSTEMD_UNIT_NAME)
-	sudo rm -f $(SYSTEMD_UNIT_PATH)
-	sudo systemctl daemon-reload
+# With MODE given, make docker-compose.$(MODE).yml the active COMPOSE_FILE line
+# in .env by toggling the two lines shipped in .env.example. Create the state
+# bind source before compose does: if Docker creates it, it is root-owned and
+# the container user (UID 1000) cannot write the state file. Compose reads .env
+# itself, COMPOSE_FILE included, and recreates the container when the image or
+# the service definition changed. Stopping is a plain `docker compose down`.
+up:  ## Start the stack; MODE=host or MODE=octo-cx also selects the networking mode in .env
+	@if [ -n '$(MODE)' ]; then \
+	  grep -q '^#\?COMPOSE_FILE=docker-compose.yml:docker-compose.$(MODE).yml$$' .env || \
+	    { echo "unknown mode '$(MODE)': .env has no COMPOSE_FILE line for docker-compose.$(MODE).yml"; exit 1; }; \
+	  sed -i -e 's/^COMPOSE_FILE=/#COMPOSE_FILE=/' \
+	    -e 's/^#COMPOSE_FILE=\(docker-compose\.yml:docker-compose\.$(MODE)\.yml\)$$/COMPOSE_FILE=\1/' .env; \
+	fi
+	@grep '^COMPOSE_FILE=' .env
+	mkdir -p state
+	docker compose up -d

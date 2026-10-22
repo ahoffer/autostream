@@ -1,0 +1,6 @@
+# Host networking: MediaMTX and the API bind this host's interfaces on the
+# .env ports directly, so there is no NAT and the KLV feeds leave from the
+# host's own address. The host firewall applies to these listeners.
+services:
+  autostream:
+    network_mode: host

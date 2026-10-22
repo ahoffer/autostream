@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 """Compose the application; execute all domain work on one supervisor thread."""
-import json
 import logging
 from functools import partial
 from http.server import ThreadingHTTPServer
@@ -16,7 +15,7 @@ import streamapi
 from appconfig import Config
 from outputregistry import OutputRegistry, is_ignored
 from statefile import StreamStateStore
-from streamresponses import group_outputs
+from streamresponses import StatusSnapshot, UrlFacts
 from udphost import UdpHostResolver
 
 log = logging.getLogger(__name__)
@@ -130,22 +129,22 @@ def main():
     outputs.load_persisted_state()
     requests = Queue(maxsize=128)
     stopping = threading.Event()
-    public_urls = {'rtsp': f'rtsp://{config.hostname}:{config.rtsp_port}',
-                   'hls': f'http://{config.hostname}:{config.hls_port}'}
-    snapshot = [b'[]']
+    snapshot = [None]
     snapshot_lock = threading.Lock()
 
     def publish():
-        encoded = json.dumps(group_outputs(outputs.status(), public_urls)).encode()
+        published = StatusSnapshot(tuple(outputs.status()), outputs.settings())
         with snapshot_lock:
-            snapshot[0] = encoded
+            snapshot[0] = published
 
-    def read_status():
+    def read_snapshot():
         with snapshot_lock:
             return snapshot[0]
 
-    handler = partial(streamapi.StreamHandler, requests=requests, read_status=read_status,
-                      execute=partial(streamapi._execute_request, outputs))
+    publish()
+    handler = partial(streamapi.StreamHandler, requests=requests, read_snapshot=read_snapshot,
+                      execute=partial(streamapi._execute_request, outputs),
+                      url_facts=UrlFacts(config.rtsp_port, config.hls_port))
     server = ThreadingHTTPServer(('0.0.0.0', config.api_port), handler)
     api_thread = threading.Thread(target=server.serve_forever, name='APIServer', daemon=True)
     watcher = threading.Thread(target=_watch_files, args=(config.videos_dir, requests, stopping),
@@ -157,7 +156,7 @@ def main():
             return
         api_thread.start()
         watcher.start()
-        log.info('Supervisor starting, UI http://localhost:%d', config.api_port)
+        log.info('Supervisor starting, UI on port %d', config.api_port)
         run_loop(outputs, requests, publish, stopping)
     finally:
         stopping.set()

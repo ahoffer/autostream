@@ -188,13 +188,13 @@ def build_argv(source_path, spec, destination):
 PASSTHROUGH_CODECS = frozenset({'h264', 'hevc', 'mpeg2video', 'mpeg4', 'mjpeg'})
 
 
-def prepare(source_path, settings, destination):
+def prepare(source_path, settings, destination, max_video_bps=None):
     """Probe once and prepare one output, with no live domain objects."""
     profile = probe_file(source_path)
-    return _command_for_profile(source_path, settings, destination, profile)
+    return _command_for_profile(source_path, settings, destination, profile, max_video_bps)
 
 
-def _command_for_profile(source_path, settings, destination, profile):
+def _command_for_profile(source_path, settings, destination, profile, max_video_bps=None):
     """Keep decisions reproducible from a probe and explicit command inputs."""
     eligible = bool(profile.video_codecs) and all(c in PASSTHROUGH_CODECS for c in profile.video_codecs)
     default_mode = 'passthrough' if profile.video_codecs and set(profile.video_codecs) == {'h264'} else 'transcode'
@@ -202,7 +202,7 @@ def _command_for_profile(source_path, settings, destination, profile):
     passthrough = mode == 'passthrough' and eligible
     fps = settings.get('frame_rate')
     gop = settings.get('gop_frames') or natural_gop_frames(fps or profile.frame_rate)
-    limit = settings.get('max_video_bps')
+    limit = max_video_bps
     cap = str(limit) if limit and profile.bitrate_bps and profile.bitrate_bps > limit and not passthrough else ''
     spec = FFmpegCommandSettings(settings['loop_count'], gop, fps, passthrough, profile.audio_copyable, cap)
     return {

@@ -2,7 +2,6 @@ services:
   autostream:
     image: ${CONTAINER_NAME}:${VERSION}
     volumes:
-      - ./mediamtx.yml:/app/mediamtx.yml:ro
       - ./videos:/app/videos:ro
       - ./state:/app/state
     container_name: ${CONTAINER_NAME}
@@ -15,15 +14,5 @@ services:
     # restating each key here.
     env_file:
       - .env
-    ports:
-      - "9554:${MEDIAMTX_RTSP_PORT}"       # RTSP
-      - "9322:${MEDIAMTX_HLS_PORT}"        # HLS
-      - "9000:${MEDIAMTX_RTP_PORT}/udp"    # RTP
-      - "9001:${MEDIAMTX_RTCP_PORT}/udp"   # RTCP
-      - "9080:${STREAM_API_PORT}"          # Stream Control UI
-    networks:
-      - octo-cx-network
-
-networks:
-  octo-cx-network:
-    external: true
+    # Networking comes from the second file named in COMPOSE_FILE (.env):
+    # docker-compose.host.yml or docker-compose.octo-cx.yml.

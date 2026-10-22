@@ -4,6 +4,8 @@ import json
 import os
 from pathlib import Path
 
+from runtimesettings import RuntimeSettings
+
 STATE_VERSION = 2
 
 
@@ -24,24 +26,14 @@ class StreamStateStore:
         except FileNotFoundError:
             return {'version': STATE_VERSION, 'assignments': {}, 'outputs': {}}
         data = json.loads(raw)
-        if data.get('version') == 1:
-            data = self._migrate(data)
-            self._validate(data)
-            backup = self._path.with_suffix(self._path.suffix + '.v1.bak')
-            # Never overwrite an earlier migration backup.
-            try:
-                with backup.open('x', encoding='utf-8') as file:
-                    file.write(raw)
-            except FileExistsError:
-                if backup.read_text(encoding='utf-8') != raw:
-                    raise ValueError(f'Migration backup already differs: {backup}')
-            self._write(data)
         self._validate(data)
         return data
 
     def _validate(self, data):
         if data.get('version') != STATE_VERSION:
-            raise ValueError(f'Unsupported state version: {data.get("version")}')
+            raise ValueError(
+                f'Unsupported state version {data.get("version")} in {self._path}; '
+                f'delete the file to start fresh')
         if not isinstance(data.get('assignments'), dict) or not isinstance(data.get('outputs'), dict):
             raise ValueError('Invalid state document')
         for record in data['assignments'].values():
@@ -61,21 +53,10 @@ class StreamStateStore:
                 value = choices.get(key)
                 if value is not None and (not isinstance(value, (int, float)) or not value >= 1 or (maximum and not value <= maximum)):
                     raise ValueError(f'Invalid saved {key}')
-
-    def _migrate(self, data):
-        migrated = {'version': STATE_VERSION, 'assignments': {}, 'outputs': {}}
-        for name, record in data.get('streams', {}).items():
-            migrated['assignments'][name] = {
-                'filename': record['filename'], 'removed_at': record.get('removed_at'),
-                'udp_port': data.get('udp_ports', {}).get(name),
-            }
-            for protocol in ('rtsp', 'udp'):
-                choices = {key: record.get(key, default) for key, default in
-                           [('mode', None), ('loop_count', -1), ('frame_rate', None), ('gop_frames', None)]}
-                choices.update(filename=record['filename'],
-                               enabled=record.get('outputs', {}).get(protocol, {}).get('enabled', True))
-                migrated['outputs'][f'{name}/{protocol}'] = choices
-        return migrated
+        if 'settings' in data:
+            if not isinstance(data['settings'], dict):
+                raise ValueError('Invalid saved settings')
+            RuntimeSettings.from_document(data['settings'])
 
     def _write(self, document):
         self._path.parent.mkdir(parents=True, exist_ok=True)
@@ -93,6 +74,13 @@ class StreamStateStore:
     def save_assignments(self, assignments):
         document = self.load()
         document['assignments'] = deepcopy(assignments)
+        self._write(document)
+        self._document = document
+        return True
+
+    def save_settings(self, settings_document):
+        document = self.load()
+        document['settings'] = deepcopy(settings_document)
         self._write(document)
         self._document = document
         return True

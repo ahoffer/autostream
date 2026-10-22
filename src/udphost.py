@@ -1,5 +1,13 @@
 """Shared DNS knowledge; status and request handlers never perform lookups."""
 import socket
+from urllib.parse import urlsplit
+
+
+def udp_destination_host(destination_url):
+    """The host a udp:// destination pushes to; None for any other destination."""
+    if not destination_url or not destination_url.startswith('udp:'):
+        return None
+    return urlsplit(destination_url).hostname
 
 
 class UdpHostResolver:

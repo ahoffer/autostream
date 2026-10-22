@@ -10,6 +10,8 @@ from http.server import BaseHTTPRequestHandler
 from pathlib import Path
 from urllib.parse import urlparse, parse_qs
 
+from runtimesettings import RuntimeSettings
+from streamresponses import group_outputs
 
 log = logging.getLogger(__name__)
 
@@ -17,10 +19,11 @@ INDEX_HTML_PATH = Path(__file__).resolve().parent / "index.html"
 
 
 class StreamHandler(BaseHTTPRequestHandler):
-    def __init__(self, *args, requests, read_status, execute, **kwargs):
+    def __init__(self, *args, requests, read_snapshot, execute, url_facts, **kwargs):
         self.requests = requests
-        self.read_status = read_status
+        self.read_snapshot = read_snapshot
         self.execute = execute
+        self.url_facts = url_facts
         super().__init__(*args, **kwargs)
 
     def log_message(self, format, *args):
@@ -48,16 +51,24 @@ class StreamHandler(BaseHTTPRequestHandler):
                 return
             self.send_html(html)
         elif parsed.path == '/api/streams':
-            self.send_response(200)
-            self.send_header('Content-Type', 'application/json')
-            self.end_headers()
-            self.wfile.write(self.read_status())
+            snapshot = self.read_snapshot()
+            urls = self.url_facts.public_urls(snapshot.settings.advertised_host, self.headers.get('Host'))
+            self.send_json(group_outputs(snapshot.statuses, urls))
+        elif parsed.path == '/api/settings':
+            self.send_json(self.read_snapshot().settings.to_document())
         else:
             self.send_json({"error": "Not found"}, 404)
 
     def do_POST(self):
         parsed = urlparse(self.path)
         parts = parsed.path.strip('/').split('/')
+        if parts == ['api', 'settings']:
+            settings, error = RuntimeSettings.from_query(parse_qs(parsed.query, keep_blank_values=True))
+            if error:
+                self.send_json({'error': error}, 400)
+                return
+            self._submit('runtime-settings', changes=settings)
+            return
         if parts[:2] != ['api', 'streams']:
             self.send_json({'error': 'Not found'}, 404)
             return
@@ -100,7 +111,9 @@ class StreamHandler(BaseHTTPRequestHandler):
 
 def _execute_request(registry, action, output_id, changes):
     """Runs on the supervisor thread, never on the submitting HTTP thread."""
-    if action == 'start-all':
+    if action == 'runtime-settings':
+        success = registry.apply_settings(changes)
+    elif action == 'start-all':
         success = registry.start_all_outputs()
     elif action == 'stop-all':
         success = registry.stop_all_outputs()

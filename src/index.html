@@ -18,7 +18,7 @@
         .btn-start { background: #00c853; color: #000; }
         .btn-stop { background: #ff5252; color: #fff; }
         .btn-plain { background: transparent; color: #eee; border: 1px solid #8a93a8; }
-        select, input[type=number] { padding: 8px 10px; border-radius: 4px; background: #0f3460; color: #fff;
+        select, input[type=number], input[type=text] { padding: 8px 10px; border-radius: 4px; background: #0f3460; color: #fff;
                                      border: 1px solid #0f3460; font-size: 14px; width: 100%; }
         select:focus, input:focus { border-color: #00d4ff; outline: none; }
         /* Keyboard focus only: a visible ring for Tab users, none on mouse clicks. */
@@ -45,6 +45,10 @@
         .dot.stopped { border-color: #ff5252; }
         .sidebar-footer { margin-top: auto; display: flex; gap: 8px; padding: 16px 18px 0; }
         .sidebar-footer button { flex: 1; padding: 8px 0; }
+        .settings-panel { padding: 12px 18px 0; font-size: 13px; }
+        .settings-panel summary { cursor: pointer; color: #8a93a8; }
+        .settings-panel form { display: grid; gap: 8px; margin-top: 8px; }
+        .settings-panel label { display: grid; gap: 4px; color: #8a93a8; }
 
         /* Detail pane: the selected stream */
         .detail { display: flex; flex-direction: column; gap: 16px; padding: 28px 32px; max-width: 1000px; }
@@ -115,6 +119,17 @@
     <nav class="sidebar">
         <div class="sidebar-header"><h1>Streams</h1><span id="count"></span></div>
         <div id="list"></div>
+        <details class="settings-panel">
+            <summary>Settings</summary>
+            <form onsubmit="return saveSettings(event)">
+                <label>Destination host<input id="destination_host" type="text" placeholder="consumer host or multicast group"></label>
+                <label>UDP ports<span class="pair"><input id="udp_base_port" type="number" min="1" max="65535" placeholder="first"><input id="udp_last_port" type="number" min="1" max="65535" placeholder="last"></span></label>
+                <label>Advertised host<input id="advertised_host" type="text" placeholder="blank: the address you reached this page by"></label>
+                <label>Bitrate cap<input id="max_video_bitrate" type="text" placeholder="e.g. 2M; blank: none"></label>
+                <span class="reason" id="settings-warning"></span>
+                <button class="btn-start" type="submit">Save</button>
+            </form>
+        </details>
         <div class="sidebar-footer" id="all-buttons">
             <button class="btn-stop" onclick="stopAll(this)">Stop All</button>
             <button class="btn-start" onclick="startAll(this)">Start All</button>
@@ -302,6 +317,7 @@
             }
             renderList();
             renderDetail();
+            renderSettingsWarning();
         }
 
         function showStale() {
@@ -386,6 +402,34 @@
                 delete drafts[outputName];
                 renderDetail();
             }
+        }
+
+        // ---- Settings ----
+
+        const settingKeys = ['destination_host', 'udp_base_port', 'udp_last_port', 'advertised_host', 'max_video_bitrate'];
+
+        async function loadSettings() {
+            try {
+                const res = await fetch('/api/settings');
+                if (!res.ok) return;
+                const settings = await res.json();
+                for (const key of settingKeys) document.getElementById(key).value = settings[key] ?? '';
+            } catch (err) {
+                // The stream poll reports connectivity; the form keeps what it shows.
+            }
+        }
+
+        async function saveSettings(event) {
+            event.preventDefault();
+            const query = settingKeys.map(key => `${key}=${encodeURIComponent(document.getElementById(key).value.trim())}`).join('&');
+            if (await command(event.submitter, `/api/settings?${query}`, 'save settings')) await loadSettings();
+            return false;
+        }
+
+        function renderSettingsWarning() {
+            const outside = streams.filter(s => s.outputs.udp.port_outside_range).map(s => `${s.name}:${s.outputs.udp.udp_port}`);
+            document.getElementById('settings-warning').textContent = outside.length
+                ? `Outside the UDP range, kept by existing streams: ${outside.join(', ')}` : '';
         }
 
         // ---- Commands ----
@@ -484,6 +528,7 @@
         function startOutput(button, name, output) { return command(button, `/api/streams/${name}/outputs/${output}/start`, `start ${name}/${output}`); }
         function stopOutput(button, name, output) { return command(button, `/api/streams/${name}/outputs/${output}/stop`, `stop ${name}/${output}`); }
 
+        loadSettings();
         loadStreams();
         setInterval(loadStreams, 5000);
         setInterval(showStale, 5000);

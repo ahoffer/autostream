@@ -1,0 +1,19 @@
+# Consumer network: for a publisher on the same host as the Compose form of
+# the consumer. Joins its octo-cx-network so containers there reach this one
+# by name, and publishes the listeners one to one so the RTP/RTCP ports
+# MediaMTX advertises are the ones LAN clients reach. Pick free numbers in
+# .env when the consumer stack already uses a port on this host.
+services:
+  autostream:
+    ports:
+      - "${MEDIAMTX_RTSP_PORT}:${MEDIAMTX_RTSP_PORT}"      # RTSP
+      - "${MEDIAMTX_HLS_PORT}:${MEDIAMTX_HLS_PORT}"        # HLS
+      - "${MEDIAMTX_RTP_PORT}:${MEDIAMTX_RTP_PORT}/udp"    # RTP
+      - "${MEDIAMTX_RTCP_PORT}:${MEDIAMTX_RTCP_PORT}/udp"  # RTCP
+      - "${STREAM_API_PORT}:${STREAM_API_PORT}"            # Stream Control UI
+    networks:
+      - octo-cx-network
+
+networks:
+  octo-cx-network:
+    external: true

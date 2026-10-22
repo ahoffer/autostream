@@ -1,23 +1,36 @@
 """One delivery's behavior, called exclusively by the supervisor thread."""
 from copy import deepcopy
+from dataclasses import dataclass
 import logging
 from pathlib import Path
 import shlex
 import time
-from urllib.parse import urlsplit
 
 import ffmpegcmd
 from ffmpegprocess import FFmpegProcess
+from udphost import udp_destination_host
 
 log = logging.getLogger(__name__)
 
+# The user's choices and their defaults in one place: this mapping is also the
+# allowlist of keys that come back from the state file, so retired keys drop out.
+DEFAULT_CHOICES = {'enabled': True, 'mode': None, 'loop_count': -1, 'frame_rate': None, 'gop_frames': None}
+
+
+@dataclass(frozen=True)
+class Destination:
+    """Where one output delivers; when url is None, blocker says what the registry still lacks."""
+    url: str | None
+    blocker: str | None = None
+
 
 class MediaOutput:
-    def __init__(self, output_id, source_path, choices, destination, *, store, resolver, logger):
+    def __init__(self, output_id, source_path, choices, destination, *, max_video_bps, store, resolver, logger):
         self._id = output_id
         self._source = Path(source_path)
         self._choices = deepcopy(choices)
         self._destination = destination
+        self._max_video_bps = max_video_bps
         self._store = store
         self._resolver = resolver
         self._logger = logger
@@ -62,7 +75,7 @@ class MediaOutput:
         if self._choices['enabled']:
             return self._restart()
         # Refresh the command preview without enabling a stopped output.
-        self._prepared = ffmpegcmd.prepare(self._source, self._choices, self._destination)
+        self._prepared = self._prepare()
         return True
 
     def _reset_health(self):
@@ -83,26 +96,46 @@ class MediaOutput:
         self._reset_health()
         if self._choices['enabled']:
             return self._restart()
-        self._prepared = ffmpegcmd.prepare(self._source, self._choices, self._destination)
+        self._prepared = self._prepare()
         return True
+
+    def settings_changed(self, destination, max_video_bps):
+        """Registry-owned facts changed: restart only when the command they produce differs."""
+        self._destination, self._max_video_bps = destination, max_video_bps
+        try:
+            prepared = self._prepare()
+        except (OSError, ValueError) as error:
+            self._error = str(error)
+            return False
+        observation = self._run.observe() if self._run else None
+        running_same_command = bool(observation and observation['returncode'] is None
+                                    and tuple(prepared['argv']) == tuple(observation['argv']))
+        if not self._choices['enabled'] or running_same_command:
+            self._prepared = prepared
+            return True
+        self._reset_health()
+        return self._restart(prepared)
+
+    def _prepare(self):
+        return ffmpegcmd.prepare(self._source, self._choices, self._destination.url, self._max_video_bps)
 
     def retire(self):
         """Stop without changing saved intent; registry owns removed membership."""
         return self._stop_run()
 
     def _blocker(self):
-        if not self._destination:
-            return 'no free UDP port'
-        if self._destination.startswith('udp:'):
-            return self._resolver.start_blocker(urlsplit(self._destination).hostname)
-        return None
+        if self._destination.url is None:
+            return self._destination.blocker
+        host = udp_destination_host(self._destination.url)
+        return self._resolver.start_blocker(host) if host else None
 
-    def _restart(self):
+    def _restart(self, prepared=None):
         if not self._source.is_file():
             self._error = 'Source file is unavailable'
             return False
         try:
-            prepared = ffmpegcmd.prepare(self._source, self._choices, self._destination)
+            if prepared is None:
+                prepared = self._prepare()
             if prepared['error']:
                 if self._run is None:
                     self._prepared = prepared
@@ -112,7 +145,7 @@ class MediaOutput:
                 return False
             self._prepared = prepared
             if self._blocker():
-                return bool(self._destination)  # DNS waiting is accepted intent.
+                return True  # A missing or unresolved destination is accepted intent.
             run = FFmpegProcess(self._logger)
             run.start(prepared['argv'])
             self._run = run
@@ -164,7 +197,7 @@ class MediaOutput:
                 'state': state, 'reason': reason, 'running': running,
                 'stopping': running and not self._choices['enabled'],
                 'command': shlex.join(argv) if argv else None,
-                'error': self._error, 'destination': self._destination}
+                'error': self._error, 'destination': self._destination.url}
 
     def _state(self, running):
         if not self._choices['enabled']:
@@ -175,7 +208,7 @@ class MediaOutput:
             return 'completed', 'played to the end'
         blocker = self._blocker()
         if blocker:
-            return ('waiting' if self._destination else 'failed'), blocker
+            return 'waiting', blocker
         if self._crashes:
             return 'restarting', f'died {self._crashes}x; relaunching'
         if self._error:

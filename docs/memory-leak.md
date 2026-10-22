@@ -62,7 +62,7 @@ the supervisor or MediaMTX; the existing restart policy recovers the stack.
 
 ## Verification
 
-Run `python3 -m unittest discover -s tests`. After building and deploying,
+Run `make test`. After building and deploying,
 inspect the real RTSP and UDP commands: transcoding must use `-c:v libx264`,
 with no hardware decoder or device options. Passthrough must use `-c:v copy`.
 The container must have no GPU device mappings. Check RTSP playback and that

@@ -9,7 +9,7 @@ import unittest
 from outputregistry import stream_name_for
 from outputsupport import setup_outputs
 from streamapi import StreamHandler, _execute_request
-from streamresponses import group_outputs
+from streamresponses import StatusSnapshot, UrlFacts
 from stream_supervisor import run_loop
 
 
@@ -19,18 +19,18 @@ class HttpApiTests(unittest.TestCase):
         self.name = stream_name_for(self.source)
         self.queue = Queue(maxsize=8)
         self.stop = threading.Event()
-        self.snapshot = b'[]'
+        self.snapshot = None
         self.execution_threads = []
         def publish():
-            self.snapshot = json.dumps(group_outputs(self.registry.status(),
-                {'rtsp': 'rtsp://test:8554', 'hls': 'http://test:8888'})).encode()
+            self.snapshot = StatusSnapshot(tuple(self.registry.status()), self.registry.settings())
         def execute(*args):
             self.execution_threads.append(threading.get_ident())
             return _execute_request(self.registry, *args)
         publish()
         self.owner = threading.Thread(target=run_loop, args=(self.registry, self.queue, publish, self.stop))
         self.owner.start()
-        handler = partial(StreamHandler, requests=self.queue, read_status=lambda: self.snapshot, execute=execute)
+        handler = partial(StreamHandler, requests=self.queue, read_snapshot=lambda: self.snapshot, execute=execute,
+                          url_facts=UrlFacts(8554, 8888))
         self.server = ThreadingHTTPServer(('127.0.0.1', 0), handler)
         self.http = threading.Thread(target=self.server.serve_forever, daemon=True)
         self.http.start()
@@ -43,10 +43,10 @@ class HttpApiTests(unittest.TestCase):
         self.owner.join(3)
         self.assertFalse(self.owner.is_alive())
 
-    def request(self, method, path):
+    def request(self, method, path, headers=None):
         connection = HTTPConnection(*self.server.server_address, timeout=3)
         try:
-            connection.request(method, path)
+            connection.request(method, path, headers=headers or {})
             response = connection.getresponse()
             body = response.read().decode()
             return response.status, json.loads(body) if response.getheader('Content-Type') == 'application/json' else body
@@ -79,6 +79,30 @@ class HttpApiTests(unittest.TestCase):
         outputs = self.request('GET', '/api/streams')[1][0]['outputs'].values()
         self.assertTrue(all(output['running'] for output in outputs))
         self.assertEqual(self.request('POST', '/api/streams/absent/outputs/rtsp/start')[0], 404)
+
+    def test_stream_urls_follow_the_host_header_when_no_advertised_host_is_set(self):
+        _, groups = self.request('GET', '/api/streams', headers={'Host': 'operator-console:9080'})
+        self.assertEqual(groups[0]['rtsp_url'], f'rtsp://operator-console:8554/{self.name}')
+        self.assertEqual(groups[0]['hls_url'], f'http://operator-console:8888/{self.name}/index.m3u8')
+        self.assertEqual(groups[0]['udp_url'], 'udp://receiver:40000')
+        _, groups = self.request('GET', '/api/streams', headers={'Host': '[::1]:9080'})
+        self.assertEqual(groups[0]['rtsp_url'], f'rtsp://[::1]:8554/{self.name}')
+
+    def test_settings_round_trip_and_advertised_host_overrides_the_host_header(self):
+        self.assertIsNone(self.request('GET', '/api/settings')[1]['advertised_host'])
+        query = ('destination_host=receiver&udp_base_port=40000&udp_last_port=40100'
+                 '&advertised_host=publisher-host&max_video_bitrate=2M')
+        self.assertEqual(self.request('POST', f'/api/settings?{query}'), (200, {'success': True}))
+        self.assertEqual(self.request('GET', '/api/settings')[1]['advertised_host'], 'publisher-host')
+        _, groups = self.request('GET', '/api/streams', headers={'Host': 'operator-console:9080'})
+        self.assertEqual(groups[0]['rtsp_url'], f'rtsp://publisher-host:8554/{self.name}')
+        self.assertEqual(self.execution_threads, [self.owner.ident])
+
+    def test_invalid_settings_are_rejected_before_queueing(self):
+        for query in ('udp_base_port=40100&udp_last_port=40000', 'udp_base_port=40000',
+                      'udp_base_port=abc&udp_last_port=40001', 'max_video_bitrate=bad', 'destination_host=has%20space'):
+            self.assertEqual(self.request('POST', f'/api/settings?{query}')[0], 400, query)
+        self.assertEqual(self.execution_threads, [])
 
     def test_full_queue_rejects_mutation_but_cached_get_still_responds(self):
         from concurrent.futures import Future

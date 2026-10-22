@@ -31,14 +31,12 @@ WORKDIR /app
 # the container runs without the bind mounts.
 RUN mkdir -p /app/videos /app/state
 
-COPY stream_supervisor.py /app/stream_supervisor.py
-COPY appconfig.py mediaoutput.py outputregistry.py streamresponses.py udphost.py ffmpegprocess.py /app/
-COPY ffmpegcmd.py /app/ffmpegcmd.py
-COPY statefile.py /app/statefile.py
-COPY streamapi.py /app/streamapi.py
-COPY filewatch.py /app/filewatch.py
-COPY index.html /app/index.html
+# The supervisor and its UI page; the modules import each other by bare name,
+# so they stay flat in /app.
+COPY src/ /app/
 COPY entrypoint.sh /app/entrypoint.sh
+# The MediaMTX config is part of the image: editing it means a rebuild.
+COPY mediamtx.yml /app/mediamtx.yml
 
 # All app files and dirs owned by autostream (UID/GID 1000).
 RUN chown -R autostream:autostream /app

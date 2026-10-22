@@ -1,13 +1,13 @@
 # Regression checklist
 
 Manual checks that have caught real defects in the control UI and supervisor.
-Run against a deployed stack (`make build && make compose-up`) with the four
+Run against a deployed stack (`make build && make up MODE=host`) with the four
 sample videos in `videos/` (two H.264 MP4s, one MJPEG AVI, one MPEG-TS with
 KLV). Ground truth is always the process table and the API:
 
 ```bash
 docker exec autostream ps -o pid,etimes,args | grep ffmpeg
-curl -s localhost:9080/api/streams | python3 -m json.tool
+curl -s localhost:8080/api/streams | python3 -m json.tool
 docker logs --since 5m autostream
 cat state/streams.json
 ```
@@ -89,8 +89,9 @@ notices a dead process within one 2 s tick.
 - `docker pause` for 20 s: the sidebar shows "updates stalled Ns"; after
   unpause it clears and the state matches.
 - `docker restart` with the UI open: it recovers without a reload.
-- `OUTPUT_HOST` unresolvable: udp shows Waiting with the reason, rtsp is
-  unaffected; once resolvable the udp output starts without touching rtsp.
+- Destination host (Settings) unset or unresolvable: udp shows Waiting with the
+  reason, rtsp is unaffected; once set and resolvable the udp output starts
+  without touching rtsp.
 - UDP port range exhausted: a new stream takes the port of the
   longest-removed file; with no removed files it shows Failed with
   "no free UDP port".
@@ -113,5 +114,5 @@ notices a dead process within one 2 s tick.
 
 ## Host playback
 
-- `ffplay -rtsp_transport tcp rtsp://localhost:9554/<stream>` plays; the
-  HLS URL on port 9322 plays in VLC or a browser.
+- `ffplay rtsp://localhost:8554/<stream>` plays over UDP or TCP; the HLS URL
+  on port 8888 plays in VLC or a browser.

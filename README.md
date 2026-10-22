@@ -21,8 +21,12 @@ metadata that RTSP and HLS cannot carry).
 3. **Build and deploy** via Docker Compose:
    ```bash
    make build       # Only needed once, or after code changes
-   make compose-up
+   make up MODE=host   # or MODE=octo-cx; see "Networking modes"
    ```
+
+4. **Point the feeds at their consumer**: open `http://<this host>:8080`,
+   expand Settings in the sidebar, and enter the destination host. RTSP and
+   HLS play without it; the KLV UDP feeds wait until it is set.
 
 ## How It Works
 
@@ -49,7 +53,7 @@ output stays stopped and uses its saved choices on the next Start. The modes:
   with the reason shown in the UI. Note that
   passthrough streams follow the source file's keyframe cadence (players join
   and recover at source keyframes) instead of the enforced 1-second GOP, and
-  `MAX_VIDEO_BITRATE` does not apply.
+  the bitrate cap does not apply.
 - **Transcode** (`Video: Transcode`): re-encode to H.264 with a clean GOP
   (fixes loop-point artifacts) and the bitrate cap applied, using the
   `libx264` software encoder. Two encoder settings sit
@@ -100,23 +104,26 @@ UI with their own settings, Start, and Stop:
 
 - **rtsp** publishes to MediaMTX, which serves it as RTSP and HLS. HLS has no
   separate process: it is up whenever rtsp is.
-- **udp** pushes the KLV-preserving MPEG-TS feed to `OUTPUT_HOST`.
+- **udp** pushes the KLV-preserving MPEG-TS feed to the destination host set
+  under Settings.
 
 Each output shows one of these states: **Running**; **Crashing** (the
 process died unexpectedly and was relaunched; the last lines of its ffmpeg
 log are shown, and the state clears once it has stayed up for a minute);
 **Restarting** (died, relaunch pending on the next sweep); **Starting**;
-**Waiting** (UDP destination DNS is unresolved; a DNS answer does not prove receiver health);
-**Failed** (could not be started, with the reason: no UDP port left, or
-the file has no video track, which is what a non-video file or a copy still
-in progress looks like; it is retried when the file changes); **Stopped**;
+**Waiting** (the udp output lacks a destination host or a port, or the
+destination name is unresolved; a DNS answer does not prove receiver health);
+**Failed** (could not be started, with the reason: the file has no video
+track, which is what a non-video file or a copy still in progress looks like;
+it is retried when the file changes); **Stopped**;
 **Completed** (a finite loop played to the end); **Stopping** (a disabled
 process has not exited); **Retiring** (a removed source still occupies its destination).
 
 Stopping one output leaves the other running, and the choice is remembered:
 a stopped output stays down through dead-process sweeps, settings changes,
 and container restarts until it is started again. Start All / Stop All apply to
-every present output; Start All preserves already-running processes. Both processes decode and encode
+every present output; Start All preserves already-running processes and counts
+a waiting udp output as started. Both processes decode and encode
 independently, so a transcoded stream costs about twice the CPU it
 did as a single process.
 
@@ -127,8 +134,8 @@ table at the bottom of `ffmpegcmd.py`.
 ## State
 
 `state/streams.json` (bind-mounted to `/app/state`) remembers each output's
-mode, loop, FPS, GOP, enabled choice, and encoding defaults, plus the UDP
-port assigned to each stream name. Settings and the port of a video that was
+mode, loop, FPS, GOP, and enabled choice, the UDP port assigned to each
+stream name, and the values from the Settings panel. Choices and the port of a video that was
 removed are kept so the same file gets them back when copied in again; once
 the port range is full, the longest-removed file's port (and settings) are
 given to the newcomer. A file whose stem sanitizes to nothing (for example
@@ -136,27 +143,33 @@ given to the newcomer. A file whose stem sanitizes to nothing (for example
 Delete the state file while the container is stopped to reset everything,
 including port assignments.
 
-Version 2 stores independent output records. On first startup with a version 1
-file, the store copies the former shared settings to both outputs, preserves
-independent enabled flags and UDP assignments, validates the result, and backs
-up the original as `streams.json.v1.bak` before replacing it. Later edits do not
-synchronize the two records. Migration runs at startup, not during a build.
+Each output has its own record: the RTSP and UDP outputs of one video do not
+share settings. The destination host and the bitrate cap are never stored per
+output; they follow the Settings panel, so a change there reaches every output
+when saved. A state file written by an earlier release is rejected at
+startup; delete it to start fresh.
 
 ## Stream URLs
 
-Other containers on `octo-cx-network` reach each stream through the `autostream`
-service on the ports configured in `.env`:
-- **RTSP**: `rtsp://autostream:${MEDIAMTX_RTSP_PORT}/<stream-name>` (default `8554`)
-- **HLS**: `http://autostream:${MEDIAMTX_HLS_PORT}/<stream-name>/index.m3u8` (default `8888`)
-- **UDP (KLV)**: `udp://${OUTPUT_HOST}:<port>` — MPEG-TS with KLV/data streams
-  preserved. Each stream gets its own port from `${UDP_BASE_PORT}` through
-  `${UDP_LAST_PORT}`; the exact port per stream is shown in the control UI and
-  the `/api/streams` output. A port stays assigned to its stream name (see
-  "State") so a consumer's registration keeps working across restarts, so a
-  run that cycles through more videos than the range holds will use it up —
-  later streams then publish RTSP/HLS only and say so in the UI.
+Any client that can reach the publisher host plays the streams at the
+advertised host on the ports configured in `.env`:
+- **RTSP**: `rtsp://<advertised host>:${MEDIAMTX_RTSP_PORT}/<stream-name>` (default `8554`)
+- **HLS**: `http://<advertised host>:${MEDIAMTX_HLS_PORT}/<stream-name>/index.m3u8` (default `8888`)
+- **UDP (KLV)**: `udp://<destination host>:<port>` — MPEG-TS with KLV/data streams
+  preserved, pushed to the destination host set under Settings. Each stream
+  gets its own port from the UDP range set there; the exact port per stream is
+  shown in the control UI and the `/api/streams` output. A port stays assigned
+  to its stream name (see "State") so a consumer's registration keeps working
+  across restarts, so a run that cycles through more videos than the range
+  holds will use it up — later streams then publish RTSP/HLS only and say so
+  in the UI.
 
-For access from the host, see "Port Mappings" below.
+The advertised host is whatever address you reached the UI by, unless the
+Settings panel names one. Set it when the consumer must use a different
+address than you did, for example a container that cannot resolve the name
+your browser used. Containers resolve neither `.local` names nor another
+host's container names; an IP address or a name the LAN's DNS knows works
+everywhere.
 
 ### KLV / MISB metadata
 
@@ -165,25 +178,34 @@ timed-metadata data streams are dropped (ffmpeg's RTP muxer cannot carry them
 either). To preserve KLV, autostream also stream-copies the data streams into an
 MPEG-TS feed pushed over **UDP**, the standard MISB/STANAG-4609 transport.
 
-In the octo-cx stack, `OUTPUT_HOST` defaults to the cx-search **video-streaming**
-service (on `octo-cx-network`), which listens on `udp://0.0.0.0:<port>`, decodes
-the KLV, and publishes it to the AMQP `stream.klv` topic that cx-edge consumes
-for geolocation. Add each feed to cx-search like any other stream, using the
-`udp://0.0.0.0:<port>` the UI/API reports for it — there is no separate
-registration step beyond adding the stream. Keep `UDP_BASE_PORT`/`UDP_LAST_PORT`
-inside video-streaming's own ingest range (`UDP_START_PORT`..`UDP_END_PORT`,
-`40000-40100` by default) or it will not be listening where autostream pushes.
+The consumer is cx-search's **video-streaming** service, which listens on
+`udp://0.0.0.0:<port>`, decodes the KLV, and publishes it to the AMQP
+`stream.klv` topic that cx-edge consumes for geolocation. Set the destination
+host under Settings to the address of the host running that service, as
+reachable from the publisher host. Add each feed to cx-search like any other
+stream, using `udp://0.0.0.0:<port>` with the port the UI/API reports for it —
+there is no separate registration step beyond adding the stream. Keep the UDP
+range inside video-streaming's own ingest range (`UDP_START_PORT`..`UDP_END_PORT`,
+`40000-40100` by default, which Settings also defaults to) or it will not be
+listening where autostream pushes. The Compose form of the consumer publishes
+that range into its container; the Kubernetes chart exposes no UDP today, so
+the KLV path there needs a UDP NodePort, LoadBalancer, or host networking on
+the consumer side. Its multicast-input allocator draws from the same range and
+cannot see ports autostream already uses.
 
-UDP is push, not pull. If `OUTPUT_HOST` does not resolve (for example the
-cx-search stack isn't running), autostream logs a warning and holds the udp
-output back rather than failing — it starts on its own once the consumer is
-reachable, without touching the rtsp output. For standalone use, set `OUTPUT_HOST` to any
-reachable consumer or a multicast group like `239.0.0.1`. Verify a feed with, for
-example, `ffprobe udp://<host>:<port>` — the KLV stream appears as `Data: klv (KLVA)`.
+UDP is push, not pull. An unset destination host, or one whose name does not
+resolve, holds the udp output back in Waiting rather than failing — it starts
+on its own once the destination is set and resolvable, without touching the
+rtsp output. An IP address always resolves, so a consumer that has moved or
+stopped shows as Running here while the packets go nowhere; check the
+consumer's logs. For standalone use, set the destination host to any reachable
+consumer or a multicast group like `239.0.0.1`. Verify a feed on the receiving
+host with, for example, `ffprobe udp://0.0.0.0:<port>` — the KLV stream appears
+as `Data: klv (KLVA)`.
 
 **Example:** If you add `sailboat.mp4` to the `videos/` directory:
 ```
-rtsp://autostream:8554/sailboat
+rtsp://<advertised host>:8554/sailboat
 ```
 
 Stream names are sanitized from filenames:
@@ -192,25 +214,28 @@ Stream names are sanitized from filenames:
 
 ## Configuration
 
+Two kinds of configuration exist. `.env` holds what the container needs before
+it starts: the image, the networking mode, the listener ports, and the log
+level. Everything about where feeds go and how streams are advertised is set
+at run time in the web UI under **Settings** and saved with the state.
+
+### `.env`
+
 Copy `.env.example` to `.env` if you have not created it yet, then edit `.env`
 for your environment. `.env` is ignored by Git; `.env.example` contains the
 shared defaults. When adding configuration variables, update `.env.example`
 and add the new settings to existing installations' local `.env` files.
 
 Docker Compose reads `.env` directly and passes the whole file through to the
-container; `mediamtx.yml` is mounted in as-is. `.env` is the single source of
-truth: every variable must be set, and the only one that may be empty is
-`MAX_VIDEO_BITRATE` (empty disables the cap). The Default column shows the
-shipped `.env.example` values.
+container; `mediamtx.yml` is copied into the image, so editing it means
+`make build`. Every variable must be set. The
+Default column shows the shipped `.env.example` values.
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `CONTAINER_NAME` | Image name and service/hostname used in stream URLs | `autostream` |
-| `VERSION` | Image version tag | `2.2.2` (see `.env.example`) |
-| `MAX_VIDEO_BITRATE` | Cap video bitrate (for example `3M`, `5M`); transcode mode only — passthrough sends the source bitrate unchanged | `2M` |
-| `OUTPUT_HOST` | Host/service the KLV UDP feeds are pushed to (cx-search `video-streaming`, or an IP/multicast group) | `video-streaming` |
-| `UDP_BASE_PORT` | First UDP port; each stream gets the next one | `40000` |
-| `UDP_LAST_PORT` | Last UDP port; streams arriving after the range is used up run RTSP/HLS only | `40100` |
+| `CONTAINER_NAME` | Image and container name | `autostream` |
+| `VERSION` | Image version tag | `2.3.0` (see `.env.example`) |
+| `COMPOSE_FILE` | Networking mode: the base file plus `docker-compose.host.yml` or `docker-compose.octo-cx.yml` (see "Networking modes") | host |
 | `MEDIAMTX_RTSP_PORT` | RTSP listener port | `8554` |
 | `MEDIAMTX_HLS_PORT` | HLS HTTP port | `8888` |
 | `MEDIAMTX_RTP_PORT` | RTP UDP port | `8000` |
@@ -218,39 +243,61 @@ shipped `.env.example` values.
 | `STREAM_API_PORT` | Stream control UI/API port | `8080` |
 | `LOG_LEVEL` | Supervisor log level; `debug` also shows ffmpeg output | `info` |
 
+### Settings
+
+The Settings panel in the UI sidebar edits these; `GET` and `POST
+/api/settings` carry the same five keys. Blank means unset. A save takes effect
+at once and is remembered in `state/streams.json`.
+
+| Setting | Meaning | Default |
+|---------|---------|---------|
+| Destination host | Where the KLV UDP feeds are pushed: the consumer host's address as reachable from the publisher, or a multicast group. Unset holds every udp output in Waiting. Changing it restarts the enabled udp outputs. | unset |
+| UDP ports (first, last) | The range handed out to streams, matching the consumer's ingest range. Changing it affects new streams only: existing ones keep their ports, and the panel warns while any of them lie outside the range. | `40000`-`40100` |
+| Advertised host | Host in the RTSP/HLS URLs the UI and API show. Blank uses the address the client reached the API by. | blank |
+| Bitrate cap | Transcode-only cap such as `2M` or `3000K`; passthrough sends the source bitrate unchanged. Changing it restarts only outputs transcoding above it. Blank disables the cap. | blank |
+
+Values from an older `.env` (`OUTPUT_HOST`, `UDP_BASE_PORT`, `UDP_LAST_PORT`,
+`MAX_VIDEO_BITRATE`) are ignored; enter them in the panel once after upgrading.
+The UI has no authentication, so anyone who can reach the API port can change
+where the feeds go.
+
 ## Commands
 
 ```bash
 make build             # Build the container image
-make compose-up        # Start via Docker Compose
-make compose-down      # Stop the Docker Compose stack
-make compose-logs      # Tail Docker Compose logs
-make clean             # Remove the config cache
-
-# systemd service (optional; runs the stack on boot)
-make systemd-install   # Build the image, then install the systemd unit
-make systemd-uninstall # Remove the systemd unit
+make test              # Build the image, then run the tests inside it
+make up                # Start the stack in the mode .env names
+make up MODE=host      # Select host networking in .env, then start
+make up MODE=octo-cx   # Select the consumer's docker network, then start
+# Logs: `docker compose logs -f`. Stop: `docker compose down`. Both in this directory.
 ```
 
 ## Python code structure
 
+The application modules and the UI page live in `src/` and are copied flat into
+`/app` in the image, so they import each other by bare module name. The root
+holds the container and deployment files plus the host-side diagnostic
+`socket_memory.py`.
+
 `stream_supervisor.py` owns all output changes and persistence. HTTP threads
 submit operations to a bounded queue. One background thread runs the existing
 directory polling/stability checker and submits detached observations to that
-same queue. The supervisor executes work in order and publishes JSON snapshots;
-HTTP GET never walks live outputs. There is no lifecycle state machine or
+same queue. The supervisor executes work in order and publishes detached
+status snapshots; HTTP GET composes URLs from the snapshot and never walks
+live outputs. There is no lifecycle state machine or
 per-output synchronization protocol.
 
 | Module | Responsibility |
 |--------|----------------|
-| `appconfig.py` | Immutable startup configuration |
+| `appconfig.py` | Start-up facts from `.env`: ports and log level |
+| `runtimesettings.py` | Operator settings: destination, UDP range, advertised host, bitrate cap; validation in one place |
 | `outputregistry.py` | Output lookup, collisions, stable UDP assignments, and removed-source cleanup |
 | `mediaoutput.py` | Independent settings, start/stop, finite completion, and recovery |
 | `ffmpegcmd.py` | Media probing, encoding decisions, and command syntax |
 | `ffmpegprocess.py` | Popen, bounded shutdown, and file-backed diagnostics |
-| `statefile.py` | Single-writer persistence, migration, and atomic replacement |
-| `streamapi.py` | HTTP validation, queued mutations, and cached status/UI serving |
-| `streamresponses.py` | Format detached output descriptions |
+| `statefile.py` | Single-writer persistence and atomic replacement |
+| `streamapi.py` | HTTP validation, queued mutations, settings, and status/UI serving |
+| `streamresponses.py` | Format detached output descriptions and compose URLs per request |
 | `filewatch.py` | Background polling, stability checking, and present/stable inventories |
 | `udphost.py` | DNS cache shared by independently configured outputs |
 
@@ -272,13 +319,21 @@ tail. Large diagnostic bursts may be truncated with a log notice. Per-output
 logs rotate at 2 MB with one backup; the temporary capture file can grow for the
 lifetime of a run. There is no pipe-reader thread.
 
-See [the RDD design](docs/responsibility-driven-design.md) and
-[the refactor measurements](docs/refactor-metrics.md).
+### Tests
 
-Run the tests with the Python standard library:
+The tests use only the Python standard library and run inside the container
+image, against the same Python and ffmpeg that ship:
 
 ```bash
-python3 -B -m unittest discover -s tests -v
+make test
+```
+
+It rebuilds the image, then mounts `tests/` read-only into a throwaway
+container; the image itself carries no tests. For a quick run on the host
+instead:
+
+```bash
+PYTHONPATH=src python3 -B -m unittest discover -s tests -v
 ```
 
 ## Docker Compose
@@ -289,40 +344,68 @@ update its checksum together with `MEDIAMTX_VERSION`. The build also applies
 available Alpine package fixes before installing Python. The compiler and
 source files stay in the build stage, outside the runtime image.
 
-Plain `docker compose up -d` also works after the image is built; `make
-compose-up` adds config-change detection so `mediamtx.yml` edits recreate the
-container when needed.
+Plain `docker compose up -d` also works after the image is built; `make up`
+only adds the optional mode selection and the `state/` directory.
+`mediamtx.yml` is part of the image: edit it, run `make build`, then the mode
+target again, and Compose recreates the container on the new image.
 
-**Note:** Docker Compose uses an external network `octo-cx-network`. Create it first if it doesn't exist:
-```bash
-docker network create octo-cx-network
-```
+### Networking modes
 
-### Port Mappings (Docker Compose)
+`.env` names the compose files to use in `COMPOSE_FILE`; keep exactly one of
+the two lines active. `make up MODE=host` or `MODE=octo-cx` toggles the line
+and starts the stack. Nothing is detected: the mode is whatever that line says.
 
-| Service | External Port | Internal Port |
-|---------|---------------|---------------|
-| RTSP    | 9554          | 8554          |
-| HLS     | 9322          | 8888          |
-| RTP     | 9000/udp      | 8000/udp      |
-| RTCP    | 9001/udp      | 8001/udp      |
-| Web UI  | 9080          | 8080          |
+- **Host networking** (`docker-compose.host.yml`): MediaMTX and the API bind
+  the host's interfaces on the `.env` ports directly, with no NAT, and the KLV
+  feeds leave from the host's own address. For a publisher on its own host.
+  The host firewall applies to these listeners; on a host running ufw, allow
+  them from the LAN, for example:
 
-Access streams at:
-- **RTSP**: `rtsp://localhost:9554/<stream-name>`
-- **HLS**: `http://localhost:9322/<stream-name>/index.m3u8`
-- **Web UI**: `http://localhost:9080`
+  ```bash
+  sudo ufw allow from <lan subnet> to any port 8554 proto tcp
+  sudo ufw allow from <lan subnet> to any port 8888 proto tcp
+  sudo ufw allow from <lan subnet> to any port 8080 proto tcp
+  sudo ufw allow from <lan subnet> to any port 8000:8001 proto udp
+  ```
 
-To watch from the host, force RTSP over TCP:
+- **Consumer network** (`docker-compose.octo-cx.yml`): joins the consumer's
+  external `octo-cx-network`, so containers there reach this one as
+  `autostream`, and publishes the ports one to one so the RTP/RTCP ports
+  MediaMTX advertises are the ones LAN clients reach. For a publisher on the
+  same host as the Compose form of the consumer, which must already have
+  created the network. Published ports bypass ufw. Pick free numbers in `.env`
+  when the consumer stack already uses a port on that host (its relay
+  publishes 8554); with one-to-one publishing that is the only change.
 
-```bash
-ffplay -rtsp_transport tcp rtsp://localhost:9554/cargoship2
-```
+In both modes the ports clients use are the `.env` values, so `ffplay
+rtsp://<advertised host>:8554/<stream-name>` works over UDP or TCP;
+video-streaming itself prefers TCP. The web UI is `http://<publisher
+address>:8080`.
 
-ffplay defaults to RTP over UDP, and MediaMTX advertises its internal RTP
-ports (8000/8001) while the host sees them as 9000/9001, so the UDP
-negotiation lands on the wrong ports and playback stalls. Over TCP the
-video rides the RTSP connection and the mapping does not matter.
+### Deploying across hosts
+
+The publisher host runs autostream outside the consumer's Docker network or
+Kubernetes cluster; the consumer host runs cx-search `video-streaming`, which
+pulls RTSP/HLS or listens for the UDP feeds. Containers on either host resolve
+neither `.local` names nor the other host's container names, so use addresses
+the LAN's DNS knows or IP addresses, and reserve those addresses on the
+router: a changed publisher address breaks every advertised URL and CX
+registration, and a changed consumer address sends the KLV feeds nowhere
+without any error here.
+
+1. On the publisher: `.env` with the host networking line, `make build`,
+   `make up MODE=host`, and the firewall rules above if ufw is active.
+2. Open the web UI, expand Settings, and set the destination host to the
+   consumer host's address. Leave the UDP range at the consumer's ingest range
+   (`40000-40100` in the Compose form). Set the advertised host only if the
+   consumer must use a different address than your browser did.
+3. KLV path: for each stream, add `udp://0.0.0.0:<port shown in the UI>` as a
+   stream in CX-Watch. Video only: add `rtsp://<advertised host>:8554/<name>`
+   instead (KLV is lost; MediaMTX drops it).
+4. Check from the consumer host: `docker exec video-streaming ffprobe -v error
+   -rtsp_transport tcp -show_streams rtsp://<advertised host>:8554/<name>`;
+   once a UDP stream is registered, `docker logs video-streaming` shows ffmpeg
+   reading that port without an input error.
 
 ## Supported Formats
 

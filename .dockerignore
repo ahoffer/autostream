@@ -1,0 +1,11 @@
+# Keep caches and host-only data out of the build context and the image.
+**/__pycache__
+**/*.pyc
+.git
+.generated
+.idea
+.playwright-cli
+.playwright-mcp
+docs
+state
+videos

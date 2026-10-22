@@ -1,6 +1,8 @@
+import logging
 import unittest
 from unittest.mock import patch
 
+from mediaoutput import DEFAULT_CHOICES, Destination, MediaOutput
 from outputregistry import stream_name_for
 from outputsupport import FakeProcess, setup_outputs
 
@@ -68,6 +70,14 @@ class OutputBehaviorTests(unittest.TestCase):
         self.resolver.blocked = False
         self.udp.supervise()
         self.assertTrue(self.udp.status()['running'])
+
+    def test_missing_destination_is_accepted_intent_with_the_registry_reason(self):
+        output = MediaOutput('other/udp', self.source, dict(DEFAULT_CHOICES), Destination(None, 'no destination host configured'),
+                             max_video_bps=None, store=self.store, resolver=self.resolver, logger=logging.Logger('other'))
+        count = len(FakeProcess.runs)
+        self.assertTrue(output.start_streaming())
+        self.assertEqual((output.status()['state'], output.status()['reason']), ('waiting', 'no destination host configured'))
+        self.assertEqual(len(FakeProcess.runs), count)
 
     def test_start_all_keeps_running_processes(self):
         self.assertTrue(self.registry.start_all_outputs())
