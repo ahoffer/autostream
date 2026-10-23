@@ -1,14 +1,15 @@
 """Everything ffmpeg: probing a file and building argv.
 
-MediaOutput decides whether delivery is enabled. This module probes media,
-resolves encoding choices, and renders the resulting command line. Each output of a stream is its own ffmpeg process, so build_argv
-produces one complete command per output:
+MediaStream decides whether delivery is enabled. This module probes media,
+resolves encoding choices, and renders the resulting command line. Each stream
+is its own ffmpeg process, so build_argv produces one complete command per
+stream, shaped by its Delivery:
 
-  rtsp  RTSP -> MediaMTX (which also republishes it as HLS). This is the
-        human / RTSP-client view. RTP cannot carry KLV, so only video+audio
-        are mapped.
-  udp   MPEG-TS over UDP to host:port, with EVERY stream mapped and data/KLV
-        copied through untouched. This is the metadata-preserving feed.
+  rtsp muxer     RTSP -> MediaMTX (which republishes it as HLS and RTMP). RTP
+                 cannot carry KLV, so only video+audio are mapped.
+  other muxers   MPEG-TS, plain or inside RTP, or as HLS segments, with EVERY
+                 stream mapped and data/KLV copied through untouched. These
+                 are the metadata-preserving feeds.
 
 In transcode mode video is re-encoded to a clean GOP structure to fix looping
 artifacts and to honor the bitrate cap, using libx264 in software. In
@@ -25,8 +26,6 @@ from dataclasses import dataclass
 from pathlib import Path
 
 log = logging.getLogger(__name__)
-
-OUTPUT_NAMES = ("rtsp", "udp")
 
 # GOP fallback in frames when the file's frame rate is unknown. The natural
 # default is one second of frames at the file's own rate (natural_gop_frames);
@@ -57,9 +56,10 @@ class MediaProbeResult:
     pix_fmt: str | None
     bitrate_bps: int | None
     frame_rate: float | None
+    data_codecs: tuple | None = ()   # KLV shows up here as 'klv'
 
 
-UNKNOWN_PROFILE = MediaProbeResult(None, None, False, None, None, None)
+UNKNOWN_PROFILE = MediaProbeResult(None, None, False, None, None, None, None)
 
 
 def _parse_frame_rate(text):
@@ -104,6 +104,7 @@ def probe_file(video_path):
     ordered = sorted(report.get("streams", []), key=lambda entry: entry.get("index", 0))
     video_streams = [entry for entry in ordered if entry.get("codec_type") == "video"]
     audio_streams = [entry for entry in ordered if entry.get("codec_type") == "audio"]
+    data_streams = [entry for entry in ordered if entry.get("codec_type") == "data"]
     bitrate = None
     for candidate in (*(entry.get("bit_rate") for entry in video_streams[:1]),
                       report.get("format", {}).get("bit_rate")):
@@ -118,6 +119,7 @@ def probe_file(video_path):
         pix_fmt=video_streams[0].get("pix_fmt") if video_streams else None,
         bitrate_bps=bitrate,
         frame_rate=_parse_frame_rate(video_streams[0].get("avg_frame_rate")) if video_streams else None,
+        data_codecs=tuple(entry.get("codec_name", "") for entry in data_streams),
     )
 
 
@@ -138,9 +140,8 @@ class FFmpegCommandSettings:
         return "libx264 (software)"
 
 
-def build_argv(source_path, spec, destination):
-    """Render the prepared decisions as one complete FFmpeg command."""
-    output_name = destination.split(':', 1)[0]
+def build_argv(source_path, spec, delivery):
+    """Render the prepared decisions as one complete FFmpeg command for one delivery."""
     if spec.passthrough:
         # The supervisor verified every video track is one MediaMTX carries: send the
         # source bits unmodified. A bitrate cap cannot apply to copied packets
@@ -172,29 +173,39 @@ def build_argv(source_path, spec, destination):
 
     argv = ["ffmpeg", "-hide_banner", "-nostats",
             "-re", "-stream_loop", str(spec.loop_count), "-i", str(source_path)]
-    if output_name == "rtsp":
-        argv += ["-map", "0:v?", "-map", "0:a?", *video_opts, *bitrate_opts, *audio_opts,
-                 *ts_fix, *vsync_opts,
-                 "-f", "rtsp", "-rtsp_transport", "tcp",
-                 destination]
-    else:
+    if delivery.carries_klv:
+        # Inside RTP the transport stream is re-muxed once more, and that outer
+        # muxer insists on monotonic timestamps, so there the muxer must be
+        # allowed to interleave the sparse KLV packets properly.
+        interleave = [] if delivery.muxer == "rtp_mpegts" else ["-max_interleave_delta", "1000"]
         argv += ["-map", "0", "-copy_unknown", *video_opts, *bitrate_opts, *audio_opts,
-                 "-c:d", "copy", "-max_interleave_delta", "1000",
-                 "-bsf:d", "setts=dts=max(DTS\\,PREV_OUTDTS)",
-                 *ts_fix, "-f", "mpegts", destination + "?pkt_size=1316"]
+                 "-c:d", "copy", *interleave,
+                 "-bsf:d", "setts=dts=max(DTS\\,PREV_OUTDTS)", *ts_fix]
+    else:
+        argv += ["-map", "0:v?", "-map", "0:a?", *video_opts, *bitrate_opts, *audio_opts,
+                 *ts_fix, *vsync_opts]
+    argv += list(delivery.extra_args)
+    if delivery.muxer == "rtsp":
+        argv += ["-f", "rtsp", "-rtsp_transport", "tcp", delivery.url]
+    elif delivery.muxer == "hls":
+        argv += ["-f", "hls", "-hls_time", "2", "-hls_list_size", "6", "-hls_flags", "delete_segments",
+                 "-hls_segment_type", "mpegts",
+                 "-hls_segment_filename", str(Path(delivery.url).with_name("seg%05d.ts")), delivery.url]
+    else:
+        argv += ["-f", delivery.muxer, delivery.url]
     return argv
 
 
 PASSTHROUGH_CODECS = frozenset({'h264', 'hevc', 'mpeg2video', 'mpeg4', 'mjpeg'})
 
 
-def prepare(source_path, settings, destination, max_video_bps=None):
-    """Probe once and prepare one output, with no live domain objects."""
+def prepare(source_path, settings, delivery, max_video_bps=None):
+    """Probe once and prepare one stream, with no live domain objects."""
     profile = probe_file(source_path)
-    return _command_for_profile(source_path, settings, destination, profile, max_video_bps)
+    return _command_for_profile(source_path, settings, delivery, profile, max_video_bps)
 
 
-def _command_for_profile(source_path, settings, destination, profile, max_video_bps=None):
+def _command_for_profile(source_path, settings, delivery, profile, max_video_bps=None):
     """Keep decisions reproducible from a probe and explicit command inputs."""
     eligible = bool(profile.video_codecs) and all(c in PASSTHROUGH_CODECS for c in profile.video_codecs)
     default_mode = 'passthrough' if profile.video_codecs and set(profile.video_codecs) == {'h264'} else 'transcode'
@@ -206,8 +217,10 @@ def _command_for_profile(source_path, settings, destination, profile, max_video_
     cap = str(limit) if limit and profile.bitrate_bps and profile.bitrate_bps > limit and not passthrough else ''
     spec = FFmpegCommandSettings(settings['loop_count'], gop, fps, passthrough, profile.audio_copyable, cap)
     return {
-        'argv': tuple(build_argv(source_path, spec, destination)) if destination else (),
+        'argv': tuple(build_argv(source_path, spec, delivery)) if delivery.url else (),
         'error': None if profile.video_codecs else 'No video track found; waiting for the file to change',
+        'video_codecs': list(profile.video_codecs or ()), 'audio_codecs': list(profile.audio_codecs or ()),
+        'data_codecs': list(profile.data_codecs or ()),
         'mode': mode, 'effective_mode': 'passthrough' if passthrough else 'transcode',
         'encoder': spec.encoder_label, 'passthrough_eligible': eligible if profile.video_codecs is not None else None,
         'ineligible_codecs': sorted(set(profile.video_codecs or ()) - PASSTHROUGH_CODECS),
@@ -284,8 +297,11 @@ def _command_for_profile(source_path, settings, destination, profile, max_video_
 # -vsync cfr                     (RTSP output, transcode only) Constant frame rate (even
 #                                frame spacing at loop point); an encode-path operation
 #                                ffmpeg rejects when combined with -c:v copy
-# -max_interleave_delta 1000     (UDP output) Bound how long the muxer waits to interleave the
-#                                sparse KLV data stream against video/audio.
+# -max_interleave_delta 1000     (transport stream outputs except RTP) Bound how long the
+#                                muxer waits to interleave the sparse KLV data stream
+#                                against video/audio. Omitted for rtp_mpegts: its outer
+#                                RTP muxer rejects the out-of-order timestamps that an
+#                                early flush produces, so the default wait applies there.
 # -bsf:d setts=dts=max(DTS,PREV_OUTDTS)
 #                                (UDP output) Force copied data-stream DTS to stay monotonic
 #                                after the video transcode retimes the program, and as a
@@ -296,11 +312,19 @@ def _command_for_profile(source_path, settings, destination, profile, max_video_
 # STREAM RELIABILITY:
 # -max_muxing_queue_size 1024    Prevent buffer overflows during encoding
 #
-# OUTPUTS:
-# -f rtsp rtsp://localhost:<rtsp-port>/<stream-name>   Publish to MediaMTX (serves RTSP + HLS)
+# OUTPUTS (one per transport kind; see transports.py for the URL of each):
+# -f rtsp rtsp://localhost:<rtsp-port>/<stream-name>   Publish to MediaMTX (serves RTSP, HLS, RTMP)
 # -rtsp_transport tcp            (RTSP output) Send RTP over the RTSP TCP connection. Over
 #                                the default UDP, ffmpeg keeps streaming into the void if
 #                                MediaMTX drops the session; over TCP the write fails,
 #                                ffmpeg exits, and the supervisor's dead-process check
 #                                restarts the stream.
-# -f mpegts udp://<udp-target>?pkt_size=1316            KLV-preserving MPEG-TS feed
+# -f mpegts <url>                KLV-preserving MPEG-TS over UDP (?pkt_size=1316 keeps 7
+#                                TS packets per datagram), multicast (&ttl=1 stays on the
+#                                LAN), SRT (?mode=listener waits for the consumer), TCP
+#                                (?listen=1) or HTTP (-listen 1, one client at a time)
+# -f rtp_mpegts <url>            The same transport stream wrapped in RTP, plain or over
+#                                SRTP (-srtp_out_suite/-srtp_out_params carry the cipher
+#                                and the shared key)
+# -f hls ...                     The transport stream cut into 2-second segments, 6 kept,
+#                                old ones deleted; the API server serves the directory

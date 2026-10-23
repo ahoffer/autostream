@@ -7,7 +7,7 @@ from appconfig import Config
 
 
 def make_config(**changes):
-    return replace(Config(rtsp_port=8554, hls_port=8888, api_port=8080, log_level="debug"), **changes)
+    return replace(Config(rtsp_port=8554, hls_port=8888, rtmp_port=1935, api_port=8080, log_level="debug"), **changes)
 
 
 def state_path(test):

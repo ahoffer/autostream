@@ -3,14 +3,22 @@
 # by name, and publishes the listeners one to one so the RTP/RTCP ports
 # MediaMTX advertises are the ones LAN clients reach. Pick free numbers in
 # .env when the consumer stack already uses a port on this host.
+#
+# The listening transports (SRT listen, TCP, HTTP TS) bind ports chosen at
+# run time from their first ports in Settings; under this mode those must stay
+# inside the ranges published here. Host networking has no such limit.
 services:
   autostream:
     ports:
       - "${MEDIAMTX_RTSP_PORT}:${MEDIAMTX_RTSP_PORT}"      # RTSP
       - "${MEDIAMTX_HLS_PORT}:${MEDIAMTX_HLS_PORT}"        # HLS
+      - "${MEDIAMTX_RTMP_PORT}:${MEDIAMTX_RTMP_PORT}"      # RTMP
       - "${MEDIAMTX_RTP_PORT}:${MEDIAMTX_RTP_PORT}/udp"    # RTP
       - "${MEDIAMTX_RTCP_PORT}:${MEDIAMTX_RTCP_PORT}/udp"  # RTCP
-      - "${STREAM_API_PORT}:${STREAM_API_PORT}"            # Stream Control UI
+      - "${STREAM_API_PORT}:${STREAM_API_PORT}"            # Stream Control UI, HLS (TS segments)
+      - "41000-41099:41000-41099/udp"                      # SRT listen
+      - "42000-42099:42000-42099"                          # TCP listen
+      - "43000-43099:43000-43099"                          # HTTP TS
     networks:
       - octo-cx-network
 

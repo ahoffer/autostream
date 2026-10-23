@@ -2,10 +2,11 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, fields
+import ipaddress
 
-# cx-search video-streaming's default ingest range; a fresh install hands out ports from it.
-DEFAULT_UDP_BASE_PORT = 40000
-DEFAULT_UDP_LAST_PORT = 40100
+HOST_SETTINGS = ('destination_host', 'multicast_group', 'advertised_host')
+PORT_SETTINGS = ('udp_first_port', 'rtp_first_port', 'srt_call_first_port', 'srtp_first_port',
+                 'srt_listen_first_port', 'tcp_first_port', 'http_first_port')
 
 
 def parse_bitrate(bitrate_text):
@@ -22,22 +23,24 @@ def parse_bitrate(bitrate_text):
 
 @dataclass(frozen=True)
 class RuntimeSettings:
-    destination_host: str | None = None                # where the KLV MPEG-TS/UDP feeds are pushed
-    udp_base_port: int | None = DEFAULT_UDP_BASE_PORT  # first and last UDP port handed to streams; both None = no range
-    udp_last_port: int | None = DEFAULT_UDP_LAST_PORT
-    advertised_host: str | None = None                 # host in the RTSP/HLS URLs; None = the host the client used
-    max_video_bitrate: str = ''                        # transcode cap such as '2M'; '' = no cap
-
-    @property
-    def has_port_range(self):
-        return self.udp_base_port is not None
+    destination_host: str | None = None   # where push transports send
+    multicast_group: str | None = None    # the group the multicast transport sends to
+    advertised_host: str | None = None    # host in the URLs the consumer registers; None = the host the client used
+    max_video_bitrate: str = ''           # transcode cap such as '2M'; '' = no cap
+    srtp_key: str = ''                    # base64 SRTP master key shared with the consumer; '' = unset
+    # First port per transport kind; a new stream takes the lowest free port from there.
+    # Push kinds must land inside the range the consumer forwards into its container.
+    udp_first_port: int = 40000
+    rtp_first_port: int = 40020
+    srt_call_first_port: int = 40040
+    srtp_first_port: int = 40060
+    srt_listen_first_port: int = 41000
+    tcp_first_port: int = 42000
+    http_first_port: int = 43000
 
     @property
     def max_video_bps(self):
         return parse_bitrate(self.max_video_bitrate)
-
-    def port_in_range(self, port):
-        return self.has_port_range and self.udp_base_port <= port <= self.udp_last_port
 
     def to_document(self):
         return asdict(self)
@@ -54,36 +57,40 @@ class RuntimeSettings:
 
     @classmethod
     def from_query(cls, query):
-        """Settings from a ?key=value form; blank means unset. Returns (settings, None) or (None, error)."""
+        """Settings from a ?key=value form; blank means unset, or the default for a port.
+        Returns (settings, None) or (None, error)."""
         text = {field.name: (query.get(field.name) or [''])[0].strip() for field in fields(cls)}
-        ports = {}
-        for name in ('udp_base_port', 'udp_last_port'):
-            if text[name]:
-                try:
-                    ports[name] = int(text[name])
-                except ValueError:
-                    return None, f'{name} must be a whole number'
-        candidate = cls(destination_host=text['destination_host'] or None,
-                        udp_base_port=ports.get('udp_base_port'), udp_last_port=ports.get('udp_last_port'),
-                        advertised_host=text['advertised_host'] or None,
-                        max_video_bitrate=text['max_video_bitrate'])
+        values = {name: text[name] or None for name in HOST_SETTINGS}
+        values['max_video_bitrate'] = text['max_video_bitrate']
+        values['srtp_key'] = text['srtp_key']
+        for name in PORT_SETTINGS:
+            if not text[name]:
+                continue
+            try:
+                values[name] = int(text[name])
+            except ValueError:
+                return None, f'{name} must be a whole number'
+        candidate = cls(**values)
         error = validation_error(candidate)
         return (None, error) if error else (candidate, None)
 
 
 def validation_error(settings):
     """The one rule for a valid settings value: a message, or None when valid."""
-    for name in ('destination_host', 'advertised_host'):
+    for name in HOST_SETTINGS:
         if getattr(settings, name) is not None and not _is_host_text(getattr(settings, name)):
             return f'{name} must be a host name or address'
-    base, last = settings.udp_base_port, settings.udp_last_port
-    if (base is None) != (last is None):
-        return 'udp_base_port and udp_last_port must be set together'
-    if base is not None:
-        if any(type(port) is not int or not 1 <= port <= 65535 for port in (base, last)):
-            return 'UDP ports must be whole numbers from 1 to 65535'
-        if base > last:
-            return 'udp_last_port is below udp_base_port'
+    if settings.multicast_group is not None:
+        try:
+            is_multicast = ipaddress.ip_address(settings.multicast_group).is_multicast
+        except ValueError:
+            is_multicast = False
+        if not is_multicast:
+            return 'multicast_group must be a multicast address such as 239.1.1.2'
+    for name in PORT_SETTINGS:
+        port = getattr(settings, name)
+        if type(port) is not int or not 1 <= port <= 65535:
+            return f'{name} must be a whole number from 1 to 65535'
     if not isinstance(settings.max_video_bitrate, str):
         return 'max_video_bitrate must be text such as 2M'
     if settings.max_video_bitrate:
@@ -93,6 +100,8 @@ def validation_error(settings):
             return 'max_video_bitrate must be like 2M, 3000K or 3000000'
         if bits_per_second <= 0:
             return 'max_video_bitrate must be positive'
+    if not isinstance(settings.srtp_key, str) or any(char.isspace() for char in settings.srtp_key):
+        return 'srtp_key must be the base64 key text with no spaces'
     return None
 
 

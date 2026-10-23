@@ -8,9 +8,9 @@ logLevel: error
 # Enable HLS
 hls: yes
 
-# Only RTSP and HLS are served. The other protocols stay off so they open no
-# ports, which matters under host networking.
-rtmp: no
+# RTSP, HLS and RTMP are served. WebRTC is browser-only and MediaMTX's SRT
+# drops KLV, so both stay off and open no ports under host networking.
+rtmp: yes
 webrtc: no
 srt: no
 

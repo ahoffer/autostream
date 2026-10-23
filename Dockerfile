@@ -29,7 +29,7 @@ WORKDIR /app
 
 # Pre-create the mount points so they exist owned by autostream even when
 # the container runs without the bind mounts.
-RUN mkdir -p /app/videos /app/state
+RUN mkdir -p /app/videos /app/state /app/hls
 
 # The supervisor and its UI page; the modules import each other by bare name,
 # so they stay flat in /app.

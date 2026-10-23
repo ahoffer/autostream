@@ -21,10 +21,12 @@ class Config:
     """What the container needs before any stream exists; everything the operator tunes lives in RuntimeSettings."""
     rtsp_port: int
     hls_port: int
+    rtmp_port: int
     api_port: int
     log_level: str
     videos_dir: Path = Path("/app/videos")
     state_path: Path = Path("/app/state/streams.json")
+    hls_dir: Path = Path("/app/hls")
     ffmpeg_log_dir: Path = Path("/tmp/ffmpeg-logs")
 
     def __post_init__(self):
@@ -43,6 +45,7 @@ class Config:
         return cls(
             rtsp_port=int(require_env("MEDIAMTX_RTSP_PORT", environ)),
             hls_port=int(require_env("MEDIAMTX_HLS_PORT", environ)),
+            rtmp_port=int(require_env("MEDIAMTX_RTMP_PORT", environ)),
             api_port=int(require_env("STREAM_API_PORT", environ)),
             log_level=require_env("LOG_LEVEL", environ).lower(),
         )

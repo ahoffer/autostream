@@ -1,25 +1,28 @@
-"""Format detached output snapshots, grouped by source for the web UI."""
-from dataclasses import dataclass
+"""Describe detached stream snapshots for the web UI and API, with URLs composed per request."""
+from dataclasses import asdict, dataclass
 
 from runtimesettings import RuntimeSettings
+from transports import KINDS, KINDS_BY_ID
 
 
 @dataclass(frozen=True)
 class StatusSnapshot:
-    """What the supervisor last published: detached status rows and the settings in force."""
+    """What the supervisor last published: detached status rows, the settings in force, the videos on offer."""
     statuses: tuple
     settings: RuntimeSettings
+    videos: tuple
 
 
 @dataclass(frozen=True)
 class UrlFacts:
-    """Start-up facts needed to advertise RTSP and HLS; the host is chosen per request."""
+    """Start-up facts needed to advertise streams; the host is chosen per request."""
     rtsp_port: int
     hls_port: int
+    rtmp_port: int
+    api_port: int
 
-    def public_urls(self, advertised_host, host_header):
-        host = advertised_host or host_without_port(host_header) or 'localhost'
-        return {'rtsp': f'rtsp://{host}:{self.rtsp_port}', 'hls': f'http://{host}:{self.hls_port}'}
+    def host_for(self, advertised_host, host_header):
+        return advertised_host or host_without_port(host_header) or 'localhost'
 
 
 def host_without_port(host_header):
@@ -32,14 +35,21 @@ def host_without_port(host_header):
     return host_header.split(':', 1)[0] or None
 
 
-def group_outputs(statuses, public_urls):
-    groups = {}
+def describe_streams(statuses, settings, host, url_facts):
+    """Status rows plus what each transport kind means and the URLs the consumer registers."""
+    rows = []
     for status in statuses:
-        name, protocol = status['id'].split('/')
-        group = groups.setdefault(name, {'name': name, 'filename': status['filename'], 'outputs': {},
-                                        'rtsp_url': f'{public_urls["rtsp"]}/{name}',
-                                        'hls_url': f'{public_urls["hls"]}/{name}/index.m3u8', 'udp_url': None})
-        group['outputs'][protocol] = status
-        if protocol == 'udp':
-            group['udp_url'] = status['destination']
-    return list(groups.values())
+        kind = KINDS_BY_ID[status['transport']]
+        fields = {**asdict(url_facts), 'host': host, 'port': status['port'], 'name': status['name'],
+                  'multicast_group': settings.multicast_group or '<multicast group>'}
+        rows.append({**status, 'transport_label': kind.label, 'direction': kind.direction,
+                     'carries_klv': kind.carries_klv, 'delivery_label': kind.delivery_label,
+                     'register': [[label, template.format(**fields)] for label, template in kind.register]})
+    return rows
+
+
+def describe_transports():
+    """The kinds table as the UI needs it to offer and explain choices."""
+    return [{'id': kind.id, 'label': kind.label, 'direction': kind.direction, 'carries_klv': kind.carries_klv,
+             'first_port_setting': kind.first_port_setting, 'random_port': kind.random_port,
+             'needs': list(kind.needs)} for kind in KINDS]

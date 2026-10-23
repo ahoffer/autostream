@@ -13,8 +13,8 @@ import weakref
 import filewatch
 import streamapi
 from appconfig import Config
-from outputregistry import OutputRegistry, is_ignored
 from statefile import StreamStateStore
+from streamregistry import StreamRegistry, is_ignored
 from streamresponses import StatusSnapshot, UrlFacts
 from udphost import UdpHostResolver
 
@@ -43,14 +43,14 @@ def wait_for_mediamtx(rtsp_port, stop_event):
     return False
 
 
-def output_logger(output_id, config):
-    logger = logging.Logger('ffmpeg.' + output_id.replace('/', '.'))
+def stream_logger(name, config):
+    logger = logging.Logger('ffmpeg.' + name)
     logger.parent = logging.getLogger()
     config.ffmpeg_log_dir.mkdir(parents=True, exist_ok=True)
-    handler = RotatingFileHandler(config.ffmpeg_log_dir / (output_id.replace('/', '.') + '.log'),
+    handler = RotatingFileHandler(config.ffmpeg_log_dir / (name + '.log'),
                                   maxBytes=2_000_000, backupCount=1)
     logger.addHandler(handler)
-    # The output owns this logger; do not retain one open file per retired name.
+    # The stream owns this logger; do not retain one open file per deleted name.
     weakref.finalize(logger, handler.close)
     logger.setLevel(logging.INFO)
     logger.propagate = config.show_ffmpeg_output
@@ -117,7 +117,7 @@ def run_loop(registry, requests, publish, stop_event):
             if future is not None:
                 future.set_exception(RuntimeError('Supervisor is shutting down'))
         # Process shutdown must not persist a user Stop across application restarts.
-        if not registry.stop_all_outputs(persist=False):
+        if not registry.stop_all_streams(persist=False):
             log.error('Some processes did not exit during supervisor shutdown')
 
 
@@ -125,15 +125,15 @@ def main():
     config = Config.from_env()
     configure_logging(config.log_level)
     store = StreamStateStore(config.state_path)
-    outputs = OutputRegistry(config, store, UdpHostResolver(), partial(output_logger, config=config))
-    outputs.load_persisted_state()
+    registry = StreamRegistry(config, store, UdpHostResolver(), partial(stream_logger, config=config))
+    registry.load_persisted_state()
     requests = Queue(maxsize=128)
     stopping = threading.Event()
     snapshot = [None]
     snapshot_lock = threading.Lock()
 
     def publish():
-        published = StatusSnapshot(tuple(outputs.status()), outputs.settings())
+        published = StatusSnapshot(tuple(registry.status()), registry.settings(), registry.videos())
         with snapshot_lock:
             snapshot[0] = published
 
@@ -143,8 +143,9 @@ def main():
 
     publish()
     handler = partial(streamapi.StreamHandler, requests=requests, read_snapshot=read_snapshot,
-                      execute=partial(streamapi._execute_request, outputs),
-                      url_facts=UrlFacts(config.rtsp_port, config.hls_port))
+                      execute=partial(streamapi._execute_request, registry),
+                      url_facts=UrlFacts(config.rtsp_port, config.hls_port, config.rtmp_port, config.api_port),
+                      hls_dir=config.hls_dir)
     server = ThreadingHTTPServer(('0.0.0.0', config.api_port), handler)
     api_thread = threading.Thread(target=server.serve_forever, name='APIServer', daemon=True)
     watcher = threading.Thread(target=_watch_files, args=(config.videos_dir, requests, stopping),
@@ -157,7 +158,7 @@ def main():
         api_thread.start()
         watcher.start()
         log.info('Supervisor starting, UI on port %d', config.api_port)
-        run_loop(outputs, requests, publish, stopping)
+        run_loop(registry, requests, publish, stopping)
     finally:
         stopping.set()
         if api_thread.is_alive():

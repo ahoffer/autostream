@@ -1,12 +1,16 @@
-"""Atomic, scoped persistence of output choices and stable assignments."""
+"""Atomic, scoped persistence of streams and settings."""
 from copy import deepcopy
 import json
 import os
 from pathlib import Path
+import re
 
 from runtimesettings import RuntimeSettings
+from transports import KINDS_BY_ID
 
-STATE_VERSION = 2
+STATE_VERSION = 3
+# Stream names double as MediaMTX paths and file names, so they stay plain.
+STREAM_NAME = re.compile(r'^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$')
 
 
 class StreamStateStore:
@@ -24,7 +28,7 @@ class StreamStateStore:
         try:
             raw = self._path.read_text(encoding='utf-8')
         except FileNotFoundError:
-            return {'version': STATE_VERSION, 'assignments': {}, 'outputs': {}}
+            return {'version': STATE_VERSION, 'streams': {}}
         data = json.loads(raw)
         self._validate(data)
         return data
@@ -34,25 +38,28 @@ class StreamStateStore:
             raise ValueError(
                 f'Unsupported state version {data.get("version")} in {self._path}; '
                 f'delete the file to start fresh')
-        if not isinstance(data.get('assignments'), dict) or not isinstance(data.get('outputs'), dict):
+        if not isinstance(data.get('streams'), dict):
             raise ValueError('Invalid state document')
-        for record in data['assignments'].values():
-            if not isinstance(record.get('filename'), str):
-                raise ValueError('Assignment must name a file')
-            port = record.get('udp_port')
+        for name, record in data['streams'].items():
+            if not STREAM_NAME.match(name) or not isinstance(record, dict):
+                raise ValueError(f'Invalid saved stream {name!r}')
+            if not isinstance(record.get('filename'), str) or not record['filename']:
+                raise ValueError(f'Stream {name} must name a file')
+            if record.get('transport') not in KINDS_BY_ID:
+                raise ValueError(f'Stream {name} has an unknown transport')
+            port = record.get('port')
             if port is not None and (type(port) is not int or not 1 <= port <= 65535):
-                raise ValueError('Invalid saved UDP port')
-        for choices in data['outputs'].values():
-            if not isinstance(choices.get('filename'), str) or type(choices.get('enabled')) is not bool:
-                raise ValueError('Invalid saved output')
-            if choices.get('mode') not in (None, 'passthrough', 'transcode'):
-                raise ValueError('Invalid saved mode')
-            if type(choices.get('loop_count')) is not int or choices['loop_count'] < -1:
-                raise ValueError('Invalid saved loop count')
+                raise ValueError(f'Stream {name} has an invalid port')
+            if type(record.get('enabled')) is not bool:
+                raise ValueError(f'Stream {name} has no enabled flag')
+            if record.get('mode') not in (None, 'passthrough', 'transcode'):
+                raise ValueError(f'Stream {name} has an invalid mode')
+            if type(record.get('loop_count')) is not int or record['loop_count'] < -1:
+                raise ValueError(f'Stream {name} has an invalid loop count')
             for key, maximum in [('frame_rate', 120), ('gop_frames', None)]:
-                value = choices.get(key)
+                value = record.get(key)
                 if value is not None and (not isinstance(value, (int, float)) or not value >= 1 or (maximum and not value <= maximum)):
-                    raise ValueError(f'Invalid saved {key}')
+                    raise ValueError(f'Stream {name} has an invalid {key}')
         if 'settings' in data:
             if not isinstance(data['settings'], dict):
                 raise ValueError('Invalid saved settings')
@@ -64,16 +71,25 @@ class StreamStateStore:
         temp.write_text(json.dumps(document, indent=2) + '\n', encoding='utf-8')
         os.replace(temp, self._path)
 
-    def save_output(self, output_id, choices):
+    def save_stream(self, name, record):
         document = self.load()
-        document['outputs'][output_id] = deepcopy(choices)
+        document['streams'][name] = deepcopy(record)
         self._write(document)
         self._document = document
         return True
 
-    def save_assignments(self, assignments):
+    def delete_stream(self, name):
         document = self.load()
-        document['assignments'] = deepcopy(assignments)
+        document['streams'].pop(name, None)
+        self._write(document)
+        self._document = document
+        return True
+
+    def rename_stream(self, previous, name):
+        """Move a record to a new name, keeping its place in the order the streams were created."""
+        document = self.load()
+        document['streams'] = {name if key == previous else key: record
+                               for key, record in document['streams'].items()}
         self._write(document)
         self._document = document
         return True

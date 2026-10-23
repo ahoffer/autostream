@@ -1,537 +1,1233 @@
-<!DOCTYPE html>
-<html>
+<!doctype html>
+<html lang="en">
 <head>
-    <meta charset="utf-8">
-    <title>Stream Control</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='3' fill='%2316213e'/%3E%3Cpath d='M5 3.5v9l7-4.5z' fill='%2300d4ff'/%3E%3C/svg%3E">
-    <style>
-        * { box-sizing: border-box; }
-        /* The hidden attribute must beat the display rules below. */
-        [hidden] { display: none !important; }
-        html, body { height: 100%; }
-        body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-               background: #1a1a2e; color: #eee; display: grid; grid-template-columns: 280px minmax(0, 1fr); }
-        button { padding: 6px 14px; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; transition: opacity 0.2s; }
-        button:hover { opacity: 0.8; }
-        button:disabled { opacity: 0.5; cursor: not-allowed; }
-        .btn-start { background: #00c853; color: #000; }
-        .btn-stop { background: #ff5252; color: #fff; }
-        .btn-plain { background: transparent; color: #eee; border: 1px solid #8a93a8; }
-        select, input[type=number], input[type=text] { padding: 8px 10px; border-radius: 4px; background: #0f3460; color: #fff;
-                                     border: 1px solid #0f3460; font-size: 14px; width: 100%; }
-        select:focus, input:focus { border-color: #00d4ff; outline: none; }
-        /* Keyboard focus only: a visible ring for Tab users, none on mouse clicks. */
-        :focus-visible { outline: 2px solid #00d4ff; outline-offset: 2px; }
-        .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Stream Control</title>
+<link rel="icon" href="data:,">
+<style>
+/* Jost (SIL Open Font License), latin subset, served by the app so the page needs no internet. */
+@font-face {
+  font-family: "Jost";
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url(/jost.woff2) format("woff2");
+}
 
-        /* Sidebar: the stream list */
-        .sidebar { display: flex; flex-direction: column; background: #16213e; border-right: 1px solid #0f3460; padding: 20px 0; min-height: 100vh; }
-        .sidebar-header { display: flex; align-items: center; justify-content: space-between; padding: 0 18px 16px; }
-        .sidebar-header h1 { margin: 0; font-size: 18px; color: #00d4ff; }
-        .sidebar-header span { font-size: 12px; color: #8a93a8; }
-        .stale { color: #ffb74d; }
-        .stream-item { display: flex; align-items: center; justify-content: space-between; width: 100%; padding: 12px 18px;
-                       font-size: 14px; color: #eee; background: transparent; border: none; border-left: 3px solid transparent;
-                       border-radius: 0; text-align: left; }
-        .stream-item:hover { background: #1b2a4f; opacity: 1; }
-        .stream-item.selected { background: #0f3460; border-left-color: #00d4ff; font-weight: 600; }
-        .dots { display: flex; gap: 6px; }
-        .dot { width: 10px; height: 10px; border-radius: 50%; }
-        .dot.running { background: #00c853; }
-        .dot.waiting, .dot.starting, .dot.restarting { background: #ffb74d; }
-        .dot.crashing, .dot.failed { background: #ff5252; }
-        .dot.stopped, .dot.completed { background: #2a2f4a; border: 2px solid #8a93a8; }
-        .dot.stopped { border-color: #ff5252; }
-        .sidebar-footer { margin-top: auto; display: flex; gap: 8px; padding: 16px 18px 0; }
-        .sidebar-footer button { flex: 1; padding: 8px 0; }
-        .settings-panel { padding: 12px 18px 0; font-size: 13px; }
-        .settings-panel summary { cursor: pointer; color: #8a93a8; }
-        .settings-panel form { display: grid; gap: 8px; margin-top: 8px; }
-        .settings-panel label { display: grid; gap: 4px; color: #8a93a8; }
+/* ---- tokens: every colour defined once ---- */
+:root {
+  --ground: #F7F6F2;      /* paper */
+  --ink: #141414;         /* text, rules, plain buttons, mark outlines */
+  --muted: #5F5D58;       /* secondary text, column labels */
+  --rule: #CFCCC4;        /* hairlines */
+  --box: #ECEAE3;         /* monospace boxes */
+  --blue: #1D4ED8;        /* running; focus */
+  --blue-fill: #1D4ED8;   /* primary action fill */
+  --red: #C8201A;         /* failed; error text */
+  --red-fill: #C8201A;    /* irreversible action fill */
+  --yellow: #F2B705;      /* waiting, stale, unsaved: attention */
+  --on-fill: #FFFFFF;
+  --on-yellow: #141414;
+  --sans: "Jost", "Futura", "Avenir Next", "Century Gothic", "URW Gothic", system-ui, sans-serif;
+  --mono: ui-monospace, "SF Mono", Menlo, Consolas, "DejaVu Sans Mono", monospace;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --ground: #121212;
+    --ink: #ECEAE4;
+    --muted: #A09D96;
+    --rule: #3A3936;
+    --box: #1D1C1A;
+    --blue: #7A9CFF;
+    --blue-fill: #2F5FE0;
+    --red: #FF6B5E;
+    --red-fill: #D7281F;
+    --yellow: #F2B705;
+    --on-fill: #FFFFFF;
+    --on-yellow: #121212;
+    color-scheme: dark;
+  }
+}
 
-        /* Detail pane: the selected stream */
-        .detail { display: flex; flex-direction: column; gap: 16px; padding: 28px 32px; max-width: 1000px; }
-        #detail { display: flex; flex-direction: column; gap: 22px; }
-        .detail-header { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
-        .detail-title { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
-        .detail-title h2 { margin: 0; font-size: 24px; }
-        .encoder { font-size: 12px; color: #8a93a8; border: 1px solid #8a93a8; border-radius: 8px; padding: 1px 8px; }
-        .settings { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
-        .settings label { display: flex; flex-direction: column; gap: 6px; font-size: 12px; color: #8a93a8;
-                          text-transform: uppercase; letter-spacing: 0.04em; }
-        .settings input:disabled { opacity: 0.4; }
-        .hint { font-size: 12px; text-transform: none; letter-spacing: 0; min-height: 1.2em; }
-        .hint a { color: #00d4ff; }
-        /* Every row of the pane: content on the left, the same actions column on the right. */
-        .row { display: grid; grid-template-columns: minmax(0, 1fr) 220px; gap: 16px; align-items: start; }
-        .settings-row { padding-right: 16px; }   /* the cards' inner padding, so the columns line up */
-        .pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
-        .pair button { width: 100%; padding: 8px 0; }
-        .reason { color: #ffb74d; font-style: italic; font-size: 13px; }
-        .output { padding: 14px 16px; background: #16213e; border-radius: 8px; }
-        .output-body { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
-        .output-header { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-        .output-header .name { font-weight: 700; color: #00d4ff; width: 48px; }
-        .pill { padding: 3px 10px; border-radius: 10px; font-size: 12px; font-weight: 600; }
-        .pill.running { background: #00c853; color: #000; }
-        .pill.waiting, .pill.starting, .pill.restarting { background: #ffb74d; color: #000; }
-        .pill.crashing { background: #ff5252; color: #fff; }
-        .pill.failed { background: #2a2f4a; color: #ff8a8a; border: 1px solid #ff5252; }
-        .pill.stopped { background: #2a2f4a; color: #ff8a8a; border: 1px solid #ff5252; }
-        .pill.completed { background: #2a2f4a; color: #8a93a8; border: 1px solid #8a93a8; }
-        pre.err { margin: 0; padding: 8px 10px; background: #4a1e1e; color: #ffb4b4; border-radius: 4px;
-                  white-space: pre-wrap; word-break: break-all; font-size: 11.5px; }
-        .url-grid { display: grid; grid-template-columns: 48px 1fr auto; gap: 8px; align-items: center; font-size: 13px; }
-        .url-grid .label { color: #8a93a8; }
-        .url-grid .url { color: #ccc; word-break: break-all; }
-        .url-grid .url.none { color: #8a93a8; }
-        .copy-btn { background: transparent; border: none; color: #8a93a8; cursor: pointer; padding: 2px 6px;
-                    border-radius: 3px; display: inline-flex; align-items: center; gap: 4px; font-size: 12px; }
-        .copy-btn:hover { color: #00d4ff; background: rgba(0, 212, 255, 0.1); opacity: 1; }
-        .copy-btn.copied { color: #00c853; }
-        .copy-btn.copy-failed { color: #ff5252; }
-        .copy-btn svg { width: 16px; height: 16px; }
-        details { font-size: 12px; color: #8a93a8; }
-        summary { cursor: pointer; color: #00d4ff; }
-        pre.command { margin: 8px 0 0; padding: 10px; background: #0f3460; color: #bbb; border-radius: 4px;
-                      white-space: pre-wrap; word-break: break-all; font-size: 11.5px; }
-        .error-banner { display: flex; align-items: center; gap: 12px; background: #4a1e1e; border: 1px solid #ff5252;
-                        color: #ffb4b4; border-radius: 4px; padding: 10px 12px; }
-        .error-banner span { flex: 1; }
-        .empty { color: #8a93a8; }
+/* ---- base ---- */
+* { box-sizing: border-box; }
+html { background: var(--ground); }
+body {
+  margin: 0;
+  background: var(--ground);
+  color: var(--ink);
+  font: 400 15px/24px var(--sans);
+}
+h1, h2, h3, p, dl, dd, dt, figure, pre, fieldset { margin: 0; }
+fieldset { border: 0; padding: 0; min-width: 0; }
+legend { padding: 0; }
+button, input, select, textarea { font: inherit; color: inherit; }
+:focus-visible { outline: 3px solid var(--blue); outline-offset: 2px; }
+[hidden] { display: none !important; }
+.muted { color: var(--muted); }
 
-        /* Narrow windows: the stream list becomes a strip across the top. */
-        @media (max-width: 800px) {
-            body { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto 1fr; }
-            .sidebar { min-height: 0; border-right: none; border-bottom: 1px solid #0f3460; padding: 12px 0; }
-            #list { display: flex; overflow-x: auto; }
-            .stream-item { width: auto; flex: 0 0 auto; gap: 8px; border-left: none; border-bottom: 3px solid transparent; }
-            .stream-item.selected { border-bottom-color: #00d4ff; }
-            .sidebar-footer { margin-top: 12px; }
-            .detail { padding: 16px; }
-            .settings { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-            .row { grid-template-columns: minmax(0, 1fr); }
-        }
-    </style>
+/* ---- page grid: 8 px baseline, max 1440 ---- */
+.page {
+  max-width: 1440px;
+  margin: 0 auto;
+  padding: 24px 40px 40px;
+}
+@media (max-width: 999px) { .page { padding: 16px 24px 32px; } }
+@media (max-width: 599px) { .page { padding: 16px 16px 32px; } }
+
+/* header: title left, counts right, action rule beneath */
+.head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px 24px;
+  padding-bottom: 16px;
+  border-bottom: 3px solid var(--ink);
+}
+.head h1 { font-size: 32px; line-height: 40px; font-weight: 500; letter-spacing: -0.01em; }
+.counts { font-size: 18px; line-height: 24px; }
+.counts b { font-weight: 700; }
+.counts .live { color: var(--blue); }
+
+.notice {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 16px;
+  padding: 8px 16px;
+  background: var(--yellow);
+  color: var(--on-yellow);
+  font-weight: 500;
+}
+.notice .mark { fill: var(--on-yellow); stroke: var(--on-yellow); }
+
+.bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 16px 0;
+  border-bottom: 1px solid var(--rule);
+}
+.bar .spacer { flex: 1 1 auto; }
+.bar .message { flex-basis: 100%; }
+@media (max-width: 599px) {
+  .bar { display: grid; grid-template-columns: 1fr 1fr; }
+  .bar .spacer { display: none; }
+  .bar .message { grid-column: 1 / -1; }
+}
+
+/* list and panel side by side from 1280 px: the list takes what the panel leaves */
+.body { display: grid; grid-template-columns: minmax(0, 1fr); gap: 32px 48px; padding-top: 24px; }
+@media (min-width: 1280px) {
+  .body { grid-template-columns: minmax(0, 1fr) 460px; align-items: start; }
+}
+
+/* ---- marks: circle = process, square = error, triangle = blocked;
+        filled = steady, hollow = changing. Yellow marks carry an ink outline. ---- */
+.mark { display: inline-block; width: 12px; height: 12px; vertical-align: -1px; flex: none; overflow: visible; }
+.mark.blue { fill: var(--blue); stroke: var(--blue); }
+.mark.red { fill: var(--red); stroke: var(--red); }
+.mark.grey { fill: var(--muted); stroke: var(--muted); }
+.mark.yellow { fill: var(--yellow); stroke: var(--ink); stroke-width: 1.25; }
+.mark.hollow { fill: none; stroke-width: 2; }
+.state { font-weight: 500; }
+.state.is-running { color: var(--blue); }
+.state.is-failed { color: var(--red); }
+
+/* ---- controls: plain rectangles ---- */
+button {
+  font-weight: 500;
+  background: transparent;
+  color: var(--ink);
+  border: 2px solid var(--ink);
+  border-radius: 0;
+  padding: 4px 14px;
+  min-height: 36px;
+  cursor: pointer;
+}
+button.primary { background: var(--blue-fill); border-color: var(--blue-fill); color: var(--on-fill); }
+button.danger  { background: var(--red-fill);  border-color: var(--red-fill);  color: var(--on-fill); }
+button:disabled { color: var(--muted); border-color: var(--rule); background: transparent; cursor: default; }
+button.copy { min-width: 84px; }
+@media (max-width: 999px) { button { min-height: 40px; } }
+
+input[type="text"], input[type="number"], select {
+  background: var(--ground);
+  border: 2px solid var(--ink);
+  border-radius: 0;
+  padding: 4px 10px;
+  min-height: 36px;
+  width: 100%;
+}
+input[type="radio"] { accent-color: var(--blue-fill); width: 18px; height: 18px; margin: 0 8px 0 0; vertical-align: -3px; }
+input:disabled, select:disabled { color: var(--muted); border-color: var(--rule); }
+@media (max-width: 999px) { input[type="text"], input[type="number"], select { min-height: 40px; } }
+
+.message { font-family: var(--mono); font-size: 13px; line-height: 20px; color: var(--red); }
+.message:empty { display: none; }
+
+/* ---- list ---- */
+.list { width: 100%; border-collapse: collapse; }
+.list th {
+  text-align: left;
+  font-size: 13px; line-height: 16px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+  padding: 0 12px 8px 0;
+  border-bottom: 2px solid var(--ink);
+  white-space: nowrap;
+}
+.list td { padding: 8px 12px 8px 0; border-bottom: 1px solid var(--rule); vertical-align: top; }
+.list th.c-port, .list td.c-port { text-align: right; font-variant-numeric: tabular-nums; }
+.list tr { cursor: pointer; }
+.list tr.selected td.c-name { box-shadow: inset 6px 0 0 var(--ink); }
+.list td.c-name { padding-left: 16px; white-space: nowrap; }
+.list tr.selected .rowname { font-weight: 700; }
+.rowname {
+  display: inline-flex; align-items: center; gap: 10px;
+  border: 0; padding: 0; min-height: 24px;
+  font-weight: 500; background: transparent; text-align: left;
+}
+.rowname:focus-visible { outline-offset: 4px; }
+.list td.c-transport, .list td.c-file, .list td.c-port { white-space: nowrap; }
+.list th.c-state, .list td.c-state { padding-left: 12px; padding-right: 0; }
+.list td.c-state .reason { display: block; font-size: 13px; line-height: 20px; color: var(--muted); }
+.list td.c-state .reason:empty { display: none; }
+.empty { padding: 16px 0 0 16px; color: var(--muted); }
+
+@media (max-width: 719px) {
+  .list thead { display: none; }
+  .list, .list tbody { display: block; }
+  .list tr {
+    display: grid;
+    grid-template-columns: auto auto 1fr auto;
+    grid-template-areas:
+      "name name name state"
+      "transport file port port"
+      "reason reason reason reason";
+    align-items: baseline;
+    column-gap: 12px;
+    padding: 8px 0 8px 16px;
+    border-bottom: 1px solid var(--rule);
+  }
+  .list tr.selected { box-shadow: inset 6px 0 0 var(--ink); }
+  .list tr.selected td.c-name { box-shadow: none; }
+  .list td { display: block; padding: 0; border: 0; }
+  .list td.c-name { grid-area: name; padding-left: 0; }
+  .list td.c-state { display: contents; }
+  .list td.c-state .state { grid-area: state; justify-self: end; }
+  .list td.c-state .reason { grid-area: reason; }
+  .list td.c-transport { grid-area: transport; }
+  .list td.c-file { grid-area: file; }
+  .list td.c-port { grid-area: port; text-align: left; }
+  .list td.c-transport, .list td.c-file, .list td.c-port { font-size: 13px; line-height: 20px; color: var(--muted); }
+  .rowname { min-height: 40px; }
+}
+
+/* ---- panel ---- */
+.panel { min-width: 0; }
+.panel h2 { font-size: 24px; line-height: 32px; font-weight: 500; overflow-wrap: anywhere; }
+.staterow {
+  display: flex; flex-wrap: wrap; align-items: center;
+  gap: 8px 16px;
+  margin-top: 16px;
+  padding: 12px 0;
+  border-top: 1px solid var(--rule);
+  border-bottom: 1px solid var(--rule);
+}
+.staterow .stateword { display: inline-flex; align-items: center; gap: 10px; font-size: 18px; }
+.staterow .reason { color: var(--muted); }
+.staterow .actions { margin-left: auto; display: flex; gap: 8px; flex-wrap: wrap; }
+.staterow .message { flex-basis: 100%; }
+@media (max-width: 599px) {
+  .staterow .actions { margin-left: 0; flex-basis: 100%; display: grid; grid-template-columns: repeat(auto-fit, minmax(96px, 1fr)); }
+}
+
+.errorblock { margin-top: 12px; border-left: 4px solid var(--red); padding-left: 12px; }
+.errorblock .label { color: var(--red); }
+.errorblock pre { margin-top: 4px; }
+
+.label {
+  font-size: 13px; line-height: 16px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.section { margin-top: 24px; }
+
+.line { display: flex; align-items: flex-start; gap: 16px; padding: 12px 0; border-bottom: 1px solid var(--rule); }
+.line .url { flex: 1 1 auto; min-width: 0; font-family: var(--mono); font-size: 18px; line-height: 28px; overflow-wrap: anywhere; }
+.line .sub { display: block; font-family: var(--sans); font-size: 13px; line-height: 16px; color: var(--muted); }
+.line.delivery .url { font-size: 15px; line-height: 24px; }
+
+pre {
+  font-family: var(--mono);
+  font-size: 13px; line-height: 20px;
+  background: var(--box);
+  padding: 12px 16px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 320px;
+  overflow: auto;
+}
+
+/* facts: label column + value */
+.facts { display: grid; grid-template-columns: max-content 1fr; gap: 4px 24px; }
+.facts dt { color: var(--muted); }
+.facts dd { overflow-wrap: anywhere; }
+.facts .how { color: var(--muted); }
+.facts .instead { display: block; color: var(--muted); }
+
+/* forms: columns only when each is wide enough for the longest transport label */
+.form { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px 32px; padding-top: 16px; }
+.field { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.field.wide { grid-column: 1 / -1; }
+.field > label, .field > legend { font-weight: 500; }
+.field > legend + .radios { margin-top: 4px; }
+.note { color: var(--muted); display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; min-height: 24px; }
+.note b { color: var(--ink); font-weight: 500; }
+.form > .note.wide { grid-column: 1 / -1; margin-top: -8px; }
+.field .radios { display: flex; gap: 24px; min-height: 36px; align-items: center; flex-wrap: wrap; }
+.field .radios label { display: inline-flex; align-items: center; min-height: 36px; }
+.field .static { min-height: 36px; display: flex; align-items: center; color: var(--muted); }
+@media (max-width: 999px) { .field .radios, .field .radios label, .field .static { min-height: 40px; } }
+.warn { display: inline-flex; align-items: center; gap: 8px; }
+
+.formactions { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding-top: 8px; }
+.formactions .draft { display: inline-flex; align-items: center; gap: 8px; margin-left: auto; font-weight: 500; }
+.formactions .message { flex-basis: 100%; }
+@media (max-width: 599px) {
+  .formactions { display: grid; grid-template-columns: 1fr 1fr; }
+  .formactions.stacked { grid-template-columns: 1fr; }
+  .formactions .draft { grid-column: 1 / -1; order: -1; margin-left: 0; }
+  .formactions .message { grid-column: 1 / -1; }
+}
+
+/* notebook: one tab at a time, the active one carried by a 3 px rule */
+.notebook { grid-column: 1 / -1; padding-top: 8px; }
+.tabs { display: flex; flex-wrap: wrap; gap: 0 8px; border-bottom: 1px solid var(--rule); }
+.tabs [role="tab"] {
+  border: 0; border-bottom: 3px solid transparent; margin-bottom: -1px;
+  padding: 8px 12px; min-height: 40px;
+  color: var(--muted); font-weight: 500;
+}
+.tabs [role="tab"]:first-child { padding-left: 0; }
+.tabs [role="tab"][aria-selected="true"] { color: var(--ink); border-bottom-color: var(--ink); }
+.tabs [role="tab"]:focus-visible { outline-offset: -3px; }
+@media (max-width: 599px) {
+  .tabs { gap: 0; justify-content: space-between; }
+  .tabs [role="tab"] { padding: 8px 6px; }
+  .tabs [role="tab"]:last-child { padding-right: 0; }
+}
+.tabpanel { padding-top: 16px; }
+.tabpanel .form { padding-top: 0; }
+.tabpanel pre { margin: 0; }
+
+/* create form: advanced choices behind a disclosure */
+details.advanced { grid-column: 1 / -1; }
+details.advanced > summary { cursor: pointer; list-style: none; display: inline-flex; align-items: center; gap: 10px; min-height: 40px; font-weight: 500; }
+details.advanced > summary::-webkit-details-marker { display: none; }
+details.advanced > summary .tri { width: 0; height: 0; border-top: 6px solid transparent; border-bottom: 6px solid transparent; border-left: 10px solid var(--ink); }
+details.advanced[open] > summary .tri { transform: rotate(90deg); }
+details.advanced .form { padding-top: 8px; }
+
+.settings h2 { padding-bottom: 8px; }
+.settings .rule { color: var(--muted); }
+.settings .form { padding-top: 24px; }
+.settings .group { grid-column: 1 / -1; padding-top: 16px; }
+.settings .group .label { display: block; padding-bottom: 8px; border-bottom: 2px solid var(--ink); }
+.settings .group .purpose { display: block; padding-top: 8px; color: var(--muted); }
+.field .purpose { color: var(--muted); font-weight: 400; }
+</style>
 </head>
 <body>
-    <nav class="sidebar">
-        <div class="sidebar-header"><h1>Streams</h1><span id="count"></span></div>
-        <div id="list"></div>
-        <details class="settings-panel">
-            <summary>Settings</summary>
-            <form onsubmit="return saveSettings(event)">
-                <label>Destination host<input id="destination_host" type="text" placeholder="consumer host or multicast group"></label>
-                <label>UDP ports<span class="pair"><input id="udp_base_port" type="number" min="1" max="65535" placeholder="first"><input id="udp_last_port" type="number" min="1" max="65535" placeholder="last"></span></label>
-                <label>Advertised host<input id="advertised_host" type="text" placeholder="blank: the address you reached this page by"></label>
-                <label>Bitrate cap<input id="max_video_bitrate" type="text" placeholder="e.g. 2M; blank: none"></label>
-                <span class="reason" id="settings-warning"></span>
-                <button class="btn-start" type="submit">Save</button>
-            </form>
-        </details>
-        <div class="sidebar-footer" id="all-buttons">
-            <button class="btn-stop" onclick="stopAll(this)">Stop All</button>
-            <button class="btn-start" onclick="startAll(this)">Start All</button>
+<div class="page">
+  <header class="head">
+    <h1>Stream Control</h1>
+    <p class="counts" id="counts" aria-live="polite"></p>
+  </header>
+
+  <div class="notice" id="notice" role="status" hidden>
+    <svg class="mark" viewBox="0 0 12 12" aria-hidden="true"><polygon points="6,0.8 11.4,11 0.6,11"/></svg>
+    <span id="noticeText"></span>
+  </div>
+
+  <div class="bar">
+    <button type="button" data-act="start-all">Start all</button>
+    <button type="button" data-act="stop-all">Stop all</button>
+    <span class="spacer"></span>
+    <button type="button" data-act="new">New stream</button>
+    <button type="button" data-act="settings">Settings</button>
+    <p class="message" id="barMessage" role="alert"></p>
+  </div>
+
+  <div class="body">
+    <section aria-label="Streams">
+      <table class="list" id="list">
+        <thead>
+          <tr>
+            <th class="c-name">Name</th>
+            <th class="c-transport">Transport</th>
+            <th class="c-file">File</th>
+            <th class="c-port">Port</th>
+            <th class="c-state">State</th>
+          </tr>
+        </thead>
+        <tbody id="rows"></tbody>
+      </table>
+      <p class="empty" id="empty" hidden>No streams yet.</p>
+    </section>
+
+    <section class="panel" id="panel"></section>
+  </div>
+</div>
+
+<script>
+const POLL_MS = 5000;
+const STALE_MS = 12000;
+const TABS = ["source", "output", "command", "advanced"];
+
+const state = {
+  streams: [],
+  transports: [],
+  settings: {},
+  videos: [],
+  loaded: false,                         // the first poll has answered
+  panel: { mode: "none", name: null },   // none | stream | create | settings
+  tab: "source",                         // notebook tab in the stream detail
+  drafts: new Map(),                     // stream name -> edit draft; a map because drafts are sparse and keyed by stream identity
+  createDraft: null,
+  nameTouched: false,
+  settingsDraft: null,
+  deleteArmed: null,
+  messages: new Map(),                   // target key ("all", "stream:<name>", "edit:<name>", "create", "settings") -> server text
+  lastOk: null,
+  unreachable: false,
+};
+
+/* ---------- formatting (pure) ---------- */
+function formatRate(value) {
+  if (value == null) return "";
+  return Number.isInteger(value) ? String(value) : value.toFixed(2);
+}
+function formatLoop(count) {
+  if (count === -1) return "forever";
+  if (count === 0) return "once";
+  return "count " + count;
+}
+function formatPort(port) {
+  return port == null ? "—" : String(port);
+}
+/* A reason that only repeats the state word ("stopped", "starting") adds nothing. */
+function reasonText(stream) {
+  return stream.reason && stream.reason !== stream.state ? stream.reason : "";
+}
+function transportOf(id) {
+  return state.transports.find((kind) => kind.id === id);
+}
+function streamByName(name) {
+  return state.streams.find((stream) => stream.name === name);
+}
+function settingLabel(key) {
+  return SETTING_FIELDS.find((field) => field.key === key).label;
+}
+function fileStem(filename) {
+  return filename.replace(/\.[^.]+$/, "");
+}
+function escapeHtml(text) {
+  return String(text).replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[ch]));
+}
+
+/* ---------- state marks ----------
+   Shape is the category: circle = a process, square = an error, triangle = blocked.
+   Colour: blue delivering, grey inert, red error, yellow blocked.
+   Filled = steady, hollow = changing. */
+const MARKS = {
+  running:    { shape: "circle", colour: "blue" },
+  starting:   { shape: "circle", colour: "blue", hollow: true },
+  stopping:   { shape: "circle", colour: "grey", hollow: true },
+  stopped:    { shape: "circle", colour: "grey" },
+  completed:  { shape: "circle", colour: "grey" },
+  waiting:    { shape: "triangle", colour: "yellow" },
+  restarting: { shape: "square", colour: "red", hollow: true },
+  crashing:   { shape: "square", colour: "red", hollow: true },
+  failed:     { shape: "square", colour: "red" },
+};
+const SHAPES = {
+  circle: '<circle cx="6" cy="6" r="5"/>',
+  square: '<rect x="1" y="1" width="10" height="10"/>',
+  triangle: '<polygon points="6,0.8 11.4,11 0.6,11"/>',
+};
+function shapeHtml(shape, colour, hollow) {
+  return `<svg class="mark ${colour}${hollow ? " hollow" : ""}" viewBox="0 0 12 12" aria-hidden="true">${SHAPES[shape]}</svg>`;
+}
+function markHtml(stateName) {
+  const mark = MARKS[stateName] || MARKS.stopped;
+  return shapeHtml(mark.shape, mark.colour, mark.hollow);
+}
+
+/* ---------- port prediction (pure) ---------- */
+function predictPort(transportId, excludeName) {
+  const kind = transportOf(transportId);
+  if (!kind) return "";
+  if (kind.random_port) return "random";
+  if (!kind.first_port_setting) return "none";
+  const used = new Set(state.streams.filter((s) => s.name !== excludeName && s.port != null).map((s) => s.port));
+  let port = Number(state.settings[kind.first_port_setting]);
+  while (used.has(port)) port += 1;
+  return String(port);
+}
+function unsetNeeds(transportId) {
+  const kind = transportOf(transportId);
+  if (!kind) return [];
+  return kind.needs.filter((key) => !String(state.settings[key] ?? "").trim());
+}
+function portNoteHtml(transportId, excludeName) {
+  const port = predictPort(transportId, excludeName);
+  const needs = unsetNeeds(transportId).map(settingLabel);
+  const needText = needs.length
+    ? `<span class="warn">${shapeHtml("triangle", "yellow")}needs ${escapeHtml(needs.join(" and "))}, unset</span>`
+    : "";
+  return `<span>Port it would take: <b>${port}</b></span>${needText}`;
+}
+
+/* ---------- edit drafts (pure) ---------- */
+function draftFromStream(stream) {
+  return {
+    name: stream.name,
+    file: stream.filename,
+    transport: stream.transport,
+    mode: stream.mode,
+    frame_rate: stream.frame_rate_explicit ? formatRate(stream.frame_rate) : "auto",
+    gop: stream.gop_explicit ? String(stream.gop_frames) : "auto",
+    loop: stream.loop_count === -1 ? "forever" : stream.loop_count === 0 ? "once" : "count",
+    loop_count: stream.loop_count > 0 ? String(stream.loop_count) : "",
+  };
+}
+function sameDraft(left, right) {
+  return Object.keys(left).every((key) => left[key] === right[key]);
+}
+function readForm(form) {
+  const data = new FormData(form);
+  return {
+    name: data.get("name") ?? "",
+    file: data.get("file") ?? "",
+    transport: data.get("transport") ?? "",
+    mode: data.get("mode") ?? "",
+    frame_rate: data.get("frame_rate") ?? "",
+    gop: data.get("gop") ?? "",
+    loop: data.get("loop") ?? "",
+    loop_count: data.get("loop_count") ?? "",
+  };
+}
+/* The query the API takes for a draft's choices; a blank frame rate or GOP means auto. */
+function choiceQuery(draft) {
+  const loop = draft.loop === "forever" ? "-1" : draft.loop === "once" ? "0" : draft.loop_count;
+  return { mode: draft.mode, fps: draft.frame_rate.trim() || "auto", gop: draft.gop.trim() || "auto", loop };
+}
+
+/* ---------- settings ---------- */
+const SETTING_FIELDS = [
+  { key: "destination_host", label: "Destination host", purpose: "where push transports send", type: "text" },
+  { key: "multicast_group", label: "Multicast group", purpose: "address multicast streams send to", type: "text" },
+  { key: "advertised_host", label: "Advertised host", purpose: "host written into playback URLs", type: "text" },
+  { key: "max_video_bitrate", label: "Bitrate cap", purpose: "video bitrate limit when transcoding", type: "text" },
+  { key: "srtp_key", label: "SRTP key", purpose: "encryption key SRTP streams use", type: "text" },
+  { key: "udp_first_port", label: "UDP first port", purpose: "", type: "number" },
+  { key: "rtp_first_port", label: "RTP first port", purpose: "", type: "number" },
+  { key: "srt_call_first_port", label: "SRT call first port", purpose: "", type: "number" },
+  { key: "srtp_first_port", label: "SRTP first port", purpose: "", type: "number" },
+  { key: "srt_listen_first_port", label: "SRT listen first port", purpose: "", type: "number" },
+  { key: "tcp_first_port", label: "TCP first port", purpose: "", type: "number" },
+  { key: "http_first_port", label: "HTTP first port", purpose: "", type: "number" },
+];
+function settingsAsText(settings) {
+  const text = {};
+  SETTING_FIELDS.forEach((field) => { text[field.key] = settings[field.key] == null ? "" : String(settings[field.key]); });
+  return text;
+}
+
+/* ---------- header, notice ---------- */
+function renderCounts() {
+  const node = document.getElementById("counts");
+  if (!state.loaded) { setHtml(node, ""); return; }
+  const total = state.streams.length;
+  const running = state.streams.filter((s) => s.state === "running").length;
+  setHtml(node, `<b>${total}</b> streams, <b class="live">${running}</b> running`);
+}
+function renderNotice() {
+  const node = document.getElementById("notice");
+  const text = document.getElementById("noticeText");
+  if (state.lastOk === null) {
+    node.hidden = !state.unreachable;
+    setText(text, "Server unreachable; nothing loaded yet.");
+    return;
+  }
+  const age = Math.round((Date.now() - state.lastOk) / 1000);
+  if (age * 1000 <= STALE_MS) { node.hidden = true; return; }
+  setText(text, state.unreachable
+    ? `Stale: server unreachable, showing the last known state from ${age} s ago.`
+    : `Stale: no update for ${age} s.`);
+  node.hidden = false;
+}
+function renderMessage(node, key) {
+  setText(node, state.messages.get(key) || "");
+}
+function setText(node, text) {
+  if (node && node.textContent !== text) node.textContent = text;
+}
+function setHtml(node, html) {
+  if (node && node.innerHTML !== html) node.innerHTML = html;
+}
+
+/* ---------- list: rows reconciled by name, cells patched in place ---------- */
+function renderList() {
+  const body = document.getElementById("rows");
+  const rows = new Map([...body.children].map((tr) => [tr.dataset.name, tr]));
+  state.streams.forEach((stream, index) => {
+    let tr = rows.get(stream.name);
+    if (!tr) {
+      tr = document.createElement("tr");
+      tr.dataset.name = stream.name;
+      tr.innerHTML = `<td class="c-name"><button type="button" class="rowname"><span class="markslot"></span><span class="name"></span></button></td>` +
+        `<td class="c-transport"></td><td class="c-file"></td><td class="c-port"></td><td class="c-state"><span class="state"></span><span class="reason"></span></td>`;
+    }
+    rows.delete(stream.name);
+    if (body.children[index] !== tr) body.insertBefore(tr, body.children[index] || null);
+    setHtml(tr.querySelector(".markslot"), markHtml(stream.state));
+    setText(tr.querySelector(".name"), stream.name);
+    setText(tr.querySelector(".c-transport"), stream.transport_label);
+    setText(tr.querySelector(".c-file"), stream.filename);
+    setText(tr.querySelector(".c-port"), formatPort(stream.port));
+    const stateNode = tr.querySelector(".state");
+    setText(stateNode, stream.state);
+    stateNode.className = "state is-" + stream.state;
+    setText(tr.querySelector(".reason"), reasonText(stream));
+    const selected = state.panel.mode === "stream" && state.panel.name === stream.name;
+    tr.classList.toggle("selected", selected);
+    tr.querySelector(".rowname").setAttribute("aria-pressed", String(selected));
+  });
+  rows.forEach((tr) => tr.remove());
+  document.getElementById("list").hidden = state.loaded && state.streams.length === 0;
+  document.getElementById("empty").hidden = !(state.loaded && state.streams.length === 0);
+}
+
+/* ---------- panel: rebuilt when its identity changes, patched otherwise ---------- */
+let renderedPanelKey = "";
+function panelKey() {
+  return state.panel.mode + ":" + (state.panel.name || "");
+}
+function renderPanel() {
+  const panel = document.getElementById("panel");
+  const key = panelKey();
+  if (key !== renderedPanelKey) {
+    renderedPanelKey = key;
+    panel.innerHTML = buildPanel();
+    if (state.panel.mode === "stream") fillEditForm(panel.querySelector("form"), streamByName(state.panel.name), true);
+    if (state.panel.mode === "create") fillCreateForm(panel.querySelector("form"));
+    if (state.panel.mode === "settings") fillSettingsForm(panel.querySelector("form"), true);
+  }
+  if (state.panel.mode === "stream") patchStreamPanel(panel);
+  if (state.panel.mode === "create") patchCreateForm(panel.querySelector("form"));
+  if (state.panel.mode === "settings") patchSettingsForm(panel.querySelector("form"));
+}
+function buildPanel() {
+  if (state.panel.mode === "stream") return buildStreamPanel(streamByName(state.panel.name));
+  if (state.panel.mode === "create") return buildCreatePanel();
+  if (state.panel.mode === "settings") return buildSettingsPanel();
+  return "";
+}
+
+/* Shared markup for the advanced choices: mode, frame rate, GOP, loop. */
+function advancedFieldsHtml(prefix) {
+  return `
+    <fieldset class="field wide">
+      <legend>Mode</legend>
+      <div class="radios">
+        <label><input type="radio" name="mode" value="passthrough"> passthrough</label>
+        <label><input type="radio" name="mode" value="transcode"> transcode</label>
+      </div>
+      <span class="note" data-mode-note hidden></span>
+    </fieldset>
+    <div class="field">
+      <label for="${prefix}-rate">Frame rate</label>
+      <input id="${prefix}-rate" name="frame_rate" type="text" inputmode="decimal">
+      <span class="static" data-source-rate hidden></span>
+    </div>
+    <div class="field">
+      <label for="${prefix}-gop">GOP</label>
+      <input id="${prefix}-gop" name="gop" type="text" inputmode="numeric">
+      <span class="static" data-gop-static hidden>—</span>
+    </div>
+    <div class="field">
+      <label for="${prefix}-loop">Loop</label>
+      <select id="${prefix}-loop" name="loop"><option value="forever">forever</option><option value="once">once</option><option value="count">count</option></select>
+    </div>
+    <div class="field" data-loop-count hidden>
+      <label for="${prefix}-loopcount">Loop count</label>
+      <input id="${prefix}-loopcount" name="loop_count" type="number" min="1" step="1">
+    </div>`;
+}
+/* Option lists follow the data: files may appear or vanish while a form is open. */
+function fileOptions(current) {
+  const files = state.videos.includes(current) || !current ? state.videos : [current, ...state.videos];
+  return (current === "" ? [["", ""]] : []).concat(files.map((file) => [file, file]));
+}
+function transportOptions() {
+  return state.transports.map((kind) => [kind.id, kind.label]);
+}
+function optionsHtml(options) {
+  return options.map(([value, label]) => `<option value="${escapeHtml(value)}">${escapeHtml(label)}</option>`).join("");
+}
+function syncOptions(select, options) {
+  const wanted = options.map(([value]) => value).join("\n");
+  const present = [...select.options].map((option) => option.value).join("\n");
+  if (wanted === present) return;
+  const chosen = select.value;
+  select.innerHTML = optionsHtml(options);
+  select.value = chosen;
+}
+
+function buildStreamPanel(stream) {
+  const playbackLines = stream.register.map(([label, url]) => `
+    <div class="line playback" data-copy="${escapeHtml(url)}">
+      <span class="url"><span class="sub">${label === "register" ? "Playback URL" : "Playback URL, " + escapeHtml(label.toUpperCase())}</span>${escapeHtml(url)}</span>
+      <button type="button" class="copy" data-act="copy">Copy</button>
+    </div>`).join("");
+  const tabButtons = [["source", "Source"], ["output", "Output"], ["command", "ffmpeg command"], ["advanced", "Advanced"]]
+    .map(([id, label]) => `<button type="button" role="tab" id="tab-${id}" aria-controls="tabpanel-${id}" aria-selected="false" tabindex="-1" data-tab="${id}">${label}</button>`).join("");
+  return `
+    <h2 data-fact="name" tabindex="-1">${escapeHtml(stream.name)}</h2>
+
+    <div class="staterow">
+      <span class="stateword"><span class="markslot">${markHtml(stream.state)}</span><span class="state is-${stream.state}" data-fact="state">${stream.state}</span></span>
+      <span class="reason" data-fact="reason">${escapeHtml(reasonText(stream))}</span>
+      <span class="actions">
+        <button type="button" data-act="start">Start</button>
+        <button type="button" data-act="stop">Stop</button>
+        <button type="button" data-act="delete">Delete</button>
+        <button type="button" class="danger" data-act="delete-confirm" hidden>Confirm delete</button>
+        <button type="button" data-act="delete-cancel" hidden>Cancel</button>
+      </span>
+      <p class="message" data-message role="alert"></p>
+    </div>
+
+    <div class="errorblock" data-error hidden>
+      <span class="label">Error</span>
+      <pre data-fact="error"></pre>
+    </div>
+
+    <div class="section">
+      ${playbackLines}
+      <div class="line delivery" data-copy="${escapeHtml(stream.delivery || "")}">
+        <span class="url"><span class="sub">Delivery, <span data-fact="delivery_label">${escapeHtml(stream.delivery_label)}</span></span><span data-fact="delivery">${escapeHtml(stream.delivery || "—")}</span></span>
+        <button type="button" class="copy" data-act="copy" ${stream.delivery ? "" : "disabled"}>Copy</button>
+      </div>
+    </div>
+
+    <form class="form" data-form="edit" autocomplete="off">
+      <div class="field wide">
+        <label for="e-name">Name</label>
+        <input id="e-name" name="name" type="text">
+      </div>
+      <div class="field">
+        <label for="e-file">File</label>
+        <select id="e-file" name="file">${optionsHtml(fileOptions(stream.filename))}</select>
+      </div>
+      <div class="field">
+        <label for="e-transport">Transport</label>
+        <select id="e-transport" name="transport">${optionsHtml(transportOptions())}</select>
+      </div>
+      <p class="note wide" data-port-note hidden></p>
+
+      <div class="notebook">
+        <div class="tabs" role="tablist" aria-label="Stream detail">${tabButtons}</div>
+        <div class="tabpanel" role="tabpanel" id="tabpanel-source" aria-labelledby="tab-source" hidden>
+          <dl class="facts">
+            <dt>Video</dt><dd data-fact="video_codecs"></dd>
+            <dt>Audio</dt><dd data-fact="audio_codecs"></dd>
+            <dt>KLV</dt><dd data-fact="klv"></dd>
+            <dt>Source frame rate</dt><dd data-fact="source_frame_rate"></dd>
+          </dl>
         </div>
-    </nav>
-    <main class="detail">
-        <div id="error" class="error-banner" hidden>
-            <span id="error-text"></span>
+        <div class="tabpanel" role="tabpanel" id="tabpanel-output" aria-labelledby="tab-output" hidden>
+          <dl class="facts">
+            <dt>Mode</dt><dd><span data-fact="mode"></span><span class="instead" data-fact="instead"></span></dd>
+            <dt>Encoder</dt><dd data-fact="encoder"></dd>
+            <dt>Frame rate</dt><dd><span data-fact="frame_rate"></span> <span class="how" data-fact="frame_rate_how"></span></dd>
+            <dt>GOP</dt><dd><span data-fact="gop"></span> <span class="how" data-fact="gop_how"></span></dd>
+            <dt>Loop</dt><dd data-fact="loop"></dd>
+            <dt>Port</dt><dd data-fact="port"></dd>
+          </dl>
         </div>
-        <div id="detail"></div>
-    </main>
-    <script>
-        const copyIcon = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>`;
+        <div class="tabpanel" role="tabpanel" id="tabpanel-command" aria-labelledby="tab-command" hidden>
+          <pre data-fact="command"></pre>
+        </div>
+        <div class="tabpanel" role="tabpanel" id="tabpanel-advanced" aria-labelledby="tab-advanced" hidden>
+          <div class="form">${advancedFieldsHtml("e")}</div>
+        </div>
+      </div>
 
-        let streams = [];
-        let selectedName = null;
-        // Separate unapplied settings for each output of the selected source.
-        // Missing entries use the server values. fps/gop null means "automatic".
-        let drafts = {};
-        // Output names whose command view is open, so a rewrite keeps it open.
-        const openCommands = new Set();
-        let lastPayload = '';
-        let lastUpdate = null;
+      <div class="formactions">
+        <button type="submit" class="primary" data-act="save">Save</button>
+        <button type="button" data-act="cancel">Cancel</button>
+        <span class="draft" data-draft hidden>${shapeHtml("square", "yellow")}Unsaved</span>
+        <p class="message" data-message role="alert"></p>
+      </div>
+    </form>`;
+}
 
-        function escapeHtml(text) {
-            return String(text).replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
-        }
+/* One mode fact: what is in force, and why, only when the choice could not be honoured. */
+function modeFact(stream) {
+  if (stream.mode === stream.effective_mode) return { mode: stream.effective_mode, instead: "" };
+  return {
+    mode: stream.effective_mode,
+    instead: `${stream.mode} asked for; ${stream.ineligible_codecs.join(", ")} not eligible, so ${stream.effective_mode} was used instead`,
+  };
+}
 
-        const stateLabels = {running: 'Running', crashing: 'Crashing', restarting: 'Restarting', starting: 'Starting',
-                             waiting: 'Waiting', failed: 'Failed', stopped: 'Stopped', completed: 'Completed', stopping: 'Stopping', retiring: 'Retiring'};
+function patchStreamPanel(panel) {
+  const stream = streamByName(state.panel.name);
+  const mode = modeFact(stream);
+  const facts = {
+    name: stream.name,
+    state: stream.state,
+    reason: reasonText(stream),
+    error: stream.error || "",
+    delivery_label: stream.delivery_label,
+    delivery: stream.delivery || "—",
+    video_codecs: (stream.video_codecs || []).join(", ") || "none",
+    audio_codecs: (stream.audio_codecs || []).join(", ") || "none",
+    klv: (stream.data_codecs || []).includes("klv") ? "present" : "none",
+    source_frame_rate: formatRate(stream.source_frame_rate),
+    mode: mode.mode,
+    instead: mode.instead,
+    encoder: stream.encoder || "—",
+    frame_rate: formatRate(stream.frame_rate),
+    frame_rate_how: stream.frame_rate_explicit ? "explicit" : "auto",
+    gop: String(stream.gop_frames ?? "—"),
+    gop_how: stream.gop_explicit ? "explicit" : "auto",
+    loop: formatLoop(stream.loop_count),
+    port: formatPort(stream.port),
+    command: stream.command || "—",
+  };
+  panel.querySelectorAll("[data-fact]").forEach((node) => setText(node, facts[node.dataset.fact]));
+  panel.querySelector('[data-fact="state"]').className = "state is-" + stream.state;
+  setHtml(panel.querySelector(".staterow .markslot"), markHtml(stream.state));
+  panel.querySelector("[data-error]").hidden = !stream.error;
+  panel.querySelector(".line.delivery").dataset.copy = stream.delivery || "";
+  panel.querySelector(".line.delivery button").disabled = !stream.delivery;
 
-        function fmtRate(rate) { return rate ? `${Math.round(rate * 100) / 100} fps` : 'unknown'; }
+  const startBlocked = ["running", "starting", "stopping", "crashing", "restarting", "waiting"].includes(stream.state);
+  const stopBlocked = ["stopped", "completed"].includes(stream.state);
+  const armed = state.deleteArmed === stream.name;
+  const start = panel.querySelector('[data-act="start"]');
+  const stop = panel.querySelector('[data-act="stop"]');
+  start.disabled = startBlocked;
+  stop.disabled = stopBlocked;
+  start.hidden = armed;
+  stop.hidden = armed;
+  panel.querySelector('[data-act="delete"]').hidden = armed;
+  panel.querySelector('[data-act="delete-confirm"]').hidden = !armed;
+  panel.querySelector('[data-act="delete-cancel"]').hidden = !armed;
+  renderMessage(panel.querySelector(".staterow [data-message]"), "stream:" + stream.name);
 
-        function renderList() {
-            const focused = document.activeElement && document.activeElement.dataset.stream;
-            document.getElementById('count').textContent = streams.length;
-            document.getElementById('all-buttons').hidden = streams.length === 0;
-            document.getElementById('list').innerHTML = streams.map(s => `
-                <button class="stream-item${s.name === selectedName ? ' selected' : ''}" data-stream="${s.name}" onclick="select('${s.name}')">
-                    <span>${s.name}</span>
-                    <span class="dots">
-                        <span class="dot ${s.outputs.rtsp.state}" title="rtsp: ${s.outputs.rtsp.state}"></span>
-                        <span class="dot ${s.outputs.udp.state}" title="udp: ${s.outputs.udp.state}"></span>
-                    </span>
-                </button>`).join('');
-            // A rewrite drops keyboard focus to the body; put it back on the same row.
-            if (focused) document.querySelector(`.stream-item[data-stream="${focused}"]`)?.focus();
-        }
+  renderTabs(panel);
+  const form = panel.querySelector("form");
+  const draft = state.drafts.get(stream.name) || draftFromStream(stream);
+  syncOptions(form.elements.file, fileOptions(draft.file));
+  syncOptions(form.elements.transport, transportOptions());
+  if (!state.drafts.has(stream.name)) fillEditForm(form, stream, false);
+  patchEditForm(form, stream);
+}
 
-        function urlRow(label, url, active) {
-            return `<span class="label">${label}</span>
-                <span class="url mono${url ? '' : ' none'}">${url ?? 'none assigned'}</span>
-                ${active ? `<button class="copy-btn" title="Copy ${label} URL" onclick='copyUrl(this, ${JSON.stringify(url)})'>${copyIcon}</button>` : '<span></span>'}`;
-        }
+function renderTabs(panel) {
+  panel.querySelectorAll('[role="tab"]').forEach((tab) => {
+    const active = tab.dataset.tab === state.tab;
+    tab.setAttribute("aria-selected", String(active));
+    tab.tabIndex = active ? 0 : -1;
+  });
+  TABS.forEach((id) => { panel.querySelector("#tabpanel-" + id).hidden = id !== state.tab; });
+}
 
-        function outputCard(s, outputName, urls) {
-            const output = s.outputs[outputName];
-            const state = output.state;
-            return `<div class="output row">
-                <div class="output-body">
-                    <div class="output-header">
-                        <span class="name">${outputName.toUpperCase()}</span>
-                        <span class="encoder">${escapeHtml(output.encoder ?? "not prepared")}</span>
-                        <span class="pill ${state}">${stateLabels[state] ?? state}</span>
-                        ${output.reason && output.enabled ? `<span class="reason">${escapeHtml(output.reason)}</span>` : ''}
-                    </div>
-                    ${output.error ? `<pre class="err mono" title="Last lines of the ffmpeg log">${escapeHtml(output.error)}</pre>` : ''}
-                    ${settingsRow(s, outputName)}
-                    <div class="url-grid">
-                        ${urls.map(([label, url]) => urlRow(label, url, output.running)).join('')}
-                    </div>
-                    ${output.command === null ? '' : `
-                    <details ${openCommands.has(outputName) ? 'open' : ''} ontoggle="toggleCommand('${outputName}', this.open)">
-                        <summary>Command</summary>
-                        <pre class="command mono">${escapeHtml(output.command)}</pre>
-                    </details>`}
-                </div>
-                <div class="pair">
-                    <button class="btn-stop" onclick="stopOutput(this, '${s.name}', '${outputName}')" ${state !== 'retiring' && (output.enabled || output.running) ? '' : 'disabled'}>Stop</button>
-                    <button class="btn-start" onclick="startOutput(this, '${s.name}', '${outputName}')" ${output.running || state === 'retiring' ? 'disabled' : ''}>Start</button>
-                </div>
-            </div>`;
-        }
+/* Set form controls from the stream unless the operator is typing in one. */
+function setControl(control, value, force) {
+  if (!control || (!force && document.activeElement === control)) return;
+  if (control.value !== value) control.value = value;
+}
+function setRadio(form, name, value, force) {
+  form.querySelectorAll(`input[name="${name}"]`).forEach((radio) => {
+    if (!force && document.activeElement === radio) return;
+    radio.checked = radio.value === value;
+  });
+}
+function fillChoiceControls(form, draft, force) {
+  setControl(form.elements.file, draft.file, force);
+  setControl(form.elements.transport, draft.transport, force);
+  setRadio(form, "mode", draft.mode, force);
+  setControl(form.elements.frame_rate, draft.frame_rate, force);
+  setControl(form.elements.gop, draft.gop, force);
+  setControl(form.elements.loop, draft.loop, force);
+  setControl(form.elements.loop_count, draft.loop_count, force);
+}
+function fillEditForm(form, stream, force) {
+  const draft = state.drafts.get(stream.name) || draftFromStream(stream);
+  setControl(form.elements.name, draft.name, force);
+  fillChoiceControls(form, draft, force);
+}
+function patchEditForm(form, stream) {
+  const draft = state.drafts.get(stream.name) || draftFromStream(stream);
+  const hasDraft = state.drafts.has(stream.name);
+  applyModeRules(form, stream.passthrough_eligible !== false, stream.ineligible_codecs || [], formatRate(stream.source_frame_rate));
+  const portNote = form.querySelector("[data-port-note]");
+  const transportChanged = draft.transport !== stream.transport;
+  portNote.hidden = !transportChanged;
+  if (transportChanged) setHtml(portNote, portNoteHtml(draft.transport, stream.name));
+  form.querySelector("[data-loop-count]").hidden = draft.loop !== "count";
+  const save = form.querySelector('[data-act="save"]');
+  setText(save, stream.running ? "Save and restart" : "Save");
+  save.disabled = !hasDraft;
+  form.querySelector('[data-act="cancel"]').disabled = !hasDraft;
+  form.querySelector("[data-draft]").hidden = !hasDraft;
+  renderMessage(form.querySelector(".formactions [data-message]"), "edit:" + stream.name);
+}
+function applyModeRules(form, eligible, ineligibleCodecs, sourceRateText) {
+  const passthroughRadio = form.querySelector('input[name="mode"][value="passthrough"]');
+  passthroughRadio.disabled = !eligible;
+  const modeNote = form.querySelector("[data-mode-note]");
+  modeNote.hidden = eligible;
+  if (!eligible) setText(modeNote, `Passthrough is not eligible: ${ineligibleCodecs.join(", ")} prevents it.`);
+  const passthrough = form.querySelector('input[name="mode"]:checked')?.value === "passthrough";
+  form.elements.frame_rate.hidden = passthrough;
+  form.elements.gop.hidden = passthrough;
+  const sourceRate = form.querySelector("[data-source-rate]");
+  sourceRate.hidden = !passthrough;
+  setText(sourceRate, sourceRateText ? `${sourceRateText}, source rate` : "source rate");
+  form.querySelector("[data-gop-static]").hidden = !passthrough;
+}
 
-        // The settings the controls should show: the draft while editing,
-        // else the server's values.
-        function currentSettings(s, outputName) {
-            s = s.outputs[outputName];
-            return drafts[outputName] ?? {
-                mode: s.mode ?? 'transcode', loop: s.loop_count,
-                fps: s.frame_rate_explicit ? s.frame_rate : null,
-                gop: s.gop_explicit ? s.gop_frames : null,
-            };
-        }
+/* ---------- create ---------- */
+function newCreateDraft() {
+  return { name: "", file: "", transport: "udp", mode: "transcode", frame_rate: "auto", gop: "auto", loop: "forever", loop_count: "" };
+}
+function defaultName(draft) {
+  return draft.file ? `${fileStem(draft.file)}-${draft.transport}` : "";
+}
+function buildCreatePanel() {
+  return `
+    <h2 tabindex="-1">New stream</h2>
+    <form class="form" data-form="create" autocomplete="off">
+      <div class="field">
+        <label for="c-file">File</label>
+        <select id="c-file" name="file">${optionsHtml(fileOptions(""))}</select>
+      </div>
+      <div class="field">
+        <label for="c-transport">Transport</label>
+        <select id="c-transport" name="transport">${optionsHtml(transportOptions())}</select>
+      </div>
+      <p class="note wide" data-port-note></p>
+      <div class="field wide">
+        <label for="c-name">Name</label>
+        <input id="c-name" name="name" type="text">
+      </div>
+      <details class="advanced">
+        <summary><i class="tri" aria-hidden="true"></i>Advanced</summary>
+        <div class="form">${advancedFieldsHtml("c")}</div>
+      </details>
+      <div class="formactions stacked">
+        <button type="submit" class="primary" data-act="create-start">Create and start</button>
+        <button type="submit" data-act="create-stopped">Create stopped</button>
+        <button type="button" data-act="create-cancel">Cancel</button>
+        <p class="message" data-message role="alert"></p>
+      </div>
+    </form>`;
+}
+function fillCreateForm(form) {
+  const draft = state.createDraft;
+  setControl(form.elements.name, draft.name, true);
+  fillChoiceControls(form, draft, true);
+}
+function patchCreateForm(form) {
+  const draft = state.createDraft;
+  syncOptions(form.elements.file, fileOptions(""));
+  syncOptions(form.elements.transport, transportOptions());
+  applyModeRules(form, true, [], "");
+  setHtml(form.querySelector("[data-port-note]"), portNoteHtml(draft.transport, null));
+  form.querySelector("[data-loop-count]").hidden = draft.loop !== "count";
+  renderMessage(form.querySelector(".formactions [data-message]"), "create");
+}
 
-        function settingsRow(source, outputName) {
-            const s = source.outputs[outputName];
-            const v = currentSettings(source, outputName);
-            const dirty = !!drafts[outputName];
-            // FPS and GOP are encoder settings: nothing to set when the source
-            // is copied. A passthrough request on an ineligible file still
-            // transcodes, so follow what would actually run.
-            const copying = v.mode === 'passthrough' && s.passthrough_eligible !== false;
-            // While copying, the fields show what actually streams: the
-            // source's own rate, and no GOP figure (the file's own GOP is
-            // never probed). Stored overrides apply only to transcode.
-            const fpsOverride = copying ? null : v.fps;
-            const outputRate = fpsOverride ?? s.source_frame_rate;
-            const naturalGop = outputRate ? Math.max(1, Math.round(outputRate)) : 30;
-            const off = copying ? 'disabled' : '';
-            const modeNote = v.mode === 'passthrough' && s.passthrough_eligible === false
-                ? `<span class="reason">transcodes anyway: ${escapeHtml((s.ineligible_codecs ?? []).join(', '))} cannot pass through (H.264, H.265, MPEG-2, MPEG-4, MJPEG only)</span>` : '';
-            return `
-                <div class="row settings-row">
-                <div class="settings">
-                    <label>Video
-                        <select id="${outputName}-mode" onchange="edit('${outputName}', 'mode', this.value)" title="Passthrough sends the source unmodified (H.264, H.265, MPEG-2, MPEG-4, MJPEG)">
-                            <option value="passthrough" ${v.mode === 'passthrough' ? 'selected' : ''}>Passthrough</option>
-                            <option value="transcode" ${v.mode === 'transcode' ? 'selected' : ''}>Transcode</option>
-                        </select>
-                        <span class="hint">${modeNote}</span>
-                    </label>
-                    <label>FPS
-                        <input type="number" id="${outputName}-fps" min="1" max="120" step="any" value="${Math.round(outputRate * 1000) / 1000 || ''}" ${off}
-                               oninput="typed('${outputName}', 'fps', this.value)" onblur="edit('${outputName}', 'fps', numberOrAuto(this.value))"
-                               title="Output frame rate; blank for the source rate. Transcode only.">
-                        <span class="hint">${fpsOverride !== null
-                            ? `blank for the source rate (${fmtRate(s.source_frame_rate)})`
-                            : `source rate (${fmtRate(s.source_frame_rate)})`}</span>
-                    </label>
-                    <label>GOP (frames)
-                        <input type="number" id="${outputName}-gop" min="1" step="1" value="${copying ? '' : v.gop ?? naturalGop}" ${off}
-                               oninput="typed('${outputName}', 'gop', this.value)" onblur="edit('${outputName}', 'gop', numberOrAuto(this.value))"
-                               title="Keyframe interval; blank for one second of frames. Transcode only.">
-                        <span class="hint"></span>
-                    </label>
-                    <label>Playback
-                        <select id="${outputName}-loop" onchange="edit('${outputName}', 'loop', Number(this.value))">
-                            <option value="-1" ${v.loop === -1 ? 'selected' : ''}>Loop forever</option>
-                            <option value="0" ${v.loop === 0 ? 'selected' : ''}>Play once</option>
-                            <option value="1" ${v.loop === 1 ? 'selected' : ''}>Play 2x</option>
-                            <option value="2" ${v.loop === 2 ? 'selected' : ''}>Play 3x</option>
-                            <option value="4" ${v.loop === 4 ? 'selected' : ''}>Play 5x</option>
-                            <option value="9" ${v.loop === 9 ? 'selected' : ''}>Play 10x</option>
-                            ${[-1, 0, 1, 2, 4, 9].includes(v.loop) ? '' : `<option value="${v.loop}" selected>Play ${v.loop + 1}x</option>`}
-                        </select>
-                        <span class="hint"></span>
-                    </label>
-                </div>
-                <div class="pair settings-actions" id="${outputName}-actions" ${dirty ? '' : 'hidden'}>
-                    <button class="btn-start" onclick="applySettings(this, '${source.name}', '${outputName}')">${s.running ? 'Save & restart' : 'Save'}</button>
-                    <button class="btn-plain" onclick="cancelSettings('${outputName}')">Cancel</button>
-                </div>
-                </div>`;
-        }
+/* ---------- settings ---------- */
+function buildSettingsPanel() {
+  const fields = (filter) => SETTING_FIELDS.filter(filter).map((field) => `
+    <div class="field">
+      <label for="s-${field.key}">${field.label}${field.purpose ? `, <span class="purpose">${field.purpose}</span>` : ""}</label>
+      <input id="s-${field.key}" name="${field.key}" type="${field.type}" ${field.type === "number" ? 'min="1" max="65535" step="1" inputmode="numeric"' : ""}>
+    </div>`).join("");
+  return `
+    <div class="settings">
+      <h2 tabindex="-1">Settings</h2>
+      <p class="rule">Blank host fields mean unset; a blank port means its default.</p>
+      <form class="form" data-form="settings" autocomplete="off">
+        ${fields((f) => f.type === "text")}
+        <div class="group">
+          <span class="label">First ports</span>
+          <span class="purpose">the lowest port a new stream of each kind takes</span>
+        </div>
+        ${fields((f) => f.type === "number")}
+        <div class="formactions">
+          <button type="submit" class="primary" data-act="settings-save">Save</button>
+          <button type="button" data-act="settings-cancel">Cancel</button>
+          <span class="draft" data-draft hidden>${shapeHtml("square", "yellow")}Unsaved</span>
+          <p class="message" data-message role="alert"></p>
+        </div>
+      </form>
+    </div>`;
+}
+function fillSettingsForm(form, force) {
+  const values = state.settingsDraft || settingsAsText(state.settings);
+  SETTING_FIELDS.forEach((field) => setControl(form.elements[field.key], values[field.key], force));
+}
+function patchSettingsForm(form) {
+  if (!state.settingsDraft) fillSettingsForm(form, false);
+  const hasDraft = Boolean(state.settingsDraft);
+  form.querySelector('[data-act="settings-save"]').disabled = !hasDraft;
+  form.querySelector('[data-act="settings-cancel"]').disabled = !hasDraft;
+  form.querySelector("[data-draft]").hidden = !hasDraft;
+  renderMessage(form.querySelector("[data-message]"), "settings");
+}
 
-        function renderDetail() {
-            const s = streams.find(x => x.name === selectedName);
-            const detail = document.getElementById('detail');
-            const active = document.activeElement && document.activeElement.closest('#detail')
-                           ? document.activeElement.id : null;
-            renderDetailNow(s, detail);
-            if (active) document.getElementById(active)?.focus();
-        }
+/* ---------- render everything ---------- */
+function render() {
+  if (state.panel.mode === "stream" && !streamByName(state.panel.name)) state.panel = { mode: "none", name: null };
+  renderCounts();
+  renderNotice();
+  renderList();
+  renderPanel();
+  renderMessage(document.getElementById("barMessage"), "all");
+}
 
-        function renderDetailNow(s, detail) {
-            if (!s) {
-                detail.innerHTML = `<p class="empty">${streams.length ? 'Select a stream' : 'No videos in the videos directory'}</p>`;
-                return;
-            }
-            detail.innerHTML = `
-                <div class="detail-header">
-                    <div class="detail-title">
-                        <h2>${s.name}</h2>
-                    </div>
-                </div>
-                ${outputCard(s, 'rtsp', [['rtsp', s.rtsp_url], ['hls', s.hls_url]])}
-                ${outputCard(s, 'udp', [['udp', s.udp_url]])}`;
-        }
+/* ---------- navigation ---------- */
+const panelNode = document.getElementById("panel");
+function openStream(name) {
+  state.panel = { mode: "stream", name };
+  state.deleteArmed = null;
+  render();
+  revealPanel();
+}
+function openCreate() {
+  state.panel = { mode: "create", name: null };
+  state.createDraft = newCreateDraft();
+  state.nameTouched = false;
+  render();
+  revealPanel();
+}
+function openSettings() {
+  state.panel = { mode: "settings", name: null };
+  render();
+  revealPanel();
+}
+function closePanel() {
+  state.panel = { mode: "none", name: null };
+  render();
+}
+/* Focus the panel heading so the next Tab lands on its first control; scroll it into view when stacked. */
+function revealPanel() {
+  const heading = panelNode.querySelector("h2");
+  if (!heading) return;
+  heading.focus({ preventScroll: true });
+  if (!window.matchMedia("(min-width: 1280px)").matches) panelNode.scrollIntoView({ block: "start" });
+}
 
-        function render() {
-            if (!streams.some(s => s.name === selectedName)) {
-                selectedName = streams.length ? streams[0].name : null;
-                drafts = {};
-            }
-            renderList();
-            renderDetail();
-            renderSettingsWarning();
-        }
+/* ---------- the server ---------- */
+async function fetchJson(path) {
+  const response = await fetch(path, { cache: "no-store" });
+  const body = await response.json();
+  if (!response.ok) throw new Error(body.error || `HTTP ${response.status}`);
+  return body;
+}
+async function poll() {
+  try {
+    const [streams, videos, settings, transports] = await Promise.all([
+      fetchJson("/api/streams"), fetchJson("/api/videos"), fetchJson("/api/settings"),
+      state.transports.length ? state.transports : fetchJson("/api/transports"),
+    ]);
+    state.streams = streams;
+    state.videos = videos;
+    state.settings = settings;
+    state.transports = transports;
+    state.lastOk = Date.now();
+    state.unreachable = false;
+    state.loaded = true;
+  } catch (error) {
+    // Keep the page as it was; the notice says how old it is.
+    state.unreachable = true;
+  }
+  render();
+}
+/* One mutation: the server's plain text lands in the slot for targetKey; success refreshes first, then onSuccess runs. */
+async function callServer(targetKey, path, button, onSuccess) {
+  if (button) button.disabled = true;
+  let ok = false;
+  try {
+    const response = await fetch(path, { method: "POST" });
+    const body = await response.json().catch(() => ({}));
+    ok = response.ok && body.success !== false;
+    if (ok) state.messages.delete(targetKey);
+    else state.messages.set(targetKey, body.error || `HTTP ${response.status}`);
+  } catch (error) {
+    state.messages.set(targetKey, `Server unreachable: ${error.message}`);
+  }
+  if (button) button.disabled = false;
+  if (ok) {
+    await poll();
+    if (onSuccess) onSuccess();
+  }
+  render();
+}
+function streamPath(name, action) {
+  return `/api/streams/${encodeURIComponent(name)}/${action}`;
+}
+function queryString(pairs) {
+  return new URLSearchParams(pairs).toString();
+}
 
-        function showStale() {
-            const count = document.getElementById('count');
-            if (lastUpdate === null) return;
-            const age = Math.round((Date.now() - lastUpdate) / 1000);
-            if (age > 12) {
-                count.textContent = `updates stalled ${age}s`;
-                count.className = 'stale';
-            }
-        }
+/* ---------- copy ---------- */
+function copyText(text, button) {
+  const done = () => {
+    button.textContent = "Copied";
+    setTimeout(() => { button.textContent = "Copy"; }, 1500);
+  };
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(done, () => fallbackCopy(text, done));
+  } else {
+    fallbackCopy(text, done);
+  }
+}
+function fallbackCopy(text, done) {
+  const area = document.createElement("textarea");
+  area.value = text;
+  area.setAttribute("readonly", "");
+  area.style.position = "fixed";
+  area.style.left = "-9999px";
+  document.body.appendChild(area);
+  area.select();
+  try { document.execCommand("copy"); } finally { area.remove(); }
+  done();
+}
 
-        async function loadStreams(force) {
-            try {
-                const res = await fetch('/api/streams');
-                if (!res.ok) throw new Error(`HTTP ${res.status}`);
-                const payload = await res.text();
-                lastUpdate = Date.now();
-                document.getElementById('count').className = '';
-                if (errorKind === 'network') hideError();   // the server is reachable again
-                // Skip the rewrite when nothing changed: no flicker.
-                if (!force && payload === lastPayload) return;
-                lastPayload = payload;
-                streams = JSON.parse(payload);
-                render();
-            } catch (err) {
-                // Keep the page as it was; the sidebar says how old it is.
-                showStale();
-            }
-        }
+/* ---------- events ---------- */
+document.getElementById("rows").addEventListener("click", (event) => {
+  const row = event.target.closest("tr[data-name]");
+  if (row) openStream(row.dataset.name);
+});
 
-        function select(name) {
-            if (name === selectedName) return;
-            selectedName = name;
-            drafts = {};
-            render();
-        }
+document.querySelector(".bar").addEventListener("click", (event) => {
+  const button = event.target.closest("button[data-act]");
+  if (!button) return;
+  if (button.dataset.act === "new") openCreate();
+  if (button.dataset.act === "settings") openSettings();
+  if (button.dataset.act === "start-all") callServer("all", "/api/streams/start-all", button);
+  if (button.dataset.act === "stop-all") callServer("all", "/api/streams/stop-all", button);
+});
 
-        // ---- Settings draft ----
+panelNode.addEventListener("click", (event) => {
+  const tab = event.target.closest('[role="tab"]');
+  if (tab) { selectTab(tab.dataset.tab); return; }
+  const button = event.target.closest("button[data-act]");
+  if (!button) return;
+  const act = button.dataset.act;
+  const name = state.panel.name;
+  if (act === "copy") { copyText(button.closest("[data-copy]").dataset.copy, button); return; }
+  if (act === "start") { callServer("stream:" + name, streamPath(name, "start"), button); return; }
+  if (act === "stop") { callServer("stream:" + name, streamPath(name, "stop"), button); return; }
+  if (act === "delete") { state.deleteArmed = name; render(); panelNode.querySelector('[data-act="delete-confirm"]').focus(); return; }
+  if (act === "delete-cancel") { state.deleteArmed = null; render(); panelNode.querySelector('[data-act="delete"]').focus(); return; }
+  if (act === "delete-confirm") { state.deleteArmed = null; callServer("stream:" + name, streamPath(name, "delete"), button); return; }
+  if (act === "cancel") { state.drafts.delete(name); state.messages.delete("edit:" + name); render(); return; }
+  if (act === "create-cancel") { state.messages.delete("create"); closePanel(); return; }
+  if (act === "settings-cancel") { state.settingsDraft = null; state.messages.delete("settings"); render(); return; }
+});
 
-        function numberOrAuto(text) { return text === '' ? null : Number(text); }
+/* Notebook tabs: click or arrow keys; the chosen tab persists across streams and polls. */
+function selectTab(id, focus) {
+  state.tab = id;
+  render();
+  if (focus) panelNode.querySelector(`[role="tab"][data-tab="${id}"]`).focus();
+}
+panelNode.addEventListener("keydown", (event) => {
+  const tab = event.target.closest('[role="tab"]');
+  if (!tab) return;
+  const index = TABS.indexOf(tab.dataset.tab);
+  if (event.key === "ArrowRight") selectTab(TABS[(index + 1) % TABS.length], true);
+  else if (event.key === "ArrowLeft") selectTab(TABS[(index + TABS.length - 1) % TABS.length], true);
+  else if (event.key === "Home") selectTab(TABS[0], true);
+  else if (event.key === "End") selectTab(TABS[TABS.length - 1], true);
+  else return;
+  event.preventDefault();
+});
 
-        function draftFor(outputName, key, value) {
-            const s = streams.find(x => x.name === selectedName);
-            if (!drafts[outputName]) drafts[outputName] = currentSettings(s, outputName);
-            drafts[outputName][key] = value;
-        }
+panelNode.addEventListener("input", (event) => {
+  const form = event.target.closest("form");
+  if (!form) return;
+  if (form.dataset.form === "edit") {
+    const stream = streamByName(state.panel.name);
+    const draft = readForm(form);
+    if (sameDraft(draft, draftFromStream(stream))) state.drafts.delete(stream.name); else state.drafts.set(stream.name, draft);
+  }
+  if (form.dataset.form === "create") {
+    const draft = readForm(form);
+    if (event.target.name === "name") state.nameTouched = draft.name.trim() !== "";
+    if (!state.nameTouched) { draft.name = defaultName(draft); form.elements.name.value = draft.name; }
+    state.createDraft = draft;
+  }
+  if (form.dataset.form === "settings") {
+    const values = {};
+    SETTING_FIELDS.forEach((field) => { values[field.key] = form.elements[field.key].value; });
+    const base = settingsAsText(state.settings);
+    state.settingsDraft = SETTING_FIELDS.every((field) => values[field.key] === base[field.key]) ? null : values;
+  }
+  render();
+});
 
-        // A keystroke only records the draft and reveals Save/Cancel; the
-        // pane is not rebuilt, so the caret stays where it is. The rebuild
-        // (hints, natural GOP) happens on change, when the field is left.
-        function typed(outputName, key, text) {
-            draftFor(outputName, key, numberOrAuto(text));
-            document.getElementById(`${outputName}-actions`).hidden = false;
-        }
+panelNode.addEventListener("submit", (event) => {
+  event.preventDefault();
+  const form = event.target;
+  const submitter = event.submitter;
+  if (form.dataset.form === "edit") {
+    const name = state.panel.name;
+    const draft = state.drafts.get(name);
+    if (!draft) return;
+    const query = { name: draft.name, file: draft.file, transport: draft.transport, ...choiceQuery(draft) };
+    callServer("edit:" + name, `${streamPath(name, "settings")}?${queryString(query)}`, submitter, () => {
+      state.drafts.delete(name);
+      if (draft.name !== name) openStream(draft.name);
+    });
+  }
+  if (form.dataset.form === "create") {
+    const draft = state.createDraft;
+    const start = submitter && submitter.dataset.act === "create-start";
+    const query = { name: draft.name, file: draft.file, transport: draft.transport, ...choiceQuery(draft), start: start ? "1" : "0" };
+    callServer("create", `/api/streams?${queryString(query)}`, submitter, () => openStream(draft.name));
+  }
+  if (form.dataset.form === "settings") {
+    const values = state.settingsDraft;
+    if (!values) return;
+    callServer("settings", `/api/settings?${queryString(values)}`, submitter, () => { state.settingsDraft = null; });
+  }
+});
 
-        function edit(outputName, key, value) {
-            draftFor(outputName, key, value);
-            // Passthrough streams the file as-is, so switching to it abandons
-            // any fps/gop overrides; the fields fall back to the source values.
-            if (key === 'mode' && value === 'passthrough') {
-                drafts[outputName].fps = null;
-                drafts[outputName].gop = null;
-            }
-            renderDetail();   // hints and Save/Cancel follow the draft
-        }
-
-        function cancelSettings(outputName) {
-            delete drafts[outputName];
-            if (errorKind === 'command') hideError();
-            document.activeElement.blur();
-            renderDetail();
-        }
-
-        async function applySettings(button, name, outputName) {
-            const v = drafts[outputName];
-            document.activeElement.blur();
-            const query = `mode=${v.mode}&loop=${v.loop}&fps=${v.fps ?? 'auto'}&gop=${v.gop ?? 'auto'}`;
-            // The draft stays until the server accepts it, so a rejected
-            // value can be corrected rather than retyped.
-            if (await command(button, `/api/streams/${name}/outputs/${outputName}/settings?${query}`, `save ${name} ${outputName} settings`)) {
-                delete drafts[outputName];
-                renderDetail();
-            }
-        }
-
-        // ---- Settings ----
-
-        const settingKeys = ['destination_host', 'udp_base_port', 'udp_last_port', 'advertised_host', 'max_video_bitrate'];
-
-        async function loadSettings() {
-            try {
-                const res = await fetch('/api/settings');
-                if (!res.ok) return;
-                const settings = await res.json();
-                for (const key of settingKeys) document.getElementById(key).value = settings[key] ?? '';
-            } catch (err) {
-                // The stream poll reports connectivity; the form keeps what it shows.
-            }
-        }
-
-        async function saveSettings(event) {
-            event.preventDefault();
-            const query = settingKeys.map(key => `${key}=${encodeURIComponent(document.getElementById(key).value.trim())}`).join('&');
-            if (await command(event.submitter, `/api/settings?${query}`, 'save settings')) await loadSettings();
-            return false;
-        }
-
-        function renderSettingsWarning() {
-            const outside = streams.filter(s => s.outputs.udp.port_outside_range).map(s => `${s.name}:${s.outputs.udp.udp_port}`);
-            document.getElementById('settings-warning').textContent = outside.length
-                ? `Outside the UDP range, kept by existing streams: ${outside.join(', ')}` : '';
-        }
-
-        // ---- Commands ----
-
-        function toggleCommand(outputName, open) {
-            if (open) openCommands.add(outputName); else openCommands.delete(outputName);
-        }
-
-        async function copyUrl(btn, text) {
-            const flash = (cls, word) => {
-                btn.classList.add(cls);
-                const note = document.createElement('span');
-                note.textContent = word;
-                btn.appendChild(note);
-                setTimeout(() => { btn.classList.remove(cls); note.remove(); }, 1200);
-            };
-            try {
-                if (navigator.clipboard && window.isSecureContext) {
-                    await navigator.clipboard.writeText(text);
-                    flash('copied', 'Copied');
-                    return;
-                }
-                // Fallback for plain-HTTP origins where the Clipboard API is unavailable.
-                const ta = document.createElement('textarea');
-                ta.value = text;
-                ta.setAttribute('readonly', '');
-                ta.style.position = 'fixed';
-                ta.style.top = '0';
-                ta.style.left = '0';
-                ta.style.opacity = '0';
-                document.body.appendChild(ta);
-                ta.focus();
-                ta.select();
-                ta.setSelectionRange(0, text.length);
-                const ok = document.execCommand('copy');
-                document.body.removeChild(ta);
-                if (!ok) throw new Error('execCommand("copy") returned false');
-                flash('copied', 'Copied');
-            } catch (err) {
-                console.error('Copy failed:', err);
-                btn.title = 'Copy failed: ' + err.message;
-                flash('copy-failed', 'Failed');
-            }
-        }
-
-        // Errors clear themselves when the cause goes away: a network error
-        // on the next successful poll, a refused command on the next
-        // successful one or when the draft that caused it is cancelled.
-        let errorKind = null;
-
-        function showError(message, kind) {
-            errorKind = kind;
-            document.getElementById('error-text').textContent = message;
-            document.getElementById('error').hidden = false;
-        }
-
-        function hideError() {
-            errorKind = null;
-            document.getElementById('error').hidden = true;
-        }
-
-        // Every control goes through here. The clicked button is disabled
-        // and relabelled until the refresh lands, so a second click cannot
-        // fire the same command twice. Check both the HTTP result and the
-        // operation result, and do not automatically retry mutations.
-        async function command(button, path, description) {
-            const label = button && button.textContent;
-            if (button) {
-                button.disabled = true;
-                button.textContent = label + '…';
-            }
-            let ok = false;
-            try {
-                const res = await fetch(path, {method: 'POST'});
-                const result = await res.json().catch(() => ({}));
-                if (!res.ok) throw new Error(result.error || `HTTP ${res.status}`);
-                if (result.success === false) throw new Error('the supervisor could not complete it; check its log');
-                hideError();
-                ok = true;
-            } catch (err) {
-                showError(`Could not ${description}: ${err.message}`,
-                          err instanceof TypeError ? 'network' : 'command');
-            }
-            await loadStreams(true);
-            // Buttons in re-rendered panes are gone by now; static ones (the
-            // sidebar footer) must be put back by hand.
-            if (button && button.isConnected) {
-                button.disabled = false;
-                button.textContent = label;
-            }
-            return ok;
-        }
-
-        function stopAll(button) { return command(button, '/api/streams/stop-all', 'stop all streams'); }
-        function startAll(button) { return command(button, '/api/streams/start-all', 'start all streams'); }
-        function startOutput(button, name, output) { return command(button, `/api/streams/${name}/outputs/${output}/start`, `start ${name}/${output}`); }
-        function stopOutput(button, name, output) { return command(button, `/api/streams/${name}/outputs/${output}/stop`, `stop ${name}/${output}`); }
-
-        loadSettings();
-        loadStreams();
-        setInterval(loadStreams, 5000);
-        setInterval(showStale, 5000);
-    </script>
+/* ---------- polling and freshness ---------- */
+poll();
+setInterval(poll, POLL_MS);
+setInterval(renderNotice, 1000);
+</script>
 </body>
 </html>
