@@ -695,12 +695,16 @@ function syncOptions(select, options) {
   select.value = chosen;
 }
 
-function buildStreamPanel(stream) {
-  const playbackLines = stream.register.map(([label, url]) => `
+/* One line per URL the consumer registers; they follow the transport, so the patch pass renders them too. */
+function playbackLinesHtml(stream) {
+  return stream.register.map(([label, url]) => `
     <div class="line playback" data-copy="${escapeHtml(url)}">
       <span class="url"><span class="sub">${label === "register" ? "Playback URL" : "Playback URL, " + escapeHtml(label.toUpperCase())}</span>${escapeHtml(url)}</span>
       <button type="button" class="copy" data-act="copy">Copy</button>
     </div>`).join("");
+}
+
+function buildStreamPanel(stream) {
   const tabButtons = [["source", "Source"], ["output", "Output"], ["command", "ffmpeg command"], ["advanced", "Advanced"]]
     .map(([id, label]) => `<button type="button" role="tab" id="tab-${id}" aria-controls="tabpanel-${id}" aria-selected="false" tabindex="-1" data-tab="${id}">${label}</button>`).join("");
   return `
@@ -725,7 +729,7 @@ function buildStreamPanel(stream) {
     </div>
 
     <div class="section">
-      ${playbackLines}
+      <div data-playback>${playbackLinesHtml(stream)}</div>
       <div class="line delivery" data-copy="${escapeHtml(stream.delivery || "")}">
         <span class="url"><span class="sub">Delivery, <span data-fact="delivery_label">${escapeHtml(stream.delivery_label)}</span></span><span data-fact="delivery">${escapeHtml(stream.delivery || "—")}</span></span>
         <button type="button" class="copy" data-act="copy" ${stream.delivery ? "" : "disabled"}>Copy</button>
@@ -822,6 +826,7 @@ function patchStreamPanel(panel) {
   panel.querySelector('[data-fact="state"]').className = "state is-" + stream.state;
   setHtml(panel.querySelector(".staterow .markslot"), markHtml(stream.state));
   panel.querySelector("[data-error]").hidden = !stream.error;
+  setHtml(panel.querySelector("[data-playback]"), playbackLinesHtml(stream));
   panel.querySelector(".line.delivery").dataset.copy = stream.delivery || "";
   panel.querySelector(".line.delivery button").disabled = !stream.delivery;
 
