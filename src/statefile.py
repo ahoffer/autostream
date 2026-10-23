@@ -19,6 +19,10 @@ class StreamStateStore:
         self._path = Path(path)
         self._document = None
 
+    def is_fresh(self):
+        """No state file yet: nothing was ever saved, so this is a first start."""
+        return not self._path.exists()
+
     def load(self):
         if self._document is None:
             self._document = self._read()

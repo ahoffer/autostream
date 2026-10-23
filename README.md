@@ -29,9 +29,13 @@ stream forms being the ones that preserve KLV/MISB timed metadata.
    press Settings, and enter the destination host. Streams the consumer pulls
    work without it; pushed streams wait until it is set.
 
-5. **Create a stream**: press New stream, choose the file and the transport,
-   name it, and press Create and start. The stream's detail shows the playback
-   URL to register in the consumer; Copy puts it on the clipboard.
+5. **Find your videos streaming**: a first start, one with no state file yet,
+   seeds one running MediaMTX stream per video in `videos/`, named after the
+   file. Each stream's detail shows the playback URLs to register in the
+   consumer; Copy puts one on the clipboard.
+
+6. **Create other streams**: press New stream, choose the file and the
+   transport, name it, and press Create and start.
 
 ## How It Works
 
@@ -40,7 +44,9 @@ stream forms being the ones that preserve KLV/MISB timed metadata.
   never starts a stream.
 - A **stream** is a video file bound to one transport, with its own encoding
   choices, Start and Stop, and a port of its own when the transport takes one.
-  Streams are created in the UI and remembered across restarts.
+  Streams are created in the UI and remembered across restarts. A first start
+  seeds a MediaMTX stream for every video already present; seeding ends as
+  soon as any stream exists, seeded or made by hand.
 - Each stream is **one ffmpeg process**. MediaMTX serves the RTSP kind as
   RTSP, HLS and RTMP; every other kind is delivered by ffmpeg itself.
 
@@ -179,7 +185,9 @@ in the table at the bottom of `ffmpegcmd.py`.
 `state/streams.json` (bind-mounted to `/app/state`) remembers every stream:
 its video file, transport, port, encoding choices and enabled choice, plus the
 values from the Settings panel. Delete the state file while the container is
-stopped to reset everything. A file that disappears from `videos/` parks its
+stopped to reset everything; the next start seeds the videos again. A state
+file with no streams left in it is not reset: deleted streams stay deleted.
+A file that disappears from `videos/` parks its
 streams in Waiting until it returns; nothing is removed on its behalf. A state
 file written by an earlier release is rejected at startup; delete it to start
 fresh.

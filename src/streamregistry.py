@@ -1,6 +1,8 @@
 """Stream membership, ports and bindings, owned by the supervisor loop."""
 import logging
+from pathlib import Path
 import random
+import re
 import shutil
 
 from mediastream import DEFAULT_CHOICES, Delivery, MediaStream, StreamBinding
@@ -12,10 +14,27 @@ log = logging.getLogger(__name__)
 
 # Random ports sit above every first port a transport can be given and below the ephemeral range.
 RANDOM_PORT_LOW, RANDOM_PORT_HIGH = 50000, 59999
+# A first start seeds the videos already present as streams of this kind.
+SEED_TRANSPORT = 'rtsp'
+STREAM_NAME_LENGTH = 64
 
 
 def is_ignored(path):
     return path.name.startswith('.') or path.name.lower().startswith('readme')
+
+
+def seeded_stream_name(filename, taken):
+    """The file's stem as a valid stream name: runs of other characters become one dash,
+    the name starts with a letter or digit, and a name already taken gets a number."""
+    base = re.sub(r'[^A-Za-z0-9_-]+', '-', Path(filename).stem)
+    base = re.sub(r'^[^A-Za-z0-9]+|-+$', '', base) or 'video'
+    name = base[:STREAM_NAME_LENGTH]
+    ordinal = 2
+    while name in taken:
+        suffix = f'-{ordinal}'
+        name = base[:STREAM_NAME_LENGTH - len(suffix)] + suffix
+        ordinal += 1
+    return name
 
 
 class StreamRegistry:
@@ -27,8 +46,10 @@ class StreamRegistry:
         self._streams = {}   # name -> MediaStream, in creation order: the UI lists them in that order
         self._settings = RuntimeSettings()
         self._videos = ()
+        self._seeding = False   # first start: videos become streams until the first stream exists
 
     def load_persisted_state(self):
+        self._seeding = self._store.is_fresh()
         document = self._store.load()
         self._settings = RuntimeSettings.from_document(document.get('settings', {}))
         for name, record in document['streams'].items():
@@ -178,9 +199,26 @@ class StreamRegistry:
             for stream in self._streams.values():
                 if stream.binding.filename in changed:
                     stream.source_changed()
+            if self._seeding:
+                self._seed_streams(inventory['creates'])
         self._resolver.refresh({stream.delivery.resolve_host for stream in self._streams.values()} - {None})
         for stream in self._streams.values():
             stream.supervise()
+
+    def _seed_streams(self, filenames):
+        """Start one MediaMTX stream per video that settled, named after its file; the first
+        stream to exist, seeded or made by hand, ends seeding."""
+        if self._streams:
+            self._seeding = False
+            return
+        for filename in filenames:
+            name = seeded_stream_name(filename, self._streams)
+            created, reason = self.create_stream(name, filename, SEED_TRANSPORT, {})
+            if created:
+                log.info('First start: streaming %s as %s', filename, name)
+            else:
+                log.warning('First start: cannot stream %s: %s', filename, reason)
+        self._seeding = not self._streams
 
     def status(self):
         return [stream.status() for stream in self._streams.values()]

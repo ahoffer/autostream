@@ -69,26 +69,49 @@ def temporary_directory(test, prefix):
     return root
 
 
+def fake_ffmpeg(test):
+    """Fake processes and a fixed probe profile for the rest of the test."""
+    FakeProcess.runs = []
+    for patcher in (patch('mediastream.FFmpegProcess', FakeProcess), patch('ffmpegcmd.probe_file', return_value=TEST_PROFILE)):
+        patcher.start()
+        test.addCleanup(patcher.stop)
+
+
+def test_config(test, root):
+    return make_config(videos_dir=root, state_path=state_path(test), hls_dir=temporary_directory(test, 'autostream-hls-'))
+
+
+def build_registry(config, store):
+    resolver = FakeResolver()
+    registry = StreamRegistry(config, store, resolver, lambda name: logging.Logger(name))
+    registry.load_persisted_state()
+    return registry, resolver
+
+
 def setup_registry(test, settings=TEST_SETTINGS):
     """A registry over one stable video file, fake processes and DNS, and saved settings."""
     root = temporary_directory(test, 'autostream-videos-')
     with tempfile.NamedTemporaryFile(dir=root, suffix='.mp4', delete=False) as file:
         source = Path(file.name)
-    config = make_config(videos_dir=root, state_path=state_path(test), hls_dir=temporary_directory(test, 'autostream-hls-'))
+    config = test_config(test, root)
     store = StreamStateStore(config.state_path)
     store.save_settings(settings.to_document())
-    resolver = FakeResolver()
-    registry = StreamRegistry(config, store, resolver, lambda name: logging.Logger(name))
-    registry.load_persisted_state()
-    FakeProcess.runs = []
-    patcher = patch('mediastream.FFmpegProcess', FakeProcess)
-    patcher.start()
-    test.addCleanup(patcher.stop)
-    patcher = patch('ffmpegcmd.probe_file', return_value=TEST_PROFILE)
-    patcher.start()
-    test.addCleanup(patcher.stop)
+    registry, resolver = build_registry(config, store)
+    fake_ffmpeg(test)
     registry.supervise(inventory(source))
     return registry, store, resolver, source, config
+
+
+def setup_fresh_registry(test, filenames):
+    """A first start: the named videos are present and no state file was ever written."""
+    root = temporary_directory(test, 'autostream-videos-')
+    for filename in filenames:
+        (root / filename).touch()
+    config = test_config(test, root)
+    store = StreamStateStore(config.state_path)
+    registry, _ = build_registry(config, store)
+    fake_ffmpeg(test)
+    return registry, store, root
 
 
 def create(registry, name, source, transport, start=True, **choices):

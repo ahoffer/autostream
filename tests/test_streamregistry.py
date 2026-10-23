@@ -4,8 +4,8 @@ from pathlib import Path
 import unittest
 
 from runtimesettings import RuntimeSettings
-from streamregistry import StreamRegistry
-from streamsupport import FakeProcess, TEST_SETTINGS, create, inventory, setup_registry
+from streamregistry import StreamRegistry, seeded_stream_name
+from streamsupport import FakeProcess, TEST_SETTINGS, create, inventory, setup_fresh_registry, setup_registry
 
 
 class CreateAndDeleteTests(unittest.TestCase):
@@ -170,6 +170,52 @@ class RebindTests(unittest.TestCase):
         self.assertEqual(len(FakeProcess.runs), 3)
         self.assertEqual(FakeProcess.runs[0].code, -15)
         self.assertIsNone(other_run.code)
+
+
+class FirstStartTests(unittest.TestCase):
+    def settled(self, root, *filenames):
+        paths = [root / filename for filename in filenames]
+        return inventory(*paths, creates=paths)
+
+    def test_videos_present_on_a_first_start_become_running_mediamtx_streams(self):
+        registry, store, root = setup_fresh_registry(self, ['cargoship.mp4', 'rolling boats.v2.avi'])
+        registry.supervise(self.settled(root, 'cargoship.mp4', 'rolling boats.v2.avi'))
+        rows = {row['name']: row for row in registry.status()}
+        self.assertEqual(set(rows), {'cargoship', 'rolling-boats-v2'})
+        self.assertEqual(rows['cargoship']['filename'], 'cargoship.mp4')
+        self.assertEqual(rows['rolling-boats-v2']['filename'], 'rolling boats.v2.avi')
+        self.assertTrue(all((row['transport'], row['running']) == ('rtsp', True) for row in rows.values()))
+        self.assertEqual(rows['cargoship']['delivery'], 'rtsp://localhost:8554/cargoship')
+        self.assertEqual(set(store.load()['streams']), {'cargoship', 'rolling-boats-v2'})
+
+    def test_seeding_waits_for_the_videos_to_settle_and_ends_once_streams_exist(self):
+        registry, _, root = setup_fresh_registry(self, ['cargoship.mp4'])
+        registry.supervise(inventory(unstable=(root / 'cargoship.mp4',)))
+        self.assertEqual(registry.status(), [])
+        registry.supervise(self.settled(root, 'cargoship.mp4'))
+        self.assertEqual([row['name'] for row in registry.status()], ['cargoship'])
+        (root / 'later.mp4').touch()
+        registry.supervise(self.settled(root, 'cargoship.mp4', 'later.mp4'))
+        self.assertEqual([row['name'] for row in registry.status()], ['cargoship'])
+
+    def test_a_stream_made_by_hand_first_ends_seeding(self):
+        registry, _, root = setup_fresh_registry(self, ['cargoship.mp4'])
+        create(registry, 'mine', root / 'cargoship.mp4', 'srt_listen')
+        registry.supervise(self.settled(root, 'cargoship.mp4'))
+        self.assertEqual([row['name'] for row in registry.status()], ['mine'])
+
+    def test_a_saved_state_without_streams_is_not_a_first_start(self):
+        registry, _, _, source, _ = setup_registry(self)
+        registry.supervise(inventory(source, creates=(source,)))
+        self.assertEqual(registry.status(), [])
+
+    def test_seeded_names_are_valid_and_distinct(self):
+        self.assertEqual(seeded_stream_name('truck_klv_30s.ts', ()), 'truck_klv_30s')
+        self.assertEqual(seeded_stream_name('--my clip (final).mp4', ()), 'my-clip-final')
+        self.assertEqual(seeded_stream_name('a.ts', ('a', 'a-2')), 'a-3')
+        self.assertEqual(seeded_stream_name('-.mp4', ()), 'video')
+        long = seeded_stream_name('x' * 80 + '.mp4', ('x' * 64,))
+        self.assertEqual((len(long), long[-2:]), (64, '-2'))
 
 
 class SettingsTests(unittest.TestCase):
