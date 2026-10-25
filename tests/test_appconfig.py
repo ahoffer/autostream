@@ -9,18 +9,18 @@ from appconfig import Config
 
 class ConfigurationTests(unittest.TestCase):
     def setUp(self):
-        self.environ = dict(
-            line.split("=", 1)
-            for line in (Path(__file__).resolve().parents[1] / ".env.example").read_text().splitlines()
-            if line and not line.startswith("#")
-        )
+        self.environ = {
+            "MEDIAMTX_RTSP_PORT": "8554",
+            "MEDIAMTX_HLS_PORT": "8888",
+            "MEDIAMTX_RTMP_PORT": "1935",
+            "STREAM_API_PORT": "8080",
+            "LOG_LEVEL": "info",
+        }
 
-    def test_example_settings_load_and_carry_no_topology_or_policy(self):
+    def test_deployment_settings_load(self):
         config = Config.from_env(self.environ)
         self.assertEqual(config.rtsp_port, int(self.environ["MEDIAMTX_RTSP_PORT"]))
         self.assertEqual(config.log_level, "info")
-        for retired in ("OUTPUT_HOST", "UDP_BASE_PORT", "UDP_LAST_PORT", "MAX_VIDEO_BITRATE", "ADVERTISED_HOST"):
-            self.assertNotIn(retired, self.environ)
 
     def test_invalid_deployment_settings_fail_when_loaded(self):
         for field, value, message in (

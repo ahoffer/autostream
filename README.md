@@ -11,7 +11,19 @@ stream forms being the ones that preserve KLV/MISB timed metadata.
 1. **Create your local configuration** (once per checkout), then edit `.env`
    for your environment:
    ```bash
-   cp .env.example .env
+   cat > .env <<'EOF'
+   VERSION=2.3.0
+   CONTAINER_NAME=autostream
+   COMPOSE_FILE=docker-compose.yml:docker-compose.host.yml
+   #COMPOSE_FILE=docker-compose.yml:docker-compose.octo-cx.yml
+   MEDIAMTX_RTSP_PORT=8554
+   MEDIAMTX_RTP_PORT=8000
+   MEDIAMTX_RTCP_PORT=8001
+   MEDIAMTX_HLS_PORT=8888
+   MEDIAMTX_RTMP_PORT=1935
+   STREAM_API_PORT=8080
+   LOG_LEVEL=info
+   EOF
    ```
 
 2. **Place your videos** in the `videos/` directory:
@@ -208,20 +220,20 @@ at run time in the web UI under **Settings** and saved with the state.
 
 ### `.env`
 
-Copy `.env.example` to `.env` if you have not created it yet, then edit `.env`
-for your environment. `.env` is ignored by Git; `.env.example` contains the
-shared defaults. When adding configuration variables, update `.env.example`
-and add the new settings to existing installations' local `.env` files.
+Create `.env` using the Quickstart instructions if you have not created it
+yet, then edit it for your environment. `.env` is ignored by Git. When adding
+configuration variables, update these instructions and add the new settings
+to existing installations' local `.env` files.
 
 Docker Compose reads `.env` directly and passes the whole file through to the
 container; `mediamtx.yml` is copied into the image, so editing it means
 `make build`. Every variable must be set. The
-Default column shows the shipped `.env.example` values.
+Initial value column shows the Quickstart values.
 
-| Variable | Description | Default |
+| Variable | Description | Initial value |
 |----------|-------------|---------|
 | `CONTAINER_NAME` | Image and container name | `autostream` |
-| `VERSION` | Image version tag | `2.3.0` (see `.env.example`) |
+| `VERSION` | Image version tag | `2.3.0` |
 | `COMPOSE_FILE` | Networking mode: the base file plus `docker-compose.host.yml` or `docker-compose.octo-cx.yml` (see "Networking modes") | host |
 | `MEDIAMTX_RTSP_PORT` | RTSP listener port | `8554` |
 | `MEDIAMTX_HLS_PORT` | HLS HTTP port | `8888` |

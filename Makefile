@@ -12,15 +12,15 @@ build:  ## Build the container image
 	set -a && . ./.env && docker build -t $$CONTAINER_NAME:$$VERSION .
 
 test: build  ## Run the unit tests inside the freshly built image
-	@# The image carries the app, not the tests; the tests and the example
-	@# settings they check are mounted in read-only, so the suite runs against
+	@# The image carries the app, not the tests; the tests are mounted
+	@# read-only, so the suite runs against
 	@# the shipped Python and ffmpeg without shipping itself.
 	set -a && . ./.env && docker run --rm \
-	  -v '$(CURDIR)/tests:/app/tests:ro' -v '$(CURDIR)/.env.example:/app/.env.example:ro' \
+	  -v '$(CURDIR)/tests:/app/tests:ro' \
 	  --entrypoint python3 $$CONTAINER_NAME:$$VERSION -B -m unittest discover -s /app/tests -v
 
 # With MODE given, make docker-compose.$(MODE).yml the active COMPOSE_FILE line
-# in .env by toggling the two lines shipped in .env.example. Create the state
+# in .env by toggling its two networking mode lines. Create the state
 # bind source before compose does: if Docker creates it, it is root-owned and
 # the container user (UID 1000) cannot write the state file. Compose reads .env
 # itself, COMPOSE_FILE included, and recreates the container when the image or
