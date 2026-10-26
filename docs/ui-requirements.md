@@ -98,7 +98,9 @@ as a state to act on, not a catastrophe.
    honoured (passthrough asked for, codec not eligible), the fact that
    transcode was used instead; the source facts (video codecs, audio
    codecs, KLV present or not, source frame rate); the output frame rate
-   and GOP and whether each is auto or explicit; the loop choice; the
+   and GOP and whether each is auto or explicit; whether the output carries
+   the source's KLV (passed through, dropped by the transport, or none in
+   the source); the loop choice; the
    playback URL or URLs; the delivery URL; the ffmpeg command; and the
    error text when there is any.
 3. **The playback URL**, copyable in one action, with feedback that the

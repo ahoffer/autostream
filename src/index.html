@@ -761,6 +761,7 @@ function buildStreamPanel(stream) {
             <dt>Encoder</dt><dd data-fact="encoder"></dd>
             <dt>Frame rate</dt><dd><span data-fact="frame_rate"></span> <span class="how" data-fact="frame_rate_how"></span></dd>
             <dt>GOP</dt><dd><span data-fact="gop"></span> <span class="how" data-fact="gop_how"></span></dd>
+            <dt>KLV</dt><dd data-fact="klv_out"></dd>
             <dt>Loop</dt><dd data-fact="loop"></dd>
             <dt>Port</dt><dd data-fact="port"></dd>
           </dl>
@@ -780,6 +781,12 @@ function buildStreamPanel(stream) {
         <p class="message" data-message role="alert"></p>
       </div>
     </form>`;
+}
+
+/* Whether the output stream still carries the source's KLV: the transport must be able to carry it. */
+function klvOutFact(stream) {
+  if (!(stream.data_codecs || []).includes("klv")) return "none";
+  return stream.carries_klv ? "passed through" : "dropped by transport";
 }
 
 /* One mode fact: what is in force, and why, only when the choice could not be honoured. */
@@ -811,6 +818,7 @@ function patchStreamPanel(panel) {
     frame_rate_how: stream.frame_rate_explicit ? "explicit" : "auto",
     gop: String(stream.gop_frames ?? "—"),
     gop_how: stream.gop_explicit ? "explicit" : "auto",
+    klv_out: klvOutFact(stream),
     loop: formatLoop(stream.loop_count),
     port: formatPort(stream.port),
     command: stream.command || "—",
