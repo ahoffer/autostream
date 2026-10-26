@@ -208,8 +208,7 @@ def prepare(source_path, settings, delivery, max_video_bps=None):
 def _command_for_profile(source_path, settings, delivery, profile, max_video_bps=None):
     """Keep decisions reproducible from a probe and explicit command inputs."""
     eligible = bool(profile.video_codecs) and all(c in PASSTHROUGH_CODECS for c in profile.video_codecs)
-    default_mode = 'passthrough' if profile.video_codecs and set(profile.video_codecs) == {'h264'} else 'transcode'
-    mode = settings.get('mode') or default_mode
+    mode = settings.get('mode') or 'passthrough'
     passthrough = mode == 'passthrough' and eligible
     fps = settings.get('frame_rate')
     gop = settings.get('gop_frames') or natural_gop_frames(fps or profile.frame_rate)

@@ -1,10 +1,8 @@
 # Autostream
 
-A test-rig video server with web-based stream control. You create streams on
-purpose: pick a video file, pick a transport, set it up, start it. A video can
-be served over RTSP, HLS and RTMP through MediaMTX, or as an MPEG-TS feed over
-UDP, multicast, RTP, SRT, TCP, HTTP, HLS segments or SRTP, the transport
-stream forms being the ones that preserve KLV/MISB timed metadata.
+A test-rig video server with web-based stream control. A video can be served
+over RTSP, HLS and RTMP through MediaMTX, or as an MPEG-TS feed over UDP,
+multicast, RTP, SRT, TCP, HTTP, HLS segments or SRTP.
 
 ## Quickstart
 
@@ -20,7 +18,7 @@ stream forms being the ones that preserve KLV/MISB timed metadata.
    MEDIAMTX_RTCP_PORT=8001
    MEDIAMTX_HLS_PORT=8888
    MEDIAMTX_RTMP_PORT=1935
-   STREAM_API_PORT=8080
+   STREAM_API_PORT=9080
    LOG_LEVEL=info
    EOF
    ```
@@ -36,14 +34,11 @@ stream forms being the ones that preserve KLV/MISB timed metadata.
    make up          # Uses COMPOSE_FILE in .env; see "Networking modes"
    ```
 
-4. **Point the feeds at their consumer**: open `http://<this host>:8080`,
-   press Settings, and enter the destination host. Streams the consumer pulls
-   work without it; pushed streams wait until it is set.
+4. **Point the feeds at their consumer**: open `http://<this host>:9080`,
+   press Settings, and enter the destination host.
 
-5. **Find your videos streaming**: a first start, one with no state file yet,
-   seeds one running MediaMTX stream per video in `videos/`, named after the
-   file. Each stream's detail shows the playback URLs to register in the
-   consumer; Copy puts one on the clipboard.
+5. **Find your videos streaming**: each stream's detail shows the playback
+   URLs to register in the consumer; Copy puts one on the clipboard.
 
 6. **Create other streams**: press New stream, choose the file and the
    transport, name it, and press Create and start.
@@ -51,88 +46,68 @@ stream forms being the ones that preserve KLV/MISB timed metadata.
 ## How It Works
 
 - The **file watcher** keeps the list of stable files in `videos/` fresh. A
-  file is offered once its size and time stop changing, so a copy in progress
-  never starts a stream.
+  file is offered once its size and time stop changing (two-second poll,
+  four-second stability check), so a copy in progress never starts a stream.
+  Every stable file is offered except hidden files and READMEs; there is no
+  format allowlist, FFmpeg must be able to decode the file (MP4, MKV, AVI,
+  MOV, WEBM, FLV, TS, and so on).
 - A **stream** is a video file bound to one transport, with its own encoding
   choices, Start and Stop, and a port of its own when the transport takes one.
-  Streams are created in the UI and remembered across restarts. A first start
-  seeds a MediaMTX stream for every video already present; seeding ends as
-  soon as any stream exists, seeded or made by hand.
+  Streams are created in the UI. A first start, one with no state file yet,
+  seeds a running MediaMTX stream for every video already present, named
+  after the file; seeding ends as soon as any stream exists, seeded or made by
+  hand.
 - Each stream is **one ffmpeg process**. MediaMTX serves the RTSP kind as
   RTSP, HLS and RTMP; every other kind is delivered by ffmpeg itself.
 
 ## Transports
 
-| Transport | Direction | KLV | The consumer registers | Takes a port |
-|-----------|-----------|-----|------------------------|--------------|
-| RTSP / HLS / RTMP via MediaMTX | consumer pulls | no | `rtsp://<host>:8554/<name>`, `http://<host>:8888/<name>/index.m3u8`, `rtmp://<host>:1935/<name>` | no |
-| UDP | we push | yes | `udp://0.0.0.0:<port>` | from the UDP first port |
-| Multicast | we push | yes | `udp://<group>:<port>` | a random port from 50000-59999, chosen at creation |
-| RTP / TS | we push | yes | `rtp://0.0.0.0:<port>` | from the RTP first port |
-| SRT listen | consumer pulls | yes | `srt://<host>:<port>` | from the SRT listen first port |
-| SRT call | we push | yes | `srt://0.0.0.0:<port>?mode=listener` | from the SRT call first port |
-| TCP listen | consumer pulls | yes | `tcp://<host>:<port>` | from the TCP first port |
-| HTTP TS | consumer pulls | yes | `http://<host>:<port>` | from the HTTP first port |
-| HLS (TS segments) | consumer pulls | yes | `http://<host>:8080/hls/<name>/index.m3u8` | no |
-| SRTP | we push | yes | `srtp://0.0.0.0:<port>` plus the key | from the SRTP first port |
+| Transport | Direction | KLV | The consumer registers |
+|-----------|-----------|-----|------------------------|
+| RTSP / HLS / RTMP via MediaMTX | consumer pulls | no | `rtsp://<host>:8554/<name>`, `http://<host>:8888/<name>/index.m3u8`, `rtmp://<host>:1935/<name>` |
+| UDP | we push | yes | `udp://0.0.0.0:<port>` |
+| Multicast | we push | yes | `udp://<group>:<port>` |
+| RTP / TS | we push | yes | `rtp://0.0.0.0:<port>` |
+| SRT listen | consumer pulls | yes | `srt://<host>:<port>` |
+| SRT call | we push | yes | `srt://0.0.0.0:<port>?mode=listener` |
+| TCP listen | consumer pulls | yes | `tcp://<host>:<port>` |
+| HTTP TS | consumer pulls | yes | `http://<host>:<port>` |
+| HLS (TS segments) | consumer pulls | yes | `http://<host>:9080/hls/<name>/index.m3u8` |
+| SRTP | we push | yes | `srtp://0.0.0.0:<port>` plus the key |
 
-`<host>` is the advertised host: the address you reached the UI by unless
-Settings names one. Pushed kinds need the destination host (or the multicast
-group) in Settings and wait until it is set; SRTP also needs the shared key.
-Multicast takes a random port on purpose: the consumer's redirect service
+`<host>` is the advertised host (see Settings). Multicast takes a random port
+from 50000-59999 at creation on purpose: the consumer's redirect service
 joins the group on its host network and forwards into the container on a port
 of its own choosing, so any port works there, and a random one keeps clear of
-the unicast range. Listening and served kinds need nothing on the consumer side. A listening
-kind serves one client at a time: when that client disconnects, ffmpeg ends
-and the stream listens again at once, which the UI shows as a brief Starting.
-A push kind whose consumer is not listening yet, such as SRT call, shows the
-crash and relaunch states with ffmpeg's error until the stream is registered
-there.
+the unicast range. Listening and served kinds need nothing on the consumer
+side. A listening kind serves one client at a time: when that client
+disconnects, ffmpeg ends and the stream listens again at once, which the UI
+shows as a brief Starting. A push kind whose consumer must listen first, such
+as SRT call, shows the crash and relaunch states with ffmpeg's error until the
+stream is registered there; UDP, RTP and SRTP pushes send regardless and are
+simply not heard until then.
 
-RTSP and HLS go through MediaMTX, whose track model only carries video and
-audio, so KLV timed-metadata streams are dropped there. Every transport
-stream kind carries the whole MPEG-TS, KLV included, which is the standard
-MISB/STANAG-4609 way to deliver it.
+MediaMTX's track model only carries video and audio, so KLV timed-metadata
+streams are dropped there. Every transport stream kind carries the whole
+MPEG-TS, KLV included, which is the standard MISB/STANAG-4609 way to deliver
+it.
 
 ## Passthrough and transcode
 
-Each stream has its own encoding choices, chosen in the UI. Changing an
-enabled stream applies its new choices and restarts it. A stopped stream stays
-stopped and uses its saved choices on the next Start. The modes:
+Each stream has its own encoding choices, chosen in the UI. Passthrough, the
+default, sends the source video unmodified. Transcode re-encodes to H.264
+with a clean GOP (fixes loop-point artifacts) and the bitrate cap applied.
+Two encoder choices only apply when transcoding (under passthrough the source
+rate is shown instead): the frame rate (1 to 120, the UI/API limit), which
+defaults to the file's own rate; and the GOP, the keyframe interval in
+frames, which defaults to one second at the output rate (25 for 25 fps). A
+shorter GOP means faster player join and loop recovery at some bitrate cost.
 
-- **Passthrough** (`Encoding: Passthrough`): the source video is sent unmodified —
-  no decode, no encode, near-zero CPU. H.264, H.265, MPEG-2, MPEG-4 part 2
-  and MJPEG can pass through (the codecs MediaMTX carries over RTSP). Only
-  H.264 files default to passthrough: the others reach RTSP consumers but not
-  browser HLS, so they take an explicit request — useful for imitating a
-  camera with that encoder. Files with any other video codec always
-  transcode; a passthrough request on them is kept but runs as transcode,
-  with the reason shown in the UI. Note that
-  passthrough streams follow the source file's keyframe cadence (players join
-  and recover at source keyframes) instead of the enforced 1-second GOP, and
-  the bitrate cap does not apply.
-- **Transcode** (`Encoding: Transcode`): re-encode to H.264 with a clean GOP
-  (fixes loop-point artifacts) and the bitrate cap applied, using the
-  `libx264` software encoder. Two encoder choices sit beside the mode and
-  only apply when transcoding (under passthrough the source rate is shown
-  instead): the frame rate (1 to 120, the UI/API limit), which defaults to
-  the file's own rate; and the GOP, the keyframe interval in frames, which
-  defaults to one second at the output rate (25 for 25 fps). A shorter GOP
-  means faster player join and loop recovery at some bitrate cost.
-
-Mode, frame rate, GOP and loop are advanced choices: in the UI they live
-under the Advanced tab of a stream's detail, or behind Advanced in the New
-stream form. Name, File and Transport in the detail are edited the same way:
-Save (Save and restart while the stream runs) applies every pending change in
-one restart. A new transport takes a free port of its kind; a new file keeps
-the port; a new name keeps the port and restarts only the kinds whose command
-names the stream (MediaMTX and HLS).
-
-Settings edits are held until Save (Cancel puts the previous values back).
-The ffmpeg command tab shows the actual running command, or a prepared
-preview when stopped. If the old process cannot exit, its command remains
-visible alongside the requested settings and an error; a replacement cannot
-reuse its destination.
+Save (Save and restart while the stream runs) applies every pending change
+to mode, frame rate, GOP, loop, name, file and transport in one restart; a
+stopped stream uses the saved choices on the next Start. A new transport
+takes a new port; a new file keeps the port; a new name keeps the port and
+restarts only the kinds whose command names the stream (MediaMTX and HLS).
 
 Audio is handled automatically in both modes: copied when the source is
 already AAC, re-encoded to AAC otherwise.
@@ -147,26 +122,15 @@ no hardware encoder detection or selection.
 memory leak in looping QSV decoding exhausted host RAM and swap, causing
 host-wide OOM kills and application crashes. The measured leak was in
 decoding; removing hardware encoding as well is the project's reliability
-decision. FFmpeg 8.1.2 still reproduced the leak. See
-[the incident measurements](docs/memory-leak.md). Software transcoding uses
+decision. FFmpeg 8.1.2 still reproduced the leak. Software transcoding uses
 more CPU.
 
 Compose limits the entire container to 6 GiB of RAM with no swap. This
 contains any future runaway allocations.
-For host socket-memory diagnostics, run `python3 socket_memory.py` to capture
-host slab counters and socket queues/owners in every running container once
-per minute. It requires Docker access and host `ss`; logs rotate under
-`.generated/socket-memory.jsonl` (approximately 80 MiB maximum). Use `--once`
-for one snapshot, and Ctrl-C to stop continuous capture.
-
-The UI shows the encoder in the Output tab of a stream's detail. Each stream's ffmpeg log is at
-`/tmp/ffmpeg-logs/<stream>.log` inside the container.
 
 ## Streams
 
-The list shows the streams you created with their transport, file, port and
-state; New stream opens the form for a new one. A stream is in one of these
-states: **Running**; **Crashing** (the
+A stream is in one of these states: **Running**; **Crashing** (the
 process died unexpectedly and was relaunched; the last lines of its ffmpeg
 log are shown, and the state clears once it has stayed up for a minute);
 **Restarting** (died, relaunch pending on the next sweep); **Starting**;
@@ -185,27 +149,29 @@ and container restarts until it is started again. Start All / Stop All apply
 to every stream; Start All preserves already-running processes and counts a
 waiting stream as started. Delete asks once: the first press turns it into
 Confirm delete, the second deletes the stream, stops its process and frees
-its port. A stream whose process cannot be stopped is not deleted.
+its port. A stream whose process cannot be stopped is not deleted and keeps
+its port; a replacement cannot reuse its destination.
 
 The ffmpeg command tab of a stream's detail shows the exact ffmpeg command
 line that stream runs (or would run), for inspection; every flag is explained
-in the table at the bottom of `ffmpegcmd.py`.
+in the table at the bottom of `ffmpegcmd.py`. If the old process cannot exit,
+its command remains visible alongside the requested settings and an error.
+The Output tab shows the encoder in use. Each stream's ffmpeg log is at
+`/tmp/ffmpeg-logs/<stream>.log` inside the container.
 
 ## State
 
 `state/streams.json` (bind-mounted to `/app/state`) remembers every stream:
 its video file, transport, port, encoding choices and enabled choice, plus the
 values from the Settings panel. Delete the state file while the container is
-stopped to reset everything; the next start seeds the videos again. A state
-file with no streams left in it is not reset: deleted streams stay deleted.
-A file that disappears from `videos/` parks its
-streams in Waiting until it returns; nothing is removed on its behalf. A state
-file written by an earlier release is rejected at startup; delete it to start
-fresh.
+stopped to reset everything. A state file with no streams left in it is not
+reset: deleted streams stay deleted. A file that disappears from `videos/`
+parks its streams in Waiting until it returns; nothing is removed on its
+behalf. A state file written by an earlier release is rejected at startup;
+delete it to start fresh.
 
 HLS (TS segments) streams write their playlists under `/app/hls` inside the
-container, which the API server serves at `/hls/<name>/`; the directory is
-not persisted.
+container; the directory is not persisted.
 
 Stream names are yours: letters, digits, `-` and `_`, unique, and they double
 as the RTSP, HLS and RTMP path.
@@ -215,59 +181,44 @@ as the RTSP, HLS and RTMP path.
 Two kinds of configuration exist. `.env` holds what the container needs before
 it starts: the image, the networking mode, the listener ports, and the log
 level. Everything about where feeds go and how streams are advertised is set
-at run time in the web UI under **Settings** and saved with the state.
+at run time in the web UI under **Settings**.
 
 ### `.env`
 
-Create `.env` using the Quickstart instructions if you have not created it
-yet, then edit it for your environment. `.env` is ignored by Git. When adding
-configuration variables, update these instructions and add the new settings
-to existing installations' local `.env` files.
+`.env` is ignored by Git. Docker Compose reads `.env` directly and passes the whole file through to the
+container. Every variable must be set; the Quickstart shows the initial
+values.
 
-Docker Compose reads `.env` directly and passes the whole file through to the
-container; `mediamtx.yml` is copied into the image, so editing it means
-`make build`. Every variable must be set. The
-Initial value column shows the Quickstart values.
-
-| Variable | Description | Initial value |
-|----------|-------------|---------|
-| `CONTAINER_NAME` | Image and container name | `autostream` |
-| `VERSION` | Image version tag | `2.3.0` |
-| `COMPOSE_FILE` | Networking mode: the base file plus `docker-compose.host.yml` or `docker-compose.octo-cx.yml` (see "Networking modes") | host |
-| `MEDIAMTX_RTSP_PORT` | RTSP listener port | `8554` |
-| `MEDIAMTX_HLS_PORT` | HLS HTTP port | `8888` |
-| `MEDIAMTX_RTMP_PORT` | RTMP listener port | `1935` |
-| `MEDIAMTX_RTP_PORT` | RTP UDP port | `8000` |
-| `MEDIAMTX_RTCP_PORT` | RTCP UDP port | `8001` |
-| `STREAM_API_PORT` | Stream control UI/API port; also serves HLS (TS segments) | `8080` |
-| `LOG_LEVEL` | Supervisor log level; `debug` also shows ffmpeg output | `info` |
+| Variable | Description |
+|----------|-------------|
+| `CONTAINER_NAME` | Image and container name |
+| `VERSION` | Image version tag |
+| `COMPOSE_FILE` | Networking mode: the base file plus `docker-compose.host.yml` or `docker-compose.octo-cx.yml` (see "Networking modes") |
+| `MEDIAMTX_RTSP_PORT` | RTSP listener port |
+| `MEDIAMTX_HLS_PORT` | HLS HTTP port |
+| `MEDIAMTX_RTMP_PORT` | RTMP listener port |
+| `MEDIAMTX_RTP_PORT` | RTP UDP port |
+| `MEDIAMTX_RTCP_PORT` | RTCP UDP port |
+| `STREAM_API_PORT` | Stream control UI/API port |
+| `LOG_LEVEL` | Supervisor log level; `debug` also shows ffmpeg output |
 
 ### Settings
 
 Settings in the UI edits these; `GET` and `POST /api/settings` carry the
-same keys. Blank means unset, or the default for a
-port. A save takes effect at once and is remembered in `state/streams.json`.
+same keys. Blank means unset, or the default for a port. A save takes effect
+at once.
 
 | Setting | Meaning | Default |
 |---------|---------|---------|
-| Destination host | Where pushed transports send: the consumer host's address as reachable from the publisher. Unset holds those streams in Waiting. Changing it restarts them. | unset |
+| Destination host | Where pushed transports send: the consumer host's address as reachable from the publisher. Changing it restarts them. | unset |
 | Multicast group | The group the Multicast transport sends to, and what the consumer registers. | unset |
 | Advertised host | Host in the URLs the consumer registers. Blank uses the address the client reached the API by. | blank |
-| Bitrate cap | Transcode-only cap such as `2M` or `3000K`; passthrough sends the source bitrate unchanged. Changing it restarts only streams transcoding above it. Blank disables the cap. | blank |
+| Bitrate cap | Transcode-only cap such as `2M` or `3000K`. Changing it restarts only streams transcoding above it. Blank disables the cap. | blank |
 | SRTP key | Base64 master key the SRTP transport encrypts with; the consumer needs the same key. | blank |
-| First ports | One per transport kind that takes one. A new stream takes the lowest free port from its kind's first port and keeps it; changing a first port affects later streams only. Push kinds must land inside the range the consumer forwards into its container. Multicast ignores these and takes a random port. | UDP 40000, RTP 40020, SRT call 40040, SRTP 40060, SRT listen 41000, TCP 42000, HTTP TS 43000 |
+| First ports | One per transport kind that takes one. A new stream takes the lowest free port from its kind's first port and keeps it; changing a first port affects later streams only. | UDP 40000, RTP 40020, SRT call 40040, SRTP 40060, SRT listen 41000, TCP 42000, HTTP TS 43000 |
 
 The UI has no authentication, so anyone who can reach the API port can create
 streams and change where the feeds go.
-
-## Commands
-
-```bash
-make build             # Build the container image
-make test              # Build the image, then run the tests inside it
-make up                # Start the stack in the mode .env names
-# Logs: `docker compose logs -f`. Stop: `docker compose down`. Both in this directory.
-```
 
 ## API
 
@@ -293,16 +244,16 @@ the reason. Requests are not automatically retried.
 
 The application modules and the UI page live in `src/` and are copied flat into
 `/app` in the image, so they import each other by bare module name. The root
-holds the container and deployment files plus the host-side diagnostic
-`socket_memory.py`.
+holds the container and deployment files plus `socket_memory.py`, a host-side
+diagnostic that captures slab counters and socket queues in every running
+container once per minute into `.generated/socket-memory.jsonl`; see its
+`--help`.
 
 `stream_supervisor.py` owns all stream changes and persistence. HTTP threads
 submit operations to a bounded queue. One background thread runs the
 directory polling/stability checker and submits detached observations to that
 same queue. The supervisor executes work in order and publishes detached
-status snapshots; HTTP GET composes URLs from the snapshot and never walks
-live streams. There is no lifecycle state machine or per-stream
-synchronization protocol.
+status snapshots, from which GET composes URLs without walking live streams.
 
 | Module | Responsibility |
 |--------|----------------|
@@ -320,16 +271,14 @@ synchronization protocol.
 | `udphost.py` | DNS cache shared by pushed streams |
 
 A Stop arriving during preparation waits for that operation to finish, then
-executes. Slow probing, DNS, and bounded process shutdown can delay later work;
-directory scanning runs independently. The watcher uses the existing two-second
-poll interval and four-second stability check. Scan errors do not mean files
-were deleted. A process that cannot stop keeps its identity and port occupied.
+executes. Slow probing, DNS, and bounded process shutdown can delay later
+work. Scan errors do not mean files were deleted.
 
 Each process captures stdout/stderr in a temporary file, removed after exit.
 Observation forwards bounded chunks to the injected logger and retains a 4 KiB
 tail. Large diagnostic bursts may be truncated with a log notice. Per-stream
 logs rotate at 2 MB with one backup; the temporary capture file can grow for the
-lifetime of a run. There is no pipe-reader thread.
+lifetime of a run.
 
 ### Tests
 
@@ -357,20 +306,16 @@ available Alpine package fixes before installing Python. The compiler and
 source files stay in the build stage, outside the runtime image.
 
 Plain `docker compose up -d` also works after the image is built; `make up`
-creates the `state/` directory first.
+creates the `state/` directory first. Logs: `docker compose logs -f`; stop:
+`docker compose down`, both in this directory.
 `mediamtx.yml` is part of the image: edit it, run `make build`, then `make up`
 again, and Compose recreates the container on the new image.
 
 ### Networking modes
 
-Set the single `COMPOSE_FILE` line in `.env` to select the networking mode:
+The `COMPOSE_FILE` line in `.env` selects the networking mode:
 
-- Host: `COMPOSE_FILE=docker-compose.yml:docker-compose.host.yml`
-- Consumer network: `COMPOSE_FILE=docker-compose.yml:docker-compose.octo-cx.yml`
-
-Then run `make up`. It uses that setting without editing `.env`.
-
-- **Host networking** (`docker-compose.host.yml`): MediaMTX, the API and every
+- **Host networking** (`COMPOSE_FILE=docker-compose.yml:docker-compose.host.yml`): MediaMTX, the API and every
   listening transport bind the host's interfaces on their ports directly, with
   no NAT, and pushed feeds leave from the host's own address. For a publisher
   on its own host. The host firewall applies to these listeners; on a host
@@ -380,13 +325,13 @@ Then run `make up`. It uses that setting without editing `.env`.
   sudo ufw allow from <lan subnet> to any port 8554 proto tcp
   sudo ufw allow from <lan subnet> to any port 8888 proto tcp
   sudo ufw allow from <lan subnet> to any port 1935 proto tcp
-  sudo ufw allow from <lan subnet> to any port 8080 proto tcp
+  sudo ufw allow from <lan subnet> to any port 9080 proto tcp
   sudo ufw allow from <lan subnet> to any port 8000:8001 proto udp
   sudo ufw allow from <lan subnet> to any port 41000:41099 proto udp
   sudo ufw allow from <lan subnet> to any port 42000:43099 proto tcp
   ```
 
-- **Consumer network** (`docker-compose.octo-cx.yml`): joins the consumer's
+- **Consumer network** (`COMPOSE_FILE=docker-compose.yml:docker-compose.octo-cx.yml`): joins the consumer's
   external `octo-cx-network`, so containers there reach this one as
   `autostream`, and publishes the ports one to one so the RTP/RTCP ports
   MediaMTX advertises are the ones LAN clients reach. For a publisher on the
@@ -400,8 +345,7 @@ Then run `make up`. It uses that setting without editing `.env`.
 
 In both modes the ports clients use are the ones shown on each card, so
 `ffplay rtsp://<advertised host>:8554/<name>` works over UDP or TCP;
-video-streaming itself prefers TCP. The web UI is `http://<publisher
-address>:8080`.
+video-streaming itself prefers TCP.
 
 ### Deploying across hosts
 
@@ -418,29 +362,18 @@ consumer address sends pushed feeds nowhere without any error here.
 1. On the publisher: `.env` with the host networking line, `make build`,
    `make up`, and the firewall rules above if ufw is active.
 2. Open the web UI, expand Settings, and set the destination host to the
-   consumer host's address and, for multicast tests, a group. Leave the push
-   first ports inside the consumer's ingest range (`40000-40100` in the
-   Compose form of the consumer). Set the advertised host only if the consumer
-   must use a different address than your browser did.
+   consumer host's address and, for multicast tests, a group. Set the
+   advertised host only if the consumer must use a different address than
+   your browser did.
 3. Create a stream per transport you want to exercise, then register its
-   `register` line in CX-Watch. Pushed kinds whose consumer must listen first
-   (SRT call) show the crash and relaunch states until that registration
-   exists; UDP, RTP and SRTP pushes send regardless and are simply not heard
-   until then.
+   `register` line in CX-Watch.
 4. Check from the consumer host: `docker exec video-streaming ffprobe -v error
    -rtsp_transport tcp -show_streams rtsp://<advertised host>:8554/<name>` for
    a pulled kind; `docker logs video-streaming` shows ffmpeg reading a
    registered pushed feed without an input error.
 
-The Compose form of the consumer forwards UDP 40000-40100 into its container;
-the Kubernetes chart exposes no UDP today, so pushed kinds there need a UDP
-NodePort, LoadBalancer, or host networking on the consumer side. Its
-multicast-input allocator draws from the same range and cannot see ports in
-use here.
-
-## Supported Formats
-
-Every stable file in `videos/` is offered except hidden files and READMEs — there
-is no format allowlist. FFmpeg must be able to decode the file (MP4, MKV, AVI,
-MOV, WEBM, FLV, TS, and so on); a stream over a non-video file fails with the
-reason and is retried when the file changes.
+The Compose form of the consumer forwards UDP 40000-40100 into its container,
+so the push first ports must stay inside that range; the Kubernetes chart
+exposes no UDP today, so pushed kinds there need a UDP NodePort, LoadBalancer,
+or host networking on the consumer side. Its multicast-input allocator draws
+from the same range and cannot see ports in use here.
