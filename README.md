@@ -215,7 +215,7 @@ at once.
 | Multicast group | The group the Multicast transport sends to, and what the consumer registers. | 239.255.0.1 |
 | Advertised host | Host in the URLs the consumer registers. Blank uses the address the client reached the API by. | blank |
 | Bitrate cap | Transcode-only cap such as `2M` or `3000K`. Changing it restarts only streams transcoding above it. Blank disables the cap. | blank |
-| SRTP key | Base64 master key the SRTP transport encrypts with; the consumer needs the same key. | a fixed test key, see `runtimesettings.py` |
+| SRTP key | Base64 master key the SRTP transport encrypts with; the consumer needs the same key. | `autostream` repeated four times |
 | First ports | One per transport kind that takes one. A new stream takes the lowest free port from its kind's first port and keeps it; changing a first port affects later streams only. | UDP 40000, RTP 40020, SRT call 40040, SRTP 40060, SRT listen 41000, TCP 42000, HTTP TS 43000 |
 
 The UI has no authentication, so anyone who can reach the API port can create
