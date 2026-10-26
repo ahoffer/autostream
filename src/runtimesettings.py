@@ -6,7 +6,9 @@ import ipaddress
 
 HOST_SETTINGS = ('destination_host', 'advertised_host')
 DEFAULT_MULTICAST_GROUP = '239.255.0.1'  # administratively scoped, local to the site
-DEFAULT_SRTP_KEY = 'Y6ChGQoymXe9vpNHU+NFCh0iIB4Y8Zb+mo3emcQh'  # 16-byte key + 14-byte salt for AES_CM_128_HMAC_SHA1_80; a test tool's shared secret
+# A test tool's shared secret: AES_CM_128_HMAC_SHA1_80 takes exactly a 16-byte key and
+# 14-byte salt, so ffmpeg refuses any base64 text that is not 40 characters.
+DEFAULT_SRTP_KEY = 'Y6ChGQoymXe9vpNHU+NFCh0iIB4Y8Zb+mo3emcQh'
 PORT_SETTINGS = ('udp_first_port', 'rtp_first_port', 'srt_call_first_port', 'srtp_first_port',
                  'srt_listen_first_port', 'tcp_first_port', 'http_first_port')
 
