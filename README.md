@@ -15,7 +15,6 @@ stream forms being the ones that preserve KLV/MISB timed metadata.
    VERSION=2.3.0
    CONTAINER_NAME=autostream
    COMPOSE_FILE=docker-compose.yml:docker-compose.host.yml
-   #COMPOSE_FILE=docker-compose.yml:docker-compose.octo-cx.yml
    MEDIAMTX_RTSP_PORT=8554
    MEDIAMTX_RTP_PORT=8000
    MEDIAMTX_RTCP_PORT=8001
@@ -34,7 +33,7 @@ stream forms being the ones that preserve KLV/MISB timed metadata.
 3. **Build and deploy** via Docker Compose:
    ```bash
    make build       # Only needed once, or after code changes
-   make up MODE=host   # or MODE=octo-cx; see "Networking modes"
+   make up          # Uses COMPOSE_FILE in .env; see "Networking modes"
    ```
 
 4. **Point the feeds at their consumer**: open `http://<this host>:8080`,
@@ -267,8 +266,6 @@ streams and change where the feeds go.
 make build             # Build the container image
 make test              # Build the image, then run the tests inside it
 make up                # Start the stack in the mode .env names
-make up MODE=host      # Select host networking in .env, then start
-make up MODE=octo-cx   # Select the consumer's docker network, then start
 # Logs: `docker compose logs -f`. Stop: `docker compose down`. Both in this directory.
 ```
 
@@ -360,15 +357,18 @@ available Alpine package fixes before installing Python. The compiler and
 source files stay in the build stage, outside the runtime image.
 
 Plain `docker compose up -d` also works after the image is built; `make up`
-only adds the optional mode selection and the `state/` directory.
-`mediamtx.yml` is part of the image: edit it, run `make build`, then the mode
-target again, and Compose recreates the container on the new image.
+creates the `state/` directory first.
+`mediamtx.yml` is part of the image: edit it, run `make build`, then `make up`
+again, and Compose recreates the container on the new image.
 
 ### Networking modes
 
-`.env` names the compose files to use in `COMPOSE_FILE`; keep exactly one of
-the two lines active. `make up MODE=host` or `MODE=octo-cx` toggles the line
-and starts the stack. Nothing is detected: the mode is whatever that line says.
+Set the single `COMPOSE_FILE` line in `.env` to select the networking mode:
+
+- Host: `COMPOSE_FILE=docker-compose.yml:docker-compose.host.yml`
+- Consumer network: `COMPOSE_FILE=docker-compose.yml:docker-compose.octo-cx.yml`
+
+Then run `make up`. It uses that setting without editing `.env`.
 
 - **Host networking** (`docker-compose.host.yml`): MediaMTX, the API and every
   listening transport bind the host's interfaces on their ports directly, with
@@ -416,7 +416,7 @@ address breaks every advertised URL and CX registration, and a changed
 consumer address sends pushed feeds nowhere without any error here.
 
 1. On the publisher: `.env` with the host networking line, `make build`,
-   `make up MODE=host`, and the firewall rules above if ufw is active.
+   `make up`, and the firewall rules above if ufw is active.
 2. Open the web UI, expand Settings, and set the destination host to the
    consumer host's address and, for multicast tests, a group. Leave the push
    first ports inside the consumer's ingest range (`40000-40100` in the

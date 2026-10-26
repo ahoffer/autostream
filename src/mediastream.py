@@ -57,7 +57,6 @@ class MediaStream:
         self._crashes = 0
         self._error = None
         self._prepared = {}
-        self._save(self._choices)
 
     @property
     def binding(self):
@@ -92,15 +91,7 @@ class MediaStream:
         return stopped
 
     def update_settings(self, changes):
-        if set(changes) - set(USER_SETTINGS):
-            raise ValueError('Unknown stream setting')
-        choices = {**self._choices, **changes}
-        self._save(choices)
-        self._choices = choices
-        self._reset_health()
-        if self._choices['enabled']:
-            return self._restart()
-        return self._refresh_preview()
+        return self.rebind(self._source, self._binding, self._delivery, changes)
 
     def rebind(self, source_path, binding, delivery, changes):
         """Play another file or use another transport, with any setting changes, in one restart."""

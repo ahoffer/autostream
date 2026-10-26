@@ -1,4 +1,5 @@
 """Stream membership, ports and bindings, owned by the supervisor loop."""
+from dataclasses import asdict
 import logging
 from pathlib import Path
 import random
@@ -90,12 +91,11 @@ class StreamRegistry:
         if kind.takes_port and port is None:
             return False, f'No free port left for {kind.label}'
         binding = StreamBinding(filename, transport, port)
-        stream = self._build(name, binding, {**DEFAULT_CHOICES, **choices, 'enabled': start})
+        choices = {**DEFAULT_CHOICES, **choices, 'enabled': start}
+        stream = self._build(name, binding, choices)
+        self._store.save_stream(name, {**asdict(binding), **choices})
         self._streams[name] = stream
-        if start:
-            stream.start_streaming()
-        else:
-            stream.source_changed()
+        stream.source_changed()
         return True, None
 
     def delete_stream(self, name):

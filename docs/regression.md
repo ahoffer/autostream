@@ -1,7 +1,8 @@
 # Regression checklist
 
 Manual checks that have caught real defects in the control UI and supervisor.
-Run against a deployed stack (`make build && make up MODE=host`) with the
+Set `COMPOSE_FILE=docker-compose.yml:docker-compose.host.yml` in `.env`.
+Run against a deployed stack (`make build && make up`) with the
 sample videos in `videos/` (H.264 MP4s, an MJPEG AVI, an MPEG-TS with KLV).
 Ground truth is always the process table and the API:
 

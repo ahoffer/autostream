@@ -75,32 +75,29 @@ class StreamStateStore:
         temp.write_text(json.dumps(document, indent=2) + '\n', encoding='utf-8')
         os.replace(temp, self._path)
 
-    def save_stream(self, name, record):
-        document = self.load()
-        document['streams'][name] = deepcopy(record)
+    def _commit(self, document):
         self._write(document)
         self._document = document
         return True
 
+    def save_stream(self, name, record):
+        document = self.load()
+        document['streams'][name] = deepcopy(record)
+        return self._commit(document)
+
     def delete_stream(self, name):
         document = self.load()
         document['streams'].pop(name, None)
-        self._write(document)
-        self._document = document
-        return True
+        return self._commit(document)
 
     def rename_stream(self, previous, name):
         """Move a record to a new name, keeping its place in the order the streams were created."""
         document = self.load()
         document['streams'] = {name if key == previous else key: record
                                for key, record in document['streams'].items()}
-        self._write(document)
-        self._document = document
-        return True
+        return self._commit(document)
 
     def save_settings(self, settings_document):
         document = self.load()
         document['settings'] = deepcopy(settings_document)
-        self._write(document)
-        self._document = document
-        return True
+        return self._commit(document)

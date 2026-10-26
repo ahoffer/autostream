@@ -2,10 +2,12 @@ from dataclasses import replace
 import logging
 from pathlib import Path
 import unittest
+from unittest.mock import patch
 
 from runtimesettings import RuntimeSettings
+from statefile import StreamStateStore
 from streamregistry import StreamRegistry, seeded_stream_name
-from streamsupport import FakeProcess, TEST_SETTINGS, create, inventory, setup_fresh_registry, setup_registry
+from streamsupport import FakeProcess, TEST_SETTINGS, build_registry, create, inventory, setup_fresh_registry, setup_registry
 
 
 class CreateAndDeleteTests(unittest.TestCase):
@@ -55,6 +57,30 @@ class CreateAndDeleteTests(unittest.TestCase):
         self.assertEqual((status['state'], status['running']), ('stopped', False))
         self.assertIn('libx264', status['command'])
         self.assertEqual(len(FakeProcess.runs), 0)
+        saved = StreamStateStore(self.config.state_path).load()['streams']['boats-udp']
+        self.assertFalse(saved['enabled'])
+        self.assertEqual(saved['mode'], 'transcode')
+
+    def test_restoring_streams_does_not_write_state(self):
+        create(self.registry, 'running', self.source, 'udp', loop_count=2)
+        create(self.registry, 'stopped', self.source, 'rtsp', start=False, mode='transcode')
+        before = self.config.state_path.read_bytes()
+        store = StreamStateStore(self.config.state_path)
+        with patch.object(store, '_write', side_effect=AssertionError('restoring wrote state')):
+            restored, _ = build_registry(self.config, store)
+        self.assertEqual(self.config.state_path.read_bytes(), before)
+        restored.supervise()
+        self.assertTrue(restored.get_stream('running').status()['running'])
+        self.assertEqual(restored.get_stream('running').status()['loop_count'], 2)
+        self.assertEqual(restored.get_stream('stopped').status()['state'], 'stopped')
+
+    def test_failed_creation_save_does_not_register_or_start_a_stream(self):
+        with patch.object(self.store, 'save_stream', side_effect=OSError('full')):
+            with self.assertRaises(OSError):
+                self.registry.create_stream('boats', self.source.name, 'udp', {})
+        self.assertIsNone(self.registry.get_stream('boats'))
+        self.assertEqual(FakeProcess.runs, [])
+        self.assertNotIn('boats', self.store.load()['streams'])
 
     def test_delete_stops_the_process_frees_the_port_and_removes_the_record(self):
         create(self.registry, 'boats-udp', self.source, 'udp')

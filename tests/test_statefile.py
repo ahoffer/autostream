@@ -35,14 +35,25 @@ class PersistenceTests(unittest.TestCase):
         self.assertEqual(reloaded['streams']['ships']['port'], 40000)
 
     def test_failed_replace_leaves_previous_document_retryable(self):
-        path = state_path(self)
-        store = StreamStateStore(path)
-        store.save_stream('boats', RECORD)
-        before = path.read_text()
-        with patch('statefile.os.replace', side_effect=OSError('full')), self.assertRaises(OSError):
-            store.save_stream('boats', {**RECORD, 'enabled': False})
-        self.assertEqual(path.read_text(), before)
-        self.assertTrue(store.save_stream('boats', {**RECORD, 'enabled': False}))
+        for method, args in (
+            ('save_stream', ('boats', {**RECORD, 'enabled': False})),
+            ('delete_stream', ('boats',)),
+            ('rename_stream', ('boats', 'ships')),
+            ('save_settings', (RuntimeSettings(destination_host='receiver').to_document(),)),
+        ):
+            with self.subTest(method=method):
+                path = state_path(self)
+                store = StreamStateStore(path)
+                store.save_stream('boats', RECORD)
+                before = path.read_text()
+                cached = store.load()
+                operation = getattr(store, method)
+                with patch('statefile.os.replace', side_effect=OSError('full')), self.assertRaises(OSError):
+                    operation(*args)
+                self.assertEqual(path.read_text(), before)
+                self.assertEqual(store.load(), cached)
+                self.assertTrue(operation(*args))
+                self.assertEqual(store.load(), StreamStateStore(path).load())
 
     def test_document_without_settings_loads_with_defaults(self):
         path = state_path(self)
