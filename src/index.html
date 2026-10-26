@@ -978,7 +978,7 @@ function buildSettingsPanel() {
   return `
     <div class="settings">
       <h2 tabindex="-1">Settings</h2>
-      <p class="rule">Blank host fields mean unset; a blank port means its default.</p>
+      <p class="rule">A blank host or bitrate cap means unset; any other blank field takes its default.</p>
       <form class="form" data-form="settings" autocomplete="off">
         ${fields((f) => f.type === "text")}
         <div class="group">

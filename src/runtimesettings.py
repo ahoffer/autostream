@@ -4,7 +4,9 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass, fields
 import ipaddress
 
-HOST_SETTINGS = ('destination_host', 'multicast_group', 'advertised_host')
+HOST_SETTINGS = ('destination_host', 'advertised_host')
+DEFAULT_MULTICAST_GROUP = '239.255.0.1'  # administratively scoped, local to the site
+DEFAULT_SRTP_KEY = 'Y6ChGQoymXe9vpNHU+NFCh0iIB4Y8Zb+mo3emcQh'  # 16-byte key + 14-byte salt for AES_CM_128_HMAC_SHA1_80; a test tool's shared secret
 PORT_SETTINGS = ('udp_first_port', 'rtp_first_port', 'srt_call_first_port', 'srtp_first_port',
                  'srt_listen_first_port', 'tcp_first_port', 'http_first_port')
 
@@ -24,10 +26,10 @@ def parse_bitrate(bitrate_text):
 @dataclass(frozen=True)
 class RuntimeSettings:
     destination_host: str | None = None   # where push transports send
-    multicast_group: str | None = None    # the group the multicast transport sends to
+    multicast_group: str = DEFAULT_MULTICAST_GROUP  # the group the multicast transport sends to
     advertised_host: str | None = None    # host in the URLs the consumer registers; None = the host the client used
     max_video_bitrate: str = ''           # transcode cap such as '2M'; '' = no cap
-    srtp_key: str = ''                    # base64 SRTP master key shared with the consumer; '' = unset
+    srtp_key: str = DEFAULT_SRTP_KEY      # base64 SRTP master key shared with the consumer
     # First port per transport kind; a new stream takes the lowest free port from there.
     # Push kinds must land inside the range the consumer forwards into its container.
     udp_first_port: int = 40000
@@ -57,12 +59,13 @@ class RuntimeSettings:
 
     @classmethod
     def from_query(cls, query):
-        """Settings from a ?key=value form; blank means unset, or the default for a port.
-        Returns (settings, None) or (None, error)."""
+        """Settings from a ?key=value form; a blank host or bitrate cap means unset,
+        any other blank means the default. Returns (settings, None) or (None, error)."""
         text = {field.name: (query.get(field.name) or [''])[0].strip() for field in fields(cls)}
         values = {name: text[name] or None for name in HOST_SETTINGS}
         values['max_video_bitrate'] = text['max_video_bitrate']
-        values['srtp_key'] = text['srtp_key']
+        values['multicast_group'] = text['multicast_group'] or DEFAULT_MULTICAST_GROUP
+        values['srtp_key'] = text['srtp_key'] or DEFAULT_SRTP_KEY
         for name in PORT_SETTINGS:
             if not text[name]:
                 continue
@@ -80,13 +83,12 @@ def validation_error(settings):
     for name in HOST_SETTINGS:
         if getattr(settings, name) is not None and not _is_host_text(getattr(settings, name)):
             return f'{name} must be a host name or address'
-    if settings.multicast_group is not None:
-        try:
-            is_multicast = ipaddress.ip_address(settings.multicast_group).is_multicast
-        except ValueError:
-            is_multicast = False
-        if not is_multicast:
-            return 'multicast_group must be a multicast address such as 239.1.1.2'
+    try:
+        is_multicast = ipaddress.ip_address(settings.multicast_group).is_multicast
+    except (TypeError, ValueError):
+        is_multicast = False
+    if not is_multicast:
+        return 'multicast_group must be a multicast address such as 239.1.1.2'
     for name in PORT_SETTINGS:
         port = getattr(settings, name)
         if type(port) is not int or not 1 <= port <= 65535:
@@ -100,7 +102,7 @@ def validation_error(settings):
             return 'max_video_bitrate must be like 2M, 3000K or 3000000'
         if bits_per_second <= 0:
             return 'max_video_bitrate must be positive'
-    if not isinstance(settings.srtp_key, str) or any(char.isspace() for char in settings.srtp_key):
+    if not isinstance(settings.srtp_key, str) or not settings.srtp_key or any(char.isspace() for char in settings.srtp_key):
         return 'srtp_key must be the base64 key text with no spaces'
     return None
 

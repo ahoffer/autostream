@@ -251,10 +251,10 @@ class SettingsTests(unittest.TestCase):
         for transport in ('udp', 'multicast', 'srtp', 'srt_listen'):
             reasons[transport] = create(registry, transport, source, transport).status()['reason']
         self.assertEqual(reasons['udp'], 'no destination host configured')
-        self.assertEqual(reasons['multicast'], 'no multicast group configured')
         self.assertEqual(reasons['srtp'], 'no destination host configured')
+        self.assertIsNone(reasons['multicast'])
         self.assertIsNone(reasons['srt_listen'])
-        self.assertEqual(len(FakeProcess.runs), 1)
+        self.assertEqual(len(FakeProcess.runs), 2)
 
     def test_apply_settings_restarts_only_streams_whose_delivery_changed(self):
         registry, store, resolver, source, _ = setup_registry(self)
