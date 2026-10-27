@@ -10,7 +10,7 @@ Ground truth is always the process table and the API:
 docker exec autostream ps -o pid,etimes,args | grep ffmpeg
 curl -s localhost:9080/api/streams | python3 -m json.tool
 docker logs --since 5m autostream
-cat state/streams.json
+cat mounted/streams_config.json
 ```
 
 Give the UI one poll (5 s) after any change before judging it; the server

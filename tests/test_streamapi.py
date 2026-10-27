@@ -132,7 +132,7 @@ class HttpApiTests(unittest.TestCase):
         self.assertEqual((status, content_type, body), (200, 'application/vnd.apple.mpegurl', b'#EXTM3U\n'))
         self.assertEqual(self.fetch('GET', '/hls/boats-hls/seg00001.ts')[1], 'video/mp2t')
         self.assertEqual(self.fetch('GET', '/hls/boats-hls/notes.txt')[0], 404)
-        self.assertEqual(self.fetch('GET', '/hls/../streams.json')[0], 404)
+        self.assertEqual(self.fetch('GET', '/hls/../streams_config.json')[0], 404)
         self.assertEqual(self.fetch('GET', '/hls/missing/index.m3u8')[0], 404)
 
     def test_full_queue_rejects_mutation_but_cached_get_still_responds(self):

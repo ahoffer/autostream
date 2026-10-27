@@ -19,10 +19,10 @@ test: build  ## Run the unit tests inside the freshly built image
 	  -v '$(CURDIR)/tests:/app/tests:ro' \
 	  --entrypoint python3 $$CONTAINER_NAME:$$VERSION -B -m unittest discover -s /app/tests -v
 
-# Create the state bind source before compose does: if Docker creates it, it
+# Create mounted/ before compose does: if Docker creates it, it
 # is root-owned and the container user (UID 1000) cannot write the state file.
 # Compose reads .env itself, COMPOSE_FILE included, and recreates the container
 # when the image or service definition changed. Stop with `docker compose down`.
 up:  ## Start the stack using COMPOSE_FILE in .env
-	mkdir -p state
+	mkdir -p mounted
 	docker compose up -d

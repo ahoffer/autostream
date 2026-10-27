@@ -146,7 +146,7 @@ The Output tab shows the encoder in use. Each stream's ffmpeg log is at
 
 ## State
 
-`state/streams.json` (bind-mounted to `/app/state`) remembers every stream:
+`mounted/streams_config.json` (bind-mounted to `/app/mounted`) remembers every stream:
 its video file, transport, port, encoding choices and enabled choice, plus the
 values from the Settings panel. Delete the state file while the container is
 stopped to reset everything. A state file with no streams left in it is not
@@ -290,7 +290,7 @@ available Alpine package fixes before installing Python. The compiler and
 source files stay in the build stage, outside the runtime image.
 
 Plain `docker compose up -d` also works after the image is built; `make up`
-creates the `state/` directory first. Logs: `docker compose logs -f`; stop:
+creates the `mounted/` directory first. Logs: `docker compose logs -f`; stop:
 `docker compose down`, both in this directory.
 `mediamtx.yml` is part of the image: edit it, run `make build`, then `make up`
 again, and Compose recreates the container on the new image.

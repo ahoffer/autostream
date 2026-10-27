@@ -25,7 +25,7 @@ class Config:
     api_port: int
     log_level: str
     videos_dir: Path = Path("/app/videos")
-    state_path: Path = Path("/app/state/streams.json")
+    state_path: Path = Path("/app/mounted/streams_config.json")
     hls_dir: Path = Path("/app/hls")
     ffmpeg_log_dir: Path = Path("/tmp/ffmpeg-logs")
 

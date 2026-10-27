@@ -3,7 +3,7 @@ services:
     image: ${CONTAINER_NAME}:${VERSION}
     volumes:
       - ./videos:/app/videos:ro
-      - ./state:/app/state
+      - ./mounted:/app/mounted
     container_name: ${CONTAINER_NAME}
     restart: unless-stopped
     # Bound runaway ffmpeg allocations to this container; equal limits disable swap.

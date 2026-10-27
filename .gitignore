@@ -1,5 +1,5 @@
 videos/*
-state/
+mounted/
 .idea
 .claude
 .generated/
