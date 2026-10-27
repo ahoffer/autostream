@@ -167,8 +167,7 @@ values from the Settings panel. Delete the state file while the container is
 stopped to reset everything. A state file with no streams left in it is not
 reset: deleted streams stay deleted. A file that disappears from `videos/`
 parks its streams in Waiting until it returns; nothing is removed on its
-behalf. A state file written by an earlier release is rejected at startup;
-delete it to start fresh.
+behalf.
 
 HLS (TS segments) streams write their playlists under `/app/hls` inside the
 container; the directory is not persisted.

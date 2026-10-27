@@ -57,19 +57,19 @@ class PersistenceTests(unittest.TestCase):
 
     def test_document_without_settings_loads_with_defaults(self):
         path = state_path(self)
-        path.write_text(json.dumps({'version': 3, 'streams': {'boats': RECORD}}))
+        path.write_text(json.dumps({'streams': {'boats': RECORD}}))
         document = StreamStateStore(path).load()
         self.assertNotIn('settings', document)
         self.assertEqual(RuntimeSettings.from_document(document.get('settings', {})), RuntimeSettings())
 
-    def test_earlier_versions_and_invalid_records_are_rejected_without_rewrite(self):
+    def test_invalid_documents_are_rejected_without_rewrite(self):
         for document, message in (
-            ({'version': 2, 'assignments': {}, 'outputs': {}}, 'Unsupported state version 2'),
-            ({'version': 3, 'streams': {'bad name': RECORD}}, 'Invalid saved stream'),
-            ({'version': 3, 'streams': {'boats': {**RECORD, 'transport': 'pigeon'}}}, 'unknown transport'),
-            ({'version': 3, 'streams': {'boats': {**RECORD, 'port': 70000}}}, 'invalid port'),
-            ({'version': 3, 'streams': {'boats': {**RECORD, 'loop_count': -3}}}, 'invalid loop count'),
-            ({'version': 3, 'streams': {}, 'settings': {'udp_first_port': 0}}, 'udp_first_port'),
+            ({'streams': []}, 'Invalid state document'),
+            ({'streams': {'bad name': RECORD}}, 'Invalid saved stream'),
+            ({'streams': {'boats': {**RECORD, 'transport': 'pigeon'}}}, 'unknown transport'),
+            ({'streams': {'boats': {**RECORD, 'port': 70000}}}, 'invalid port'),
+            ({'streams': {'boats': {**RECORD, 'loop_count': -3}}}, 'invalid loop count'),
+            ({'streams': {}, 'settings': {'udp_first_port': 0}}, 'udp_first_port'),
         ):
             with self.subTest(message=message):
                 path = state_path(self)

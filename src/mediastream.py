@@ -12,7 +12,7 @@ from ffmpegprocess import FFmpegProcess
 log = logging.getLogger(__name__)
 
 # The user's choices and their defaults in one place: this mapping is also the
-# allowlist of keys that come back from the state file, so retired keys drop out.
+# allowlist of keys that come back from the state file.
 DEFAULT_CHOICES = {'enabled': True, 'mode': None, 'loop_count': -1, 'frame_rate': None, 'gop_frames': None}
 USER_SETTINGS = ('mode', 'loop_count', 'gop_frames', 'frame_rate')
 

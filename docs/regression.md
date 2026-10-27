@@ -38,8 +38,6 @@ notices a dead process within one 2 s tick.
   the reason, the draft kept.
 - Delete: the first press turns it into Confirm delete, the second removes the
   stream and its process; the port is reused by the next stream of that kind.
-- A state file from an earlier release stops the supervisor with a message
-  naming the file; deleting it boots clean.
 
 ## Files
 

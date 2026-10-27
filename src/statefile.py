@@ -8,7 +8,6 @@ import re
 from runtimesettings import RuntimeSettings
 from transports import KINDS_BY_ID
 
-STATE_VERSION = 3
 # Stream names double as MediaMTX paths and file names, so they stay plain.
 STREAM_NAME = re.compile(r'^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$')
 
@@ -32,18 +31,14 @@ class StreamStateStore:
         try:
             raw = self._path.read_text(encoding='utf-8')
         except FileNotFoundError:
-            return {'version': STATE_VERSION, 'streams': {}}
+            return {'streams': {}}
         data = json.loads(raw)
         self._validate(data)
         return data
 
     def _validate(self, data):
-        if data.get('version') != STATE_VERSION:
-            raise ValueError(
-                f'Unsupported state version {data.get("version")} in {self._path}; '
-                f'delete the file to start fresh')
         if not isinstance(data.get('streams'), dict):
-            raise ValueError('Invalid state document')
+            raise ValueError(f'Invalid state document {self._path}; delete the file to start fresh')
         for name, record in data['streams'].items():
             if not STREAM_NAME.match(name) or not isinstance(record, dict):
                 raise ValueError(f'Invalid saved stream {name!r}')
