@@ -6,22 +6,7 @@ multicast, RTP, SRT, TCP, HTTP, HLS segments or SRTP.
 
 ## Quickstart
 
-1. **Create your local configuration** (once per checkout), then edit `.env`
-   for your environment:
-   ```bash
-   cat > .env <<'EOF'
-   VERSION=2.3.0
-   CONTAINER_NAME=autostream
-   COMPOSE_FILE=docker-compose.yml:docker-compose.host.yml
-   MEDIAMTX_RTSP_PORT=8554
-   MEDIAMTX_RTP_PORT=8000
-   MEDIAMTX_RTCP_PORT=8001
-   MEDIAMTX_HLS_PORT=8888
-   MEDIAMTX_RTMP_PORT=1935
-   STREAM_API_PORT=9080
-   LOG_LEVEL=info
-   EOF
-   ```
+1. **Check `.env`** and edit it for your environment if needed.
 
 2. **Place your videos** in the `videos/` directory:
    ```bash
@@ -184,9 +169,8 @@ at run time in the web UI under **Settings**.
 
 ### `.env`
 
-`.env` is ignored by Git. Docker Compose reads `.env` directly and passes the whole file through to the
-container. Every variable must be set; the Quickstart shows the initial
-values.
+`.env` is checked in with working values. Docker Compose reads `.env` directly and passes the whole file through to the
+container. Every variable must be set.
 
 | Variable | Description |
 |----------|-------------|
