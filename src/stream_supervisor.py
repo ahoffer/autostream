@@ -145,7 +145,8 @@ def main():
     handler = partial(streamapi.StreamHandler, requests=requests, read_snapshot=read_snapshot,
                       execute=partial(streamapi._execute_request, registry),
                       url_facts=UrlFacts(config.rtsp_port, config.hls_port, config.rtmp_port, config.api_port),
-                      hls_dir=config.hls_dir)
+                      hls_dir=config.hls_dir,
+                      host_addresses={'hostname': config.host_name, 'lan_ip': config.host_lan_ip})
     server = ThreadingHTTPServer(('0.0.0.0', config.api_port), handler)
     api_thread = threading.Thread(target=server.serve_forever, name='APIServer', daemon=True)
     watcher = threading.Thread(target=_watch_files, args=(config.videos_dir, requests, stopping),

@@ -23,12 +23,13 @@ HLS_CONTENT_TYPES = {'.m3u8': 'application/vnd.apple.mpegurl', '.ts': 'video/mp2
 
 
 class StreamHandler(BaseHTTPRequestHandler):
-    def __init__(self, *args, requests, read_snapshot, execute, url_facts, hls_dir, **kwargs):
+    def __init__(self, *args, requests, read_snapshot, execute, url_facts, hls_dir, host_addresses=None, **kwargs):
         self.requests = requests
         self.read_snapshot = read_snapshot
         self.execute = execute
         self.url_facts = url_facts
         self.hls_dir = Path(hls_dir)
+        self.host_addresses = host_addresses or {'hostname': '', 'lan_ip': ''}
         super().__init__(*args, **kwargs)
 
     def log_message(self, format, *args):
@@ -65,6 +66,8 @@ class StreamHandler(BaseHTTPRequestHandler):
             self.send_json(describe_transports())
         elif parsed.path == '/api/settings':
             self.send_json(self.read_snapshot().settings.to_document())
+        elif parsed.path == '/api/host':
+            self.send_json(self.host_addresses)
         elif parsed.path == '/jost.woff2':
             self._send_font()
         elif parsed.path.startswith('/hls/'):

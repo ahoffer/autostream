@@ -10,9 +10,12 @@ services:
     mem_limit: 6g
     memswap_limit: 6g
     stop_grace_period: 1s
-    # .env is the single source of truth: pass it through whole rather than
-    # restating each key here.
+    # Pass application settings through whole rather than restating each key.
     env_file:
       - .env
+    # Detected on the host by make up; optional when running Compose directly.
+    environment:
+      AUTOSTREAM_HOSTNAME: ${AUTOSTREAM_HOSTNAME:-}
+      AUTOSTREAM_LAN_IP: ${AUTOSTREAM_LAN_IP:-}
     # Networking comes from the second file named in COMPOSE_FILE (.env):
     # docker-compose.host.yml or docker-compose.octo-cx.yml.

@@ -339,11 +339,12 @@ details.advanced .form { padding-top: 8px; }
 
 .settings h2 { padding-bottom: 8px; }
 .settings .rule { color: var(--muted); }
-.settings .form { padding-top: 24px; }
-.settings .group { grid-column: 1 / -1; padding-top: 16px; }
-.settings .group .label { display: block; padding-bottom: 8px; border-bottom: 2px solid var(--ink); }
-.settings .group .purpose { display: block; padding-top: 8px; color: var(--muted); }
+.settings > .form { padding-top: 24px; }
+.settings .tabpanel > .rule { padding-bottom: 16px; }
 .field .purpose { color: var(--muted); font-weight: 400; }
+.hostchoices { display: flex; flex-wrap: wrap; gap: 8px 16px; padding-top: 4px; }
+.hostchoices > span { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.hostchoices .purpose { overflow-wrap: anywhere; }
 </style>
 </head>
 <body>
@@ -391,16 +392,17 @@ details.advanced .form { padding-top: 8px; }
 <script>
 const POLL_MS = 5000;
 const STALE_MS = 12000;
-const TABS = ["source", "output", "command", "advanced"];
 
 const state = {
   streams: [],
   transports: [],
   settings: {},
+  hostAddresses: { hostname: "", lan_ip: "" },
   videos: [],
   loaded: false,                         // the first poll has answered
-  panel: { mode: "none", name: null },   // none | stream | create | settings
+  panel: { mode: "settings", name: null }, // none | stream | create | settings
   tab: "source",                         // notebook tab in the stream detail
+  settingsTab: "general",
   drafts: new Map(),                     // stream name -> edit draft; a map because drafts are sparse and keyed by stream identity
   createDraft: null,
   nameTouched: false,
@@ -853,12 +855,13 @@ function patchStreamPanel(panel) {
 }
 
 function renderTabs(panel) {
+  const selected = state.panel.mode === "settings" ? state.settingsTab : state.tab;
   panel.querySelectorAll('[role="tab"]').forEach((tab) => {
-    const active = tab.dataset.tab === state.tab;
+    const active = tab.dataset.tab === selected;
     tab.setAttribute("aria-selected", String(active));
     tab.tabIndex = active ? 0 : -1;
+    panel.querySelector("#" + tab.getAttribute("aria-controls")).hidden = !active;
   });
-  TABS.forEach((id) => { panel.querySelector("#tabpanel-" + id).hidden = id !== state.tab; });
 }
 
 /* Set form controls from the stream unless the operator is typing in one. */
@@ -974,18 +977,32 @@ function buildSettingsPanel() {
     <div class="field">
       <label for="s-${field.key}">${field.label}${field.purpose ? `, <span class="purpose">${field.purpose}</span>` : ""}</label>
       <input id="s-${field.key}" name="${field.key}" type="${field.type}" ${field.type === "number" ? 'min="1" max="65535" step="1" inputmode="numeric"' : ""}>
+      ${field.key === "advertised_host" ? `
+        <span class="purpose">Blank uses the browser address: ${escapeHtml(location.hostname)}.</span>
+        <div class="hostchoices">
+          <span><button type="button" data-act="advertised-host" data-host="hostname">Use hostname</button><span class="purpose" data-host-value="hostname"></span></span>
+          <span><button type="button" data-act="advertised-host" data-host="lan_ip">Use LAN IP</button><span class="purpose" data-host-value="lan_ip"></span></span>
+          <span><button type="button" data-act="advertised-host" data-host="localhost">Use localhost</button></span>
+        </div>` : ""}
     </div>`).join("");
   return `
     <div class="settings">
       <h2 tabindex="-1">Settings</h2>
       <p class="rule">A blank host or bitrate cap means unset; any other blank field takes its default.</p>
       <form class="form" data-form="settings" autocomplete="off">
-        ${fields((f) => f.type === "text")}
-        <div class="group">
-          <span class="label">First ports</span>
-          <span class="purpose">the lowest port a new stream of each kind takes</span>
+        <div class="notebook">
+          <div class="tabs" role="tablist" aria-label="Settings">
+            <button type="button" role="tab" id="tab-general" aria-controls="tabpanel-general" aria-selected="false" tabindex="-1" data-tab="general">General</button>
+            <button type="button" role="tab" id="tab-ports" aria-controls="tabpanel-ports" aria-selected="false" tabindex="-1" data-tab="ports">First ports</button>
+          </div>
+          <div class="tabpanel" role="tabpanel" id="tabpanel-general" aria-labelledby="tab-general" hidden>
+            <div class="form">${fields((f) => f.type === "text")}</div>
+          </div>
+          <div class="tabpanel" role="tabpanel" id="tabpanel-ports" aria-labelledby="tab-ports" hidden>
+            <p class="rule">The lowest port a new stream of each kind takes.</p>
+            <div class="form">${fields((f) => f.type === "number")}</div>
+          </div>
         </div>
-        ${fields((f) => f.type === "number")}
         <div class="formactions">
           <button type="submit" class="primary" data-act="settings-save">Save</button>
           <button type="button" data-act="settings-cancel">Cancel</button>
@@ -1000,6 +1017,13 @@ function fillSettingsForm(form, force) {
   SETTING_FIELDS.forEach((field) => setControl(form.elements[field.key], values[field.key], force));
 }
 function patchSettingsForm(form) {
+  renderTabs(form);
+  form.elements.advertised_host.placeholder = location.hostname;
+  for (const key of ["hostname", "lan_ip"]) {
+    const value = state.hostAddresses[key];
+    form.querySelector(`[data-host="${key}"]`).disabled = !value;
+    setText(form.querySelector(`[data-host-value="${key}"]`), value || "Unavailable");
+  }
   if (!state.settingsDraft) fillSettingsForm(form, false);
   const hasDraft = Boolean(state.settingsDraft);
   form.querySelector('[data-act="settings-save"]').disabled = !hasDraft;
@@ -1059,13 +1083,15 @@ async function fetchJson(path) {
 }
 async function poll() {
   try {
-    const [streams, videos, settings, transports] = await Promise.all([
+    const [streams, videos, settings, transports, hostAddresses] = await Promise.all([
       fetchJson("/api/streams"), fetchJson("/api/videos"), fetchJson("/api/settings"),
       state.transports.length ? state.transports : fetchJson("/api/transports"),
+      fetchJson("/api/host").catch(() => ({ hostname: "", lan_ip: "" })),
     ]);
     state.streams = streams;
     state.videos = videos;
     state.settings = settings;
+    state.hostAddresses = hostAddresses;
     state.transports = transports;
     state.lastOk = Date.now();
     state.unreachable = false;
@@ -1149,6 +1175,14 @@ panelNode.addEventListener("click", (event) => {
   if (!button) return;
   const act = button.dataset.act;
   const name = state.panel.name;
+  if (act === "advertised-host") {
+    const value = button.dataset.host === "localhost" ? "localhost" : state.hostAddresses[button.dataset.host];
+    if (!value) return;
+    const input = button.closest("form").elements.advertised_host;
+    input.value = value;
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    return;
+  }
   if (act === "copy") { copyText(button.closest("[data-copy]").dataset.copy, button); return; }
   if (act === "start") { callServer("stream:" + name, streamPath(name, "start"), button); return; }
   if (act === "stop") { callServer("stream:" + name, streamPath(name, "stop"), button); return; }
@@ -1160,23 +1194,32 @@ panelNode.addEventListener("click", (event) => {
   if (act === "settings-cancel") { state.settingsDraft = null; state.messages.delete("settings"); render(); return; }
 });
 
-/* Notebook tabs: click or arrow keys; the chosen tab persists across streams and polls. */
+/* Notebook tabs: click or arrow keys; each notebook keeps its selection across polls. */
 function selectTab(id, focus) {
-  state.tab = id;
+  if (state.panel.mode === "settings") state.settingsTab = id;
+  else state.tab = id;
   render();
   if (focus) panelNode.querySelector(`[role="tab"][data-tab="${id}"]`).focus();
 }
 panelNode.addEventListener("keydown", (event) => {
   const tab = event.target.closest('[role="tab"]');
   if (!tab) return;
-  const index = TABS.indexOf(tab.dataset.tab);
-  if (event.key === "ArrowRight") selectTab(TABS[(index + 1) % TABS.length], true);
-  else if (event.key === "ArrowLeft") selectTab(TABS[(index + TABS.length - 1) % TABS.length], true);
-  else if (event.key === "Home") selectTab(TABS[0], true);
-  else if (event.key === "End") selectTab(TABS[TABS.length - 1], true);
+  const tabs = [...tab.closest('[role="tablist"]').querySelectorAll('[role="tab"]')].map((button) => button.dataset.tab);
+  const index = tabs.indexOf(tab.dataset.tab);
+  if (event.key === "ArrowRight") selectTab(tabs[(index + 1) % tabs.length], true);
+  else if (event.key === "ArrowLeft") selectTab(tabs[(index + tabs.length - 1) % tabs.length], true);
+  else if (event.key === "Home") selectTab(tabs[0], true);
+  else if (event.key === "End") selectTab(tabs[tabs.length - 1], true);
   else return;
   event.preventDefault();
 });
+
+/* Reveal invalid settings before the browser tries to focus the field. */
+panelNode.addEventListener("invalid", (event) => {
+  if (state.panel.mode !== "settings") return;
+  const panel = event.target.closest('[role="tabpanel"]');
+  if (panel && panel.hidden) selectTab(document.getElementById(panel.getAttribute("aria-labelledby")).dataset.tab);
+}, true);
 
 panelNode.addEventListener("input", (event) => {
   const form = event.target.closest("form");

@@ -21,6 +21,9 @@ class ConfigurationTests(unittest.TestCase):
         config = Config.from_env(self.environ)
         self.assertEqual(config.rtsp_port, int(self.environ["MEDIAMTX_RTSP_PORT"]))
         self.assertEqual(config.log_level, "info")
+        self.assertEqual((config.host_name, config.host_lan_ip), ('', ''))
+        config = Config.from_env(self.environ | {'AUTOSTREAM_HOSTNAME': 'publisher', 'AUTOSTREAM_LAN_IP': '192.168.1.20'})
+        self.assertEqual((config.host_name, config.host_lan_ip), ('publisher', '192.168.1.20'))
 
     def test_invalid_deployment_settings_fail_when_loaded(self):
         for field, value, message in (

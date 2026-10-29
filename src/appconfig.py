@@ -28,6 +28,8 @@ class Config:
     state_path: Path = Path("/app/mounted/streams_config.json")
     hls_dir: Path = Path("/app/hls")
     ffmpeg_log_dir: Path = Path("/tmp/ffmpeg-logs")
+    host_name: str = ''
+    host_lan_ip: str = ''
 
     def __post_init__(self):
         if self.log_level not in LOG_LEVEL_NAMES:
@@ -48,4 +50,6 @@ class Config:
             rtmp_port=int(require_env("MEDIAMTX_RTMP_PORT", environ)),
             api_port=int(require_env("STREAM_API_PORT", environ)),
             log_level=require_env("LOG_LEVEL", environ).lower(),
+            host_name=environ.get('AUTOSTREAM_HOSTNAME', ''),
+            host_lan_ip=environ.get('AUTOSTREAM_LAN_IP', ''),
         )

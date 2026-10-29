@@ -201,6 +201,18 @@ at once.
 | SRTP key | Base64 master key the SRTP transport encrypts with; the consumer needs the same key. | `autostream` repeated four times |
 | First ports | One per transport kind that takes one. A new stream takes the lowest free port from its kind's first port and keeps it; changing a first port affects later streams only. | UDP 40000, RTP 40020, SRT call 40040, SRTP 40060, SRT listen 41000, TCP 42000, HTTP TS 43000 |
 
+Advertised host has **Use hostname**, **Use LAN IP**, and **Use localhost**
+shortcuts. They fill the field; Save applies the choice. Clear the field to
+return to using the browser's address. Existing saved values are preserved.
+
+`make up` supplies the Docker daemon's hostname and, for a local Linux daemon,
+the IPv4 address of the host's lowest-metric default-route interface. The
+values are detected at startup and exposed through `GET /api/host`. A shortcut
+is disabled if its address is unavailable. For remote Docker, other host
+platforms, or a different preferred interface, supply `AUTOSTREAM_HOSTNAME`
+and `AUTOSTREAM_LAN_IP` in the shell environment. These optional variables
+also work with `docker compose up -d` directly (or in `.env` for direct Compose).
+
 The UI has no authentication, so anyone who can reach the API port can create
 streams and change where the feeds go.
 

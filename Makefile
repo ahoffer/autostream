@@ -25,4 +25,5 @@ test: build  ## Run the unit tests inside the freshly built image
 # when the image or service definition changed. Stop with `docker compose down`.
 up:  ## Start the stack using COMPOSE_FILE in .env
 	mkdir -p mounted
-	docker compose up -d
+	python3 scripts/compose_up.py
+	@. ./.env && printf '\nWeb app: http://localhost:%s/\n' "$$STREAM_API_PORT"

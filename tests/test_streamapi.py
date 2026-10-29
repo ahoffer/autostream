@@ -30,7 +30,8 @@ class HttpApiTests(unittest.TestCase):
         self.owner = threading.Thread(target=run_loop, args=(self.registry, self.queue, publish, self.stop))
         self.owner.start()
         handler = partial(StreamHandler, requests=self.queue, read_snapshot=lambda: self.snapshot, execute=execute,
-                          url_facts=UrlFacts(8554, 8888, 1935, 8080), hls_dir=self.config.hls_dir)
+                          url_facts=UrlFacts(8554, 8888, 1935, 8080), hls_dir=self.config.hls_dir,
+                          host_addresses={'hostname': 'publisher', 'lan_ip': '192.168.1.20'})
         self.server = ThreadingHTTPServer(('127.0.0.1', 0), handler)
         self.http = threading.Thread(target=self.server.serve_forever, daemon=True)
         self.http.start()
@@ -71,6 +72,7 @@ class HttpApiTests(unittest.TestCase):
         self.assertEqual(self.execution_threads, [self.owner.ident] * 2)
 
     def test_register_urls_follow_the_host_header_unless_an_advertised_host_is_set(self):
+        self.assertEqual(self.request('GET', '/api/host'), (200, {'hostname': 'publisher', 'lan_ip': '192.168.1.20'}))
         row = self.stream('boats', headers={'Host': 'operator-console:9080'})
         self.assertEqual(row['register'], [['rtsp', 'rtsp://operator-console:8554/boats'],
                                            ['hls', 'http://operator-console:8888/boats/index.m3u8'],
@@ -79,6 +81,8 @@ class HttpApiTests(unittest.TestCase):
         self.assertEqual(self.request('POST', '/api/settings?advertised_host=publisher-host&destination_host=receiver')[0], 200)
         self.assertEqual(self.stream('boats', headers={'Host': 'operator-console:9080'})['register'][0][1], 'rtsp://publisher-host:8554/boats')
         self.assertEqual(self.request('GET', '/api/settings')[1]['advertised_host'], 'publisher-host')
+        self.assertEqual(self.request('POST', '/api/settings?advertised_host=&destination_host=receiver')[0], 200)
+        self.assertEqual(self.stream('boats', headers={'Host': 'operator-console:9080'})['register'][0][1], 'rtsp://operator-console:8554/boats')
 
     def test_stream_settings_can_change_name_file_transport_and_encoding_together(self):
         status, _ = self.request('POST', '/api/streams/boats-udp/settings?transport=tcp_listen&loop=1')
