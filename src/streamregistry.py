@@ -163,11 +163,12 @@ class StreamRegistry:
             if not getattr(self._settings, need):
                 return Delivery(None, kind.muxer, kind.carries_klv, blocker=f'no {need.replace("_", " ")} configured')
         fields = {**self._settings.to_document(), 'port': binding.port, 'name': name,
-                  'rtsp_port': self._config.rtsp_port, 'hls_dir': self._config.hls_dir}
+                  'rtsp_port': self._config.rtsp_port, 'srt_port': self._config.srt_port,
+                  'hls_dir': self._config.hls_dir}
         return Delivery(kind.delivery.format(**fields), kind.muxer, kind.carries_klv,
                         tuple(arg.format(**fields) for arg in kind.extra_output_args),
                         resolve_host=self._settings.destination_host if 'destination_host' in kind.needs else None,
-                        client_bound=kind.direction == 'listen')
+                        client_bound=kind.direction == 'listen', clamp_data_dts=kind.clamp_data_dts)
 
     def start_all_streams(self):
         return all([stream.ensure_streaming() for stream in self._streams.values()])

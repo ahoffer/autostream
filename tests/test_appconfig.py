@@ -13,6 +13,7 @@ class ConfigurationTests(unittest.TestCase):
             "MEDIAMTX_RTSP_PORT": "8554",
             "MEDIAMTX_HLS_PORT": "8888",
             "MEDIAMTX_RTMP_PORT": "1935",
+            "MEDIAMTX_SRT_PORT": "18890",
             "STREAM_API_PORT": "8080",
             "LOG_LEVEL": "info",
         }
@@ -20,6 +21,7 @@ class ConfigurationTests(unittest.TestCase):
     def test_deployment_settings_load(self):
         config = Config.from_env(self.environ)
         self.assertEqual(config.rtsp_port, int(self.environ["MEDIAMTX_RTSP_PORT"]))
+        self.assertEqual(config.srt_port, 18890)
         self.assertEqual(config.log_level, "info")
         self.assertEqual((config.host_name, config.host_lan_ip), ('', ''))
         config = Config.from_env(self.environ | {'AUTOSTREAM_HOSTNAME': 'publisher', 'AUTOSTREAM_LAN_IP': '192.168.1.20'})

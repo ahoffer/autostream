@@ -49,7 +49,7 @@ multicast, RTP, SRT, TCP, HTTP, HLS segments or SRTP.
 
 | Transport | Direction | KLV | The consumer registers |
 |-----------|-----------|-----|------------------------|
-| RTSP / HLS / RTMP via MediaMTX | consumer pulls | no | `rtsp://<host>:8554/<name>`, `http://<host>:8888/<name>/index.m3u8`, `rtmp://<host>:1935/<name>` |
+| RTSP / HLS / RTMP via MediaMTX | consumer pulls | RTSP only | `rtsp://<host>:8554/<name>`, `http://<host>:8888/<name>/index.m3u8`, `rtmp://<host>:1935/<name>` |
 | UDP | we push | yes | `udp://0.0.0.0:<port>` |
 | Multicast | we push | yes | `udp://<group>:<port>` |
 | RTP / TS | we push | yes | `rtp://0.0.0.0:<port>` |
@@ -72,16 +72,24 @@ as SRT call, shows the crash and relaunch states with ffmpeg's error until the
 stream is registered there; UDP, RTP and SRTP pushes send regardless and are
 simply not heard until then.
 
-MediaMTX's track model only carries video and audio, so KLV timed-metadata
-streams are dropped there. Every transport stream kind carries the whole
-MPEG-TS, KLV included, which is the standard MISB/STANAG-4609 way to deliver
-it.
+MediaMTX receives MPEG-TS over a loopback SRT connection and preserves KLV
+timed metadata on its RTSP output. Its HLS and RTMP outputs carry video/audio
+only. FFmpeg cannot publish KLV directly over RTSP, which is why the local
+feed uses SRT. The playback URLs and saved transport ids are unchanged.
+Every transport stream kind carries the whole MPEG-TS, KLV included.
+
+KLV routing requires MediaMTX 1.13.0 or later; the image pins 1.21.2. The
+SRT ingest listener binds only to `127.0.0.1` and needs no Docker port mapping.
+Set `MEDIAMTX_SRT_PORT=8890` in existing `.env` files before rebuilding.
+Clients must support the KLV RTP payload to interpret the metadata; FFmpeg
+8.1.2 receives the bytes as a data track but does not name its codec in ffprobe.
 
 ## Passthrough and transcode
 
 Each stream has its own encoding choices, chosen in the UI. Passthrough, the
 default, sends the source video unmodified. Transcode re-encodes to H.264
 with a clean GOP (fixes loop-point artifacts) and the bitrate cap applied.
+MJPEG sources are transcoded because the MPEG-TS ingest cannot carry them.
 Two encoder choices only apply when transcoding (under passthrough the source
 rate is shown instead): the frame rate (1 to 120, the UI/API limit), which
 defaults to the file's own rate; and the GOP, the keyframe interval in
@@ -180,6 +188,7 @@ container. Every variable must be set.
 | `MEDIAMTX_RTSP_PORT` | RTSP listener port |
 | `MEDIAMTX_HLS_PORT` | HLS HTTP port |
 | `MEDIAMTX_RTMP_PORT` | RTMP listener port |
+| `MEDIAMTX_SRT_PORT` | Local SRT ingest port (loopback only) |
 | `MEDIAMTX_RTP_PORT` | RTP UDP port |
 | `MEDIAMTX_RTCP_PORT` | RTCP UDP port |
 | `STREAM_API_PORT` | Stream control UI/API port |

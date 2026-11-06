@@ -788,6 +788,7 @@ function buildStreamPanel(stream) {
 /* Whether the output stream still carries the source's KLV: the transport must be able to carry it. */
 function klvOutFact(stream) {
   if (!(stream.data_codecs || []).includes("klv")) return "none";
+  if (stream.transport === "rtsp") return "passed through on RTSP; dropped on HLS/RTMP";
   return stream.carries_klv ? "passed through" : "dropped by transport";
 }
 

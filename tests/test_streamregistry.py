@@ -32,7 +32,8 @@ class CreateAndDeleteTests(unittest.TestCase):
         hls = create(self.registry, 'boats-hls', self.source, 'hls')
         self.assertIsNone(rtsp.binding.port)
         self.assertIsNone(hls.binding.port)
-        self.assertEqual(rtsp.status()['delivery'], 'rtsp://localhost:8554/boats')
+        self.assertEqual(rtsp.status()['delivery'], 'srt://127.0.0.1:8890?streamid=publish:boats')
+        self.assertNotIn('-bsf:d', FakeProcess.runs[0].argv)
         self.assertEqual(hls.status()['delivery'], str(self.config.hls_dir / 'boats-hls' / 'index.m3u8'))
         self.assertTrue((self.config.hls_dir / 'boats-hls').is_dir())
         self.assertIn('-hls_segment_type', FakeProcess.runs[1].argv)
@@ -143,8 +144,8 @@ class RebindTests(unittest.TestCase):
         create(self.registry, 'r', self.source, 'rtsp')
         self.assertTrue(self.registry.update_stream('r', {'name': 'r2'}))
         self.assertEqual(FakeProcess.runs[1].code, -15)
-        self.assertIn('rtsp://localhost:8554/r2', FakeProcess.runs[2].argv)
-        self.assertEqual(self.registry.get_stream('r2').status()['delivery'], 'rtsp://localhost:8554/r2')
+        self.assertIn('srt://127.0.0.1:8890?streamid=publish:r2', FakeProcess.runs[2].argv)
+        self.assertEqual(self.registry.get_stream('r2').status()['delivery'], 'srt://127.0.0.1:8890?streamid=publish:r2')
 
     def test_renaming_with_other_changes_applies_both_in_one_restart(self):
         self.assertTrue(self.registry.update_stream('boats', {'name': 'ships', 'loop_count': 3}))
@@ -211,7 +212,7 @@ class FirstStartTests(unittest.TestCase):
         self.assertEqual(rows['cargoship']['filename'], 'cargoship.mp4')
         self.assertEqual(rows['rolling-boats-v2']['filename'], 'rolling boats.v2.avi')
         self.assertTrue(all((row['transport'], row['running']) == ('rtsp', True) for row in rows.values()))
-        self.assertEqual(rows['cargoship']['delivery'], 'rtsp://localhost:8554/cargoship')
+        self.assertEqual(rows['cargoship']['delivery'], 'srt://127.0.0.1:8890?streamid=publish:cargoship')
         self.assertEqual(set(store.load()['streams']), {'cargoship', 'rolling-boats-v2'})
 
     def test_seeding_waits_for_the_videos_to_settle_and_ends_once_streams_exist(self):

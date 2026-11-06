@@ -8,11 +8,11 @@ logLevel: error
 # Enable HLS
 hls: yes
 
-# RTSP, HLS and RTMP are served. WebRTC is browser-only and MediaMTX's SRT
-# drops KLV, so both stay off and open no ports under host networking.
+# RTSP, HLS and RTMP are served. SRT ingests MPEG-TS with KLV from FFmpeg;
+# entrypoint.sh binds it to loopback because both processes share a container.
 rtmp: yes
 webrtc: no
-srt: no
+srt: yes
 
 # Paths configuration
 # All videos in /app/videos are automatically discovered and streamed

@@ -45,14 +45,14 @@ file.
 - **Settings**: topology and policy shared by all streams: destination
   host, multicast group, advertised host, bitrate cap, SRTP key, and a
   first port per transport kind.
-- **KLV**: timed metadata carried in MPEG-TS; every kind except the MediaMTX
-  one carries it.
+- **KLV**: metadata carried by the transport stream kinds and MediaMTX RTSP.
+  MediaMTX HLS and RTMP outputs omit it.
 
 ## Transport kinds
 
 | id | Label | Direction | KLV | Port | Needs a setting |
 |---|---|---|---|---|---|
-| rtsp | RTSP / HLS / RTMP via MediaMTX | serve | no | none | |
+| rtsp | RTSP / HLS / RTMP via MediaMTX | serve | RTSP only | none | |
 | udp | UDP | push | yes | from UDP first port | destination host |
 | multicast | Multicast | push | yes | random, 50000 to 59999 | multicast group |
 | rtp | RTP / TS | push | yes | from RTP first port | destination host |

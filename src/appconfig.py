@@ -30,6 +30,7 @@ class Config:
     ffmpeg_log_dir: Path = Path("/tmp/ffmpeg-logs")
     host_name: str = ''
     host_lan_ip: str = ''
+    srt_port: int = 8890
 
     def __post_init__(self):
         if self.log_level not in LOG_LEVEL_NAMES:
@@ -48,6 +49,7 @@ class Config:
             rtsp_port=int(require_env("MEDIAMTX_RTSP_PORT", environ)),
             hls_port=int(require_env("MEDIAMTX_HLS_PORT", environ)),
             rtmp_port=int(require_env("MEDIAMTX_RTMP_PORT", environ)),
+            srt_port=int(require_env("MEDIAMTX_SRT_PORT", environ)),
             api_port=int(require_env("STREAM_API_PORT", environ)),
             log_level=require_env("LOG_LEVEL", environ).lower(),
             host_name=environ.get('AUTOSTREAM_HOSTNAME', ''),

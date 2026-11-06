@@ -35,6 +35,7 @@ class Delivery:
     resolve_host: str | None = None   # a name that must resolve before pushing
     client_bound: bool = False        # ffmpeg serves one client and exits when it leaves
     blocker: str | None = None
+    clamp_data_dts: bool = True
 
 
 # A listener that has run this long was serving a client; its exit is the client leaving, not a crash.

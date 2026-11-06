@@ -5,11 +5,11 @@ resolves encoding choices, and renders the resulting command line. Each stream
 is its own ffmpeg process, so build_argv produces one complete command per
 stream, shaped by its Delivery:
 
-  rtsp muxer     RTSP -> MediaMTX (which republishes it as HLS and RTMP). RTP
-                 cannot carry KLV, so only video+audio are mapped.
+  rtsp muxer     Direct FFmpeg RTSP output maps video/audio only because
+                 FFmpeg's RTP publisher does not support KLV.
   other muxers   MPEG-TS, plain or inside RTP, or as HLS segments, with EVERY
                  stream mapped and data/KLV copied through untouched. These
-                 are the metadata-preserving feeds.
+                 include local SRT ingest into MediaMTX for RTSP KLV output.
 
 In transcode mode video is re-encoded to a clean GOP structure to fix looping
 artifacts and to honor the bitrate cap, using libx264 in software. In
@@ -178,9 +178,12 @@ def build_argv(source_path, spec, delivery):
         # muxer insists on monotonic timestamps, so there the muxer must be
         # allowed to interleave the sparse KLV packets properly.
         interleave = [] if delivery.muxer == "rtp_mpegts" else ["-max_interleave_delta", "1000"]
+        # setts buffers a packet until the next arrives. Avoid delaying sparse,
+        # untimestamped KLV on MediaMTX's local SRT feed; it accepts native DTS.
+        data_ts = ["-bsf:d", "setts=dts=max(DTS\\,PREV_OUTDTS)"] if delivery.clamp_data_dts else []
         argv += ["-map", "0", "-copy_unknown", *video_opts, *bitrate_opts, *audio_opts,
                  "-c:d", "copy", *interleave,
-                 "-bsf:d", "setts=dts=max(DTS\\,PREV_OUTDTS)", *ts_fix]
+                 *data_ts, *ts_fix]
     else:
         argv += ["-map", "0:v?", "-map", "0:a?", *video_opts, *bitrate_opts, *audio_opts,
                  *ts_fix, *vsync_opts]
@@ -207,7 +210,9 @@ def prepare(source_path, settings, delivery, max_video_bps=None):
 
 def _command_for_profile(source_path, settings, delivery, profile, max_video_bps=None):
     """Keep decisions reproducible from a probe and explicit command inputs."""
-    eligible = bool(profile.video_codecs) and all(c in PASSTHROUGH_CODECS for c in profile.video_codecs)
+    # MJPEG can travel directly over RTSP, but not through our MPEG-TS muxers.
+    codecs = PASSTHROUGH_CODECS if delivery.muxer == 'rtsp' else PASSTHROUGH_CODECS - {'mjpeg'}
+    eligible = bool(profile.video_codecs) and all(c in codecs for c in profile.video_codecs)
     mode = settings.get('mode') or 'passthrough'
     passthrough = mode == 'passthrough' and eligible
     fps = settings.get('frame_rate')
@@ -222,7 +227,7 @@ def _command_for_profile(source_path, settings, delivery, profile, max_video_bps
         'data_codecs': list(profile.data_codecs or ()),
         'mode': mode, 'effective_mode': 'passthrough' if passthrough else 'transcode',
         'encoder': spec.encoder_label, 'passthrough_eligible': eligible if profile.video_codecs is not None else None,
-        'ineligible_codecs': sorted(set(profile.video_codecs or ()) - PASSTHROUGH_CODECS),
+        'ineligible_codecs': sorted(set(profile.video_codecs or ()) - codecs),
         'source_frame_rate': profile.frame_rate,
         'frame_rate': fps or profile.frame_rate, 'frame_rate_explicit': fps is not None,
         'gop_frames': gop, 'gop_explicit': settings.get('gop_frames') is not None,
@@ -247,8 +252,7 @@ def _command_for_profile(source_path, settings, delivery, profile, max_video_bps
 #                                optional so files with no audio (or no video)
 #                                still stream. Data/KLV and subtitles are NOT
 #                                mapped here: ffmpeg's RTP muxer cannot carry them
-#                                and MediaMTX drops them, so mapping them would
-#                                make the RTSP header fail and kill the stream.
+#                                so mapping them would make the RTSP header fail.
 # -map 0 -copy_unknown           (UDP output) Keep ALL streams, including data
 #                                and tracks ffmpeg cannot identify. MPEG-TS over
 #                                UDP carries KLV/MISB timed metadata natively.

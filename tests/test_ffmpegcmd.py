@@ -58,6 +58,26 @@ class StreamingCommandTests(unittest.TestCase):
         self.assertEqual((prepared['video_codecs'], prepared['audio_codecs'], prepared['data_codecs']), (['h264'], ['aac'], ['klv']))
         self.assertEqual(prepared['effective_mode'], 'passthrough')
 
+    def test_mediamtx_ingest_keeps_klv_in_both_video_modes(self):
+        profile = ffmpegcmd.MediaProbeResult(('h264',), ('aac',), False, 'yuv420p', 4000000, 30., ('klv',))
+        delivery = Delivery('srt://127.0.0.1:8890?streamid=publish:truck', clamp_data_dts=False)
+        for mode, codec in (('passthrough', 'copy'), ('transcode', 'libx264')):
+            with self.subTest(mode=mode):
+                prepared = ffmpegcmd._command_for_profile('truck.ts', {'loop_count': -1, 'mode': mode}, delivery, profile)
+                argv = prepared['argv']
+                self.assertEqual(argv[argv.index('-map') + 1], '0')
+                self.assertEqual(argv[argv.index('-c:d') + 1], 'copy')
+                self.assertNotIn('-bsf:d', argv)
+                self.assertEqual(argv[argv.index('-c:v') + 1], codec)
+                self.assertEqual(argv[-3:], ('-f', 'mpegts', delivery.url))
+
+    def test_mjpeg_is_transcoded_for_mpegts_ingest(self):
+        profile = ffmpegcmd.MediaProbeResult(('mjpeg',), (), True, 'yuvj420p', 4000000, 30.)
+        prepared = ffmpegcmd._command_for_profile('camera.avi', {'loop_count': -1},
+                                                Delivery('srt://127.0.0.1:8890?streamid=publish:camera'), profile)
+        self.assertEqual(prepared['effective_mode'], 'transcode')
+        self.assertEqual(prepared['ineligible_codecs'], ['mjpeg'])
+
 
 def argv_index(argv, flag):
     return argv.index(flag)

@@ -1,7 +1,7 @@
 """The transport kinds a stream can be delivered over: one row per kind, and one rule per row.
 
 Templates take these fields: destination_host, multicast_group, srtp_key, port,
-name, rtsp_port, hls_port, rtmp_port, api_port, hls_dir, and host (the
+name, rtsp_port, srt_port, hls_port, rtmp_port, api_port, hls_dir, and host (the
 advertised host, chosen per request).
 """
 from __future__ import annotations
@@ -22,6 +22,7 @@ class TransportKind:
     register: tuple                  # (label, template) pairs: what the consumer registers
     extra_output_args: tuple = ()    # per-kind ffmpeg output options, templated
     random_port: bool = False        # takes a random high port instead of one from a first port
+    clamp_data_dts: bool = True      # timestamp filter buffers sparse packets; local SRT does not need it
 
     @property
     def takes_port(self):
@@ -37,11 +38,13 @@ class TransportKind:
 
 
 KINDS = (
-    TransportKind('rtsp', 'RTSP / HLS / RTMP via MediaMTX', 'serve', False, 'rtsp', None, (),
-                  'rtsp://localhost:{rtsp_port}/{name}',
+    # FFmpeg cannot publish KLV over RTSP. MPEG-TS over local SRT preserves it
+    # for MediaMTX's RTSP output; its HLS and RTMP outputs remain video/audio.
+    TransportKind('rtsp', 'RTSP / HLS / RTMP via MediaMTX', 'serve', True, 'mpegts', None, (),
+                  'srt://127.0.0.1:{srt_port}?streamid=publish:{name}',
                   (('rtsp', 'rtsp://{host}:{rtsp_port}/{name}'),
                    ('hls', 'http://{host}:{hls_port}/{name}/index.m3u8'),
-                   ('rtmp', 'rtmp://{host}:{rtmp_port}/{name}'))),
+                   ('rtmp', 'rtmp://{host}:{rtmp_port}/{name}')), clamp_data_dts=False),
     TransportKind('udp', 'UDP', 'push', True, 'mpegts', 'udp_first_port', ('destination_host',),
                   'udp://{destination_host}:{port}?pkt_size=1316',
                   (('register', 'udp://0.0.0.0:{port}'),)),

@@ -6,7 +6,7 @@ from transports import KINDS, KINDS_BY_ID
 
 SAMPLE_FIELDS = {**RuntimeSettings(destination_host='receiver', multicast_group='239.1.1.2', srtp_key='a2V5').to_document(),
                  'port': 40001, 'name': 'boats', 'host': 'publisher', 'rtsp_port': 8554, 'hls_port': 8888,
-                 'rtmp_port': 1935, 'api_port': 8080, 'hls_dir': '/app/hls'}
+                 'srt_port': 8890, 'rtmp_port': 1935, 'api_port': 8080, 'hls_dir': '/app/hls'}
 
 
 class TransportTableTests(unittest.TestCase):
@@ -29,8 +29,8 @@ class TransportTableTests(unittest.TestCase):
                 self.assertIn(kind.direction, ('push', 'listen', 'serve'))
                 self.assertIn(kind.muxer, ('rtsp', 'mpegts', 'rtp_mpegts', 'hls'))
 
-    def test_only_mediamtx_drops_klv_and_push_kinds_name_their_target(self):
-        self.assertEqual([kind.id for kind in KINDS if not kind.carries_klv], ['rtsp'])
+    def test_ingest_preserves_klv_and_push_kinds_name_their_target(self):
+        self.assertEqual([kind.id for kind in KINDS if not kind.carries_klv], [])
         self.assertEqual([kind.id for kind in KINDS if kind.random_port], ['multicast'])
         self.assertEqual([kind.id for kind in KINDS if not kind.takes_port], ['rtsp', 'hls'])
         for kind in KINDS:
