@@ -10,3 +10,5 @@ docs
 state
 videos
 target
+**/*.py
+scripts

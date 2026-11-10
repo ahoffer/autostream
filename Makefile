@@ -1,23 +1,22 @@
 # Typical flow: build -> test -> up. Set COMPOSE_FILE in .env to select
-# the networking mode.
+# the networking mode. The image version comes from Cargo.toml.
 
 .PHONY: help build test up
 
 .DEFAULT_GOAL := help
 
+VERSION := $(shell sed -n 's/^version = "\(.*\)"$$/\1/p' Cargo.toml | head -n 1)
+
 help:  ## List available targets
 	@awk 'BEGIN {FS = ":.*## "} /^[a-zA-Z0-9_-]+:.*## / {printf "  %-20s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 
 build:  ## Build the container image
-	set -a && . ./.env && docker build -t $$CONTAINER_NAME:$$VERSION .
+	set -a && . ./.env && docker build -t $$CONTAINER_NAME:$(VERSION) .
 
-test: build  ## Run the unit tests inside the freshly built image
-	@# The image carries the app, not the tests; the tests are mounted
-	@# read-only, so the suite runs against
-	@# the shipped Python and ffmpeg without shipping itself.
-	set -a && . ./.env && docker run --rm \
-	  -v '$(CURDIR)/tests:/app/tests:ro' \
-	  --entrypoint python3 $$CONTAINER_NAME:$$VERSION -B -m unittest discover -s /app/tests -v
+test:  ## Run the Rust tests in the image's test stage, beside the shipped ffmpeg
+	@# The test stage compiles and runs the suite as UID 1000 on the
+	@# production base image; the final image carries neither compiler nor tests.
+	set -a && . ./.env && docker build --target test -t $$CONTAINER_NAME:$(VERSION)-test .
 
 # Create mounted/ before compose does: if Docker creates it, it
 # is root-owned and the container user (UID 1000) cannot write the state file.
@@ -25,5 +24,5 @@ test: build  ## Run the unit tests inside the freshly built image
 # when the image or service definition changed. Stop with `docker compose down`.
 up:  ## Start the stack using COMPOSE_FILE in .env
 	mkdir -p mounted
-	python3 scripts/compose_up.py
+	cargo run --quiet --release --bin composeup
 	@. ./.env && printf '\nWeb app: http://localhost:%s/\n' "$$STREAM_API_PORT"

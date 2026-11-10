@@ -26,7 +26,7 @@ export MTX_SRTADDRESS="127.0.0.1:${MEDIAMTX_SRT_PORT:?MEDIAMTX_SRT_PORT is not s
 MEDIAMTX_PID=$!
 
 # Start stream supervisor in background
-python3 /app/stream_supervisor.py &
+/app/autostream &
 SUPERVISOR_PID=$!
 
 # Both children are vital: playback needs mediamtx, discovery and control need
