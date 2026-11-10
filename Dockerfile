@@ -59,15 +59,14 @@ RUN mkdir -p /app/videos /app/mounted /app/hls
 
 # The supervisor is one static binary with the UI page and font embedded.
 COPY --from=rust-build /src/target/release/autostream /app/autostream
-COPY entrypoint.sh /app/entrypoint.sh
 # The MediaMTX config is part of the image: editing it means a rebuild.
 COPY mediamtx.yml /app/mediamtx.yml
 
 # All app files and dirs owned by autostream (UID/GID 1000).
 RUN chown -R autostream:autostream /app
 
-# Switch to non-root user: every process spawned from the entrypoint
-# (mediamtx, autostream, ffmpeg) runs as UID 1000.
+# Switch to non-root user: the service and every process it spawns
+# (mediamtx, ffmpeg) run as UID 1000.
 USER autostream:autostream
 
-ENTRYPOINT ["/app/entrypoint.sh"]
+ENTRYPOINT ["/app/autostream"]

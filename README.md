@@ -44,6 +44,9 @@ multicast, RTP, SRT, TCP, HTTP, HLS segments or SRTP.
   hand.
 - Each stream is **one ffmpeg process**. MediaMTX serves the RTSP kind as
   RTSP, HLS and RTMP; every other kind is delivered by ffmpeg itself.
+- The service starts MediaMTX as a child with the listener ports from `.env`
+  and stops with it. If MediaMTX exits, the service exits non-zero and Compose
+  restarts the container.
 
 ## Transports
 

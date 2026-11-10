@@ -54,6 +54,8 @@ pub struct Config {
     pub host_name: String,
     pub host_lan_ip: String,
     pub srt_port: u16,
+    pub rtp_port: u16,
+    pub rtcp_port: u16,
 }
 
 impl Config {
@@ -84,6 +86,8 @@ impl Config {
             host_name: String::new(),
             host_lan_ip: String::new(),
             srt_port: 8890,
+            rtp_port: 8000,
+            rtcp_port: 8001,
         })
     }
 
@@ -101,6 +105,8 @@ impl Config {
             &require_env("LOG_LEVEL", environ)?.to_lowercase(),
         )?;
         config.srt_port = require_port("MEDIAMTX_SRT_PORT", environ)?;
+        config.rtp_port = require_port("MEDIAMTX_RTP_PORT", environ)?;
+        config.rtcp_port = require_port("MEDIAMTX_RTCP_PORT", environ)?;
         config.host_name = environ
             .get("AUTOSTREAM_HOSTNAME")
             .cloned()
@@ -127,6 +133,8 @@ mod tests {
             ("MEDIAMTX_HLS_PORT", "8888"),
             ("MEDIAMTX_RTMP_PORT", "1935"),
             ("MEDIAMTX_SRT_PORT", "18890"),
+            ("MEDIAMTX_RTP_PORT", "18000"),
+            ("MEDIAMTX_RTCP_PORT", "18001"),
             ("STREAM_API_PORT", "8080"),
             ("LOG_LEVEL", "info"),
         ]
@@ -140,6 +148,7 @@ mod tests {
         let config = Config::from_env(&environ()).unwrap();
         assert_eq!(config.rtsp_port, 8554);
         assert_eq!(config.srt_port, 18890);
+        assert_eq!((config.rtp_port, config.rtcp_port), (18000, 18001));
         assert_eq!(config.log_level, "info");
         assert!(!config.show_ffmpeg_output());
         assert_eq!(

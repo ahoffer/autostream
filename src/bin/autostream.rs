@@ -8,6 +8,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use autostream::appconfig::Config;
+use autostream::mediamtxprocess::{MediamtxOutcome, spawn_mediamtx, supervise_mediamtx};
 use autostream::mediastream::{FfmpegTools, StreamServices};
 use autostream::statefile::StreamStateStore;
 use autostream::stopsignal::StopSignal;
@@ -57,6 +58,11 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     let listener = TcpListener::bind(("0.0.0.0", config.api_port))?;
     listener.set_nonblocking(true)?;
     install_signal_handlers(&runtime, &stop)?;
+    // MediaMTX is a vital child: the thread raises `stop` if it exits first.
+    let mediamtx =
+        spawn_mediamtx(&config).map_err(|error| format!("Cannot start MediaMTX: {error}"))?;
+    let mediamtx_stop = stop.clone();
+    let mediamtx_watch = thread::spawn(move || supervise_mediamtx(mediamtx, &mediamtx_stop));
     let api_state = Arc::new(ApiState {
         requests: requests.clone(),
         snapshot: snapshot.clone(),
@@ -117,7 +123,11 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     {
         log::warn!("File watcher is still blocked in filesystem IO");
     }
-    Ok(())
+    match mediamtx_watch.join() {
+        Ok(MediamtxOutcome::Stopped) => Ok(()),
+        Ok(MediamtxOutcome::Exited(status)) => Err(format!("MediaMTX exited ({status})").into()),
+        Err(_) => Err("MediaMTX watcher panicked".into()),
+    }
 }
 
 fn install_signal_handlers(
