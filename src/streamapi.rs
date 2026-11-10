@@ -34,6 +34,15 @@ pub struct HostAddresses {
     pub lan_ip: String,
 }
 
+/// The host choices the settings page offers, with the host a blank advertised
+/// host yields for the client that asked.
+#[derive(Serialize)]
+struct HostReport<'a> {
+    hostname: &'a str,
+    lan_ip: &'a str,
+    client_host: String,
+}
+
 /// Everything a request handler needs; none of it is mutable stream state.
 pub struct ApiState {
     pub requests: SyncSender<SupervisorRequest>,
@@ -272,6 +281,12 @@ async fn dispatch(
     }
 }
 
+fn host_header(headers: &HeaderMap) -> Option<&str> {
+    headers
+        .get(header::HOST)
+        .and_then(|value| value.to_str().ok())
+}
+
 fn get(state: &ApiState, path: &str, headers: &HeaderMap) -> Response {
     match path {
         "/" | "/index.html" => {
@@ -284,12 +299,10 @@ fn get(state: &ApiState, path: &str, headers: &HeaderMap) -> Response {
         }
         "/api/streams" => {
             let snapshot = read_snapshot(&state.snapshot);
-            let host_header = headers
-                .get(header::HOST)
-                .and_then(|value| value.to_str().ok());
-            let host = state
-                .url_facts
-                .host_for(snapshot.settings.advertised_host.as_deref(), host_header);
+            let host = state.url_facts.host_for(
+                snapshot.settings.advertised_host.as_deref(),
+                host_header(headers),
+            );
             let rows = describe_streams(
                 &snapshot.statuses,
                 &snapshot.settings,
@@ -307,10 +320,14 @@ fn get(state: &ApiState, path: &str, headers: &HeaderMap) -> Response {
             200,
             &Value::Object(read_snapshot(&state.snapshot).settings.to_document()),
         ),
-        "/api/host" => json_response(
-            200,
-            &serde_json::to_value(&state.host_addresses).unwrap_or(Value::Null),
-        ),
+        "/api/host" => {
+            let report = HostReport {
+                hostname: &state.host_addresses.hostname,
+                lan_ip: &state.host_addresses.lan_ip,
+                client_host: state.url_facts.host_for(None, host_header(headers)),
+            };
+            json_response(200, &serde_json::to_value(report).unwrap_or(Value::Null))
+        }
         "/jost.woff2" => bytes_response("font/woff2", "public, max-age=86400", FONT_WOFF2.to_vec()),
         _ => match path.strip_prefix("/hls/") {
             Some(relative) => hls_file(&state.hls_dir, relative),
@@ -648,11 +665,13 @@ mod tests {
     fn register_urls_follow_the_host_header_unless_an_advertised_host_is_set() {
         let api = setup();
         assert_eq!(
-            api.request("GET", "/api/host"),
-            (
-                200,
-                json!({"hostname": "publisher", "lan_ip": "192.168.1.20"})
-            )
+            api.fetch("GET", "/api/host", Some("operator-console:9080"))
+                .json(),
+            json!({
+                "hostname": "publisher",
+                "lan_ip": "192.168.1.20",
+                "client_host": "operator-console"
+            })
         );
         let row = api.stream("boats", Some("operator-console:9080"));
         assert_eq!(

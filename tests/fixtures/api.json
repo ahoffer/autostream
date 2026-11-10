@@ -7,7 +7,7 @@
    "status": 200,
    "content_type": "text/html; charset=utf-8",
    "cache_control": null,
-   "body_length": 55703,
+   "body_length": 55861,
    "body_prefix": "<!doctyp"
   },
   {
@@ -17,7 +17,7 @@
    "status": 200,
    "content_type": "text/html; charset=utf-8",
    "cache_control": null,
-   "body_length": 55703,
+   "body_length": 55861,
    "body_prefix": "<!doctyp"
   },
   {
@@ -518,7 +518,8 @@
    "cache_control": null,
    "json": {
     "hostname": "publisher",
-    "lan_ip": "192.168.1.20"
+    "lan_ip": "192.168.1.20",
+    "client_host": "127.0.0.1"
    }
   },
   {

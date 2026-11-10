@@ -397,7 +397,7 @@ const state = {
   streams: [],
   transports: [],
   settings: {},
-  hostAddresses: { hostname: "", lan_ip: "" },
+  hostAddresses: { hostname: "", lan_ip: "", client_host: "" },
   videos: [],
   loaded: false,                         // the first poll has answered
   panel: { mode: "settings", name: null }, // none | stream | create | settings
@@ -979,7 +979,7 @@ function buildSettingsPanel() {
       <label for="s-${field.key}">${field.label}${field.purpose ? `, <span class="purpose">${field.purpose}</span>` : ""}</label>
       <input id="s-${field.key}" name="${field.key}" type="${field.type}" ${field.type === "number" ? 'min="1" max="65535" step="1" inputmode="numeric"' : ""}>
       ${field.key === "advertised_host" ? `
-        <span class="purpose">Blank uses the browser address: ${escapeHtml(location.hostname)}.</span>
+        <span class="purpose">Blank uses the browser address: <span data-host-value="client_host"></span>.</span>
         <div class="hostchoices">
           <span><button type="button" data-act="advertised-host" data-host="hostname">Use hostname</button><span class="purpose" data-host-value="hostname"></span></span>
           <span><button type="button" data-act="advertised-host" data-host="lan_ip">Use LAN IP</button><span class="purpose" data-host-value="lan_ip"></span></span>
@@ -1019,7 +1019,8 @@ function fillSettingsForm(form, force) {
 }
 function patchSettingsForm(form) {
   renderTabs(form);
-  form.elements.advertised_host.placeholder = location.hostname;
+  form.elements.advertised_host.placeholder = state.hostAddresses.client_host;
+  setText(form.querySelector('[data-host-value="client_host"]'), state.hostAddresses.client_host);
   for (const key of ["hostname", "lan_ip"]) {
     const value = state.hostAddresses[key];
     form.querySelector(`[data-host="${key}"]`).disabled = !value;
@@ -1087,7 +1088,7 @@ async function poll() {
     const [streams, videos, settings, transports, hostAddresses] = await Promise.all([
       fetchJson("/api/streams"), fetchJson("/api/videos"), fetchJson("/api/settings"),
       state.transports.length ? state.transports : fetchJson("/api/transports"),
-      fetchJson("/api/host").catch(() => ({ hostname: "", lan_ip: "" })),
+      fetchJson("/api/host").catch(() => ({ hostname: "", lan_ip: "", client_host: "" })),
     ]);
     state.streams = streams;
     state.videos = videos;
