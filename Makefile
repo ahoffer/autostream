@@ -10,8 +10,7 @@ VERSION := $(shell sed -n 's/^version = "\(.*\)"$$/\1/p' Cargo.toml | head -n 1)
 help:  ## List available targets
 	@awk 'BEGIN {FS = ":.*## "} /^[a-zA-Z0-9_-]+:.*## / {printf "  %-20s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 
-build:  ## Build the binaries from source, then the container image
-	cargo build --locked --release
+build:  ## Build the container image
 	set -a && . ./.env && docker build -t $$CONTAINER_NAME:$(VERSION) .
 
 test:  ## Run the Rust tests in the image's test stage, beside the shipped ffmpeg
