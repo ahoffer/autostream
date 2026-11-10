@@ -3,8 +3,6 @@ mounted/
 .idea
 .claude
 .generated/
-__pycache__/
-*.pyc
 /.playwright-mcp/
 /.playwright-cli/
 /target/

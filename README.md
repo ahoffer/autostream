@@ -147,7 +147,7 @@ its port; a replacement cannot reuse its destination.
 
 The ffmpeg command tab of a stream's detail shows the exact ffmpeg command
 line that stream runs (or would run), for inspection; every flag is explained
-in the table at the bottom of `ffmpegcmd.py`. If the old process cannot exit,
+in the table at the bottom of `src/ffmpegcmd.rs`. If the old process cannot exit,
 its command remains visible alongside the requested settings and an error.
 The Output tab shows the encoder in use. Each stream's ffmpeg log is at
 `/tmp/ffmpeg-logs/<stream>.log` inside the container.
@@ -178,12 +178,12 @@ at run time in the web UI under **Settings**.
 ### `.env`
 
 `.env` is checked in with working values. Docker Compose reads `.env` directly and passes the whole file through to the
-container. Every variable must be set.
+container. Every variable must be set. The image version tag is not in `.env`:
+it is the `version` in `Cargo.toml`, which `make build` and `make up` read.
 
 | Variable | Description |
 |----------|-------------|
 | `CONTAINER_NAME` | Image and container name |
-| `VERSION` | Image version tag |
 | `COMPOSE_FILE` | Networking mode: the base file plus `docker-compose.host.yml` or `docker-compose.octo-cx.yml` (see "Networking modes") |
 | `MEDIAMTX_RTSP_PORT` | RTSP listener port |
 | `MEDIAMTX_HLS_PORT` | HLS HTTP port |
@@ -214,10 +214,11 @@ Advertised host has **Use hostname**, **Use LAN IP**, and **Use localhost**
 shortcuts. They fill the field; Save applies the choice. Clear the field to
 return to using the browser's address. Existing saved values are preserved.
 
-`make up` supplies the Docker daemon's hostname and, for a local Linux daemon,
-the IPv4 address of the host's lowest-metric default-route interface. The
-values are detected at startup and exposed through `GET /api/host`. A shortcut
-is disabled if its address is unavailable. For remote Docker, other host
+`make up` runs the `composeup` helper, which supplies the Docker daemon's
+hostname and, for a local Linux daemon, the IPv4 address of the host's
+lowest-metric default-route interface, then starts Compose. The values are
+detected at startup and exposed through `GET /api/host`. A shortcut is
+disabled if its address is unavailable. For remote Docker, other host
 platforms, or a different preferred interface, supply `AUTOSTREAM_HOSTNAME`
 and `AUTOSTREAM_LAN_IP` in the shell environment. These optional variables
 also work with `docker compose up -d` directly (or in `.env` for direct Compose).
@@ -245,73 +246,85 @@ Queue saturation returns 503; an operation that cannot finish returns 409;
 storage failures return 500; a refused creation or setting returns 400 with
 the reason. Requests are not automatically retried.
 
-## Python code structure
+## Code structure
 
-The application modules and the UI page live in `src/` and are copied flat into
-`/app` in the image, so they import each other by bare module name. The root
-holds the container and deployment files plus `socket_memory.py`, a host-side
-diagnostic that captures slab counters and socket queues in every running
-container once per minute into `.generated/socket-memory.jsonl`; see its
-`--help`.
+The application is one Cargo package. The library under `src/` holds every
+module and its tests; `src/bin/` holds the three executables: `autostream`,
+the service that ships in the image; `composeup`, the host helper behind
+`make up`; and `socketmemory`, a host-side diagnostic that captures slab
+counters and socket queues in every running container once per minute into
+`.generated/socket-memory.jsonl` (`cargo run --release --bin socketmemory -- --help`;
+Linux and a Docker CLI required). The UI page and its font live in `src/` and
+are embedded in the service binary.
 
-`stream_supervisor.py` owns all stream changes and persistence. HTTP threads
-submit operations to a bounded queue. One background thread runs the
-directory polling/stability checker and submits detached observations to that
-same queue. The supervisor executes work in order and publishes detached
-status snapshots, from which GET composes URLs without walking live streams.
+`streamsupervisor.rs` owns all stream changes and persistence. HTTP handlers
+submit operations to a bounded queue and await the answer. One background
+thread runs the directory polling/stability checker and submits detached
+observations to that same queue. The supervisor thread executes work in order
+and publishes detached status snapshots, from which GET composes URLs without
+walking live streams.
 
 | Module | Responsibility |
 |--------|----------------|
-| `appconfig.py` | Start-up facts from `.env`: ports and log level |
-| `transports.py` | The transport kinds table: direction, KLV, muxer, port setting, delivery and register templates |
-| `runtimesettings.py` | Operator settings: destination, multicast group, advertised host, bitrate cap, SRTP key, first ports; validation in one place |
-| `streamregistry.py` | Stream creation and deletion, ports, bindings, and the file inventory |
-| `mediastream.py` | One stream: choices, start/stop, rebinding, finite completion, and recovery |
-| `ffmpegcmd.py` | Media probing, encoding decisions, and command syntax per delivery |
-| `ffmpegprocess.py` | Popen, bounded shutdown, and file-backed diagnostics |
-| `statefile.py` | Single-writer persistence and atomic replacement |
-| `streamapi.py` | HTTP validation, queued mutations, settings, status, UI and HLS serving |
-| `streamresponses.py` | Describe detached streams and compose URLs per request |
-| `filewatch.py` | Background polling, stability checking, and present/stable inventories |
-| `udphost.py` | DNS cache shared by pushed streams |
+| `appconfig.rs` | Start-up facts from `.env`: ports and log level |
+| `transports.rs` | The transport kinds table: direction, KLV, muxer, port setting, delivery and register templates |
+| `runtimesettings.rs` | Operator settings: destination, multicast group, advertised host, bitrate cap, SRTP key, first ports; validation in one place |
+| `streamregistry.rs` | Stream creation and deletion, ports, bindings, and the file inventory |
+| `mediastream.rs` | One stream: choices, start/stop, rebinding, finite completion, and recovery |
+| `streamrecord.rs` | The saved shape of a stream: binding and choices |
+| `ffmpegcmd.rs` | Media probing, encoding decisions, and command syntax per delivery |
+| `ffmpegprocess.rs` | Child processes, bounded shutdown, and file-backed diagnostics |
+| `statefile.rs` | Single-writer persistence and atomic replacement |
+| `streamapi.rs` | HTTP validation, queued mutations, settings, status, UI and HLS serving |
+| `streamresponses.rs` | Describe detached streams and compose URLs per request |
+| `streamsupervisor.rs` | The supervisor loop, its queue, snapshots, and the watcher thread |
+| `filewatch.rs` | Background polling, stability checking, and present/stable inventories |
+| `udphost.rs` | DNS cache shared by pushed streams |
+| `streamlog.rs` | The service log format and the per-stream rotating ffmpeg logs |
+| `queryform.rs`, `boundedcommand.rs`, `rotatingfile.rs`, `stopsignal.rs`, `clocktext.rs` | Query parsing, child commands with a deadline, size-rotated files, the shutdown flag, and UTC timestamps |
 
 A Stop arriving during preparation waits for that operation to finish, then
 executes. Slow probing, DNS, and bounded process shutdown can delay later
 work. Scan errors do not mean files were deleted.
 
 Each process captures stdout/stderr in a temporary file, removed after exit.
-Observation forwards bounded chunks to the injected logger and retains a 4 KiB
+Observation forwards bounded chunks to the stream's log and retains a 4 KiB
 tail. Large diagnostic bursts may be truncated with a log notice. Per-stream
 logs rotate at 2 MB with one backup; the temporary capture file can grow for the
 lifetime of a run.
 
 ### Tests
 
-The tests use only the Python standard library and run inside the container
-image, against the same Python and ffmpeg that ship:
+The tests live beside the code and use fake processes and DNS, so they need no
+container. `tests/fixtures/` holds responses, commands, and documents recorded
+from the previous Python implementation; the tests compare against them.
 
 ```bash
 make test
 ```
 
-It rebuilds the image, then mounts `tests/` read-only into a throwaway
-container; the image itself carries no tests. For a quick run on the host
-instead:
+That builds the image's test stage, which compiles and runs the suite as the
+container user beside the ffmpeg that ships; the final image carries neither
+compiler nor tests. For a quick run on the host instead:
 
 ```bash
-PYTHONPATH=src python3 -B -m unittest discover -s tests -v
+cargo test --locked --all-targets
 ```
 
 ## Docker Compose
 
 The Dockerfile pins the MediaMTX release and rebuilds its binary with patched
 Go and networking dependencies. The release archive is verified by SHA-256;
-update its checksum together with `MEDIAMTX_VERSION`. The build also applies
-available Alpine package fixes before installing Python. The compiler and
-source files stay in the build stage, outside the runtime image.
+update its checksum together with `MEDIAMTX_VERSION`. The service is compiled
+in a Rust builder stage against musl, and only the binary is copied into the
+Alpine runtime image, with the Alpine package fixes released since the base
+image was built. The compiler and source files stay in the build stages,
+outside the runtime image.
 
-Plain `docker compose up -d` also works after the image is built; `make up`
-creates the `mounted/` directory first. Logs: `docker compose logs -f`; stop:
+Plain `docker compose up -d` also works after the image is built, given the
+image tag: `VERSION=3.0.0 docker compose up -d`, with the `version` from
+`Cargo.toml`. `make up` creates the `mounted/` directory first and supplies the
+version itself. Logs: `docker compose logs -f`; stop:
 `docker compose down`, both in this directory.
 `mediamtx.yml` is part of the image: edit it, run `make build`, then `make up`
 again, and Compose recreates the container on the new image.

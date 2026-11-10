@@ -7,7 +7,7 @@ sample videos in `videos/` (H.264 MP4s, an MJPEG AVI, an MPEG-TS with KLV).
 Ground truth is always the process table and the API:
 
 ```bash
-docker exec autostream ps -o pid,etimes,args | grep ffmpeg
+docker exec autostream ps -o pid,etime,args | grep ffmpeg
 curl -s localhost:9080/api/streams | python3 -m json.tool
 docker logs --since 5m autostream
 cat mounted/streams_config.json

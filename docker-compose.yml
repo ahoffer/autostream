@@ -9,7 +9,9 @@ services:
     # Bound runaway ffmpeg allocations to this container; equal limits disable swap.
     mem_limit: 6g
     memswap_limit: 6g
-    stop_grace_period: 1s
+    # The supervisor gives each ffmpeg five seconds to exit on SIGTERM and five
+    # more after SIGKILL before it gives up, so let that cleanup finish.
+    stop_grace_period: 15s
     # Pass application settings through whole rather than restating each key.
     env_file:
       - .env
