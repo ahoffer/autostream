@@ -15,6 +15,7 @@ pub mod rotatingfile;
 pub mod runtimesettings;
 pub mod statefile;
 pub mod stopsignal;
+pub mod streamapi;
 pub mod streamlog;
 pub mod streamrecord;
 pub mod streamregistry;

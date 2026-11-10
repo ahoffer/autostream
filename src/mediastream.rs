@@ -27,6 +27,19 @@ pub trait FfmpegBoundary: Send {
     fn spawn(&self, logger: Arc<StreamLogger>) -> Box<dyn StreamProcess>;
 }
 
+/// The real boundary: ffprobe for probing and an `FFmpegProcess` per run.
+pub struct FfmpegTools;
+
+impl FfmpegBoundary for FfmpegTools {
+    fn probe(&self, path: &Path) -> MediaProbeResult {
+        ffmpegcmd::probe_file(path)
+    }
+
+    fn spawn(&self, logger: Arc<StreamLogger>) -> Box<dyn StreamProcess> {
+        Box::new(crate::ffmpegprocess::FFmpegProcess::new(logger))
+    }
+}
+
 /// The collaborators every stream operation needs, owned by the registry and lent per call.
 pub struct StreamServices {
     pub store: StreamStateStore,
