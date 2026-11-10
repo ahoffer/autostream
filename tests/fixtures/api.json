@@ -1,0 +1,1598 @@
+{
+ "exchanges": [
+  {
+   "method": "GET",
+   "path": "/",
+   "headers": {},
+   "status": 200,
+   "content_type": "text/html; charset=utf-8",
+   "cache_control": null,
+   "body_length": 55703,
+   "body_prefix": "<!doctyp"
+  },
+  {
+   "method": "GET",
+   "path": "/index.html",
+   "headers": {},
+   "status": 200,
+   "content_type": "text/html; charset=utf-8",
+   "cache_control": null,
+   "body_length": 55703,
+   "body_prefix": "<!doctyp"
+  },
+  {
+   "method": "GET",
+   "path": "/jost.woff2",
+   "headers": {},
+   "status": 200,
+   "content_type": "font/woff2",
+   "cache_control": "public, max-age=86400",
+   "body_length": 26576,
+   "body_prefix": "wOF2\u0000\u0001\u0000\u0000"
+  },
+  {
+   "method": "GET",
+   "path": "/api/streams",
+   "headers": {
+    "Host": "operator-console:9080"
+   },
+   "status": 200,
+   "content_type": "application/json",
+   "cache_control": null,
+   "json": [
+    {
+     "error": null,
+     "video_codecs": [
+      "h264"
+     ],
+     "audio_codecs": [
+      "aac"
+     ],
+     "data_codecs": [
+      "klv"
+     ],
+     "mode": "passthrough",
+     "effective_mode": "passthrough",
+     "encoder": "copy (passthrough)",
+     "passthrough_eligible": true,
+     "ineligible_codecs": [],
+     "source_frame_rate": 30.0,
+     "frame_rate": 30.0,
+     "frame_rate_explicit": false,
+     "gop_frames": 30,
+     "gop_explicit": false,
+     "enabled": true,
+     "loop_count": -1,
+     "filename": "boats.mp4",
+     "transport": "rtsp",
+     "port": null,
+     "name": "boats",
+     "state": "running",
+     "reason": null,
+     "running": true,
+     "stopping": false,
+     "command": "ffmpeg -hide_banner -nostats -re -stream_loop -1 -i {videos_dir}/boats.mp4 -map 0 -copy_unknown -c:v copy -c:a copy -c:d copy -max_interleave_delta 1000 -fflags +genpts -avoid_negative_ts make_zero -max_muxing_queue_size 1024 -f mpegts 'srt://127.0.0.1:8890?streamid=publish:boats'",
+     "delivery": "srt://127.0.0.1:8890?streamid=publish:boats",
+     "transport_label": "RTSP / HLS / RTMP via MediaMTX",
+     "direction": "serve",
+     "carries_klv": true,
+     "delivery_label": "publishes to",
+     "register": [
+      [
+       "rtsp",
+       "rtsp://operator-console:8554/boats"
+      ],
+      [
+       "hls",
+       "http://operator-console:8888/boats/index.m3u8"
+      ],
+      [
+       "rtmp",
+       "rtmp://operator-console:1935/boats"
+      ]
+     ]
+    },
+    {
+     "error": null,
+     "video_codecs": [
+      "h264"
+     ],
+     "audio_codecs": [
+      "aac"
+     ],
+     "data_codecs": [
+      "klv"
+     ],
+     "mode": "passthrough",
+     "effective_mode": "passthrough",
+     "encoder": "copy (passthrough)",
+     "passthrough_eligible": true,
+     "ineligible_codecs": [],
+     "source_frame_rate": 30.0,
+     "frame_rate": 30.0,
+     "frame_rate_explicit": false,
+     "gop_frames": 30,
+     "gop_explicit": false,
+     "enabled": true,
+     "loop_count": -1,
+     "filename": "boats.mp4",
+     "transport": "udp",
+     "port": 40000,
+     "name": "boats-udp",
+     "state": "running",
+     "reason": null,
+     "running": true,
+     "stopping": false,
+     "command": "ffmpeg -hide_banner -nostats -re -stream_loop -1 -i {videos_dir}/boats.mp4 -map 0 -copy_unknown -c:v copy -c:a copy -c:d copy -max_interleave_delta 1000 -bsf:d 'setts=dts=max(DTS\\,PREV_OUTDTS)' -fflags +genpts -avoid_negative_ts make_zero -max_muxing_queue_size 1024 -f mpegts 'udp://receiver:40000?pkt_size=1316'",
+     "delivery": "udp://receiver:40000?pkt_size=1316",
+     "transport_label": "UDP",
+     "direction": "push",
+     "carries_klv": true,
+     "delivery_label": "sends to",
+     "register": [
+      [
+       "register",
+       "udp://0.0.0.0:40000"
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "method": "GET",
+   "path": "/api/streams",
+   "headers": {
+    "Host": "[::1]:9080"
+   },
+   "status": 200,
+   "content_type": "application/json",
+   "cache_control": null,
+   "json": [
+    {
+     "error": null,
+     "video_codecs": [
+      "h264"
+     ],
+     "audio_codecs": [
+      "aac"
+     ],
+     "data_codecs": [
+      "klv"
+     ],
+     "mode": "passthrough",
+     "effective_mode": "passthrough",
+     "encoder": "copy (passthrough)",
+     "passthrough_eligible": true,
+     "ineligible_codecs": [],
+     "source_frame_rate": 30.0,
+     "frame_rate": 30.0,
+     "frame_rate_explicit": false,
+     "gop_frames": 30,
+     "gop_explicit": false,
+     "enabled": true,
+     "loop_count": -1,
+     "filename": "boats.mp4",
+     "transport": "rtsp",
+     "port": null,
+     "name": "boats",
+     "state": "running",
+     "reason": null,
+     "running": true,
+     "stopping": false,
+     "command": "ffmpeg -hide_banner -nostats -re -stream_loop -1 -i {videos_dir}/boats.mp4 -map 0 -copy_unknown -c:v copy -c:a copy -c:d copy -max_interleave_delta 1000 -fflags +genpts -avoid_negative_ts make_zero -max_muxing_queue_size 1024 -f mpegts 'srt://127.0.0.1:8890?streamid=publish:boats'",
+     "delivery": "srt://127.0.0.1:8890?streamid=publish:boats",
+     "transport_label": "RTSP / HLS / RTMP via MediaMTX",
+     "direction": "serve",
+     "carries_klv": true,
+     "delivery_label": "publishes to",
+     "register": [
+      [
+       "rtsp",
+       "rtsp://[::1]:8554/boats"
+      ],
+      [
+       "hls",
+       "http://[::1]:8888/boats/index.m3u8"
+      ],
+      [
+       "rtmp",
+       "rtmp://[::1]:1935/boats"
+      ]
+     ]
+    },
+    {
+     "error": null,
+     "video_codecs": [
+      "h264"
+     ],
+     "audio_codecs": [
+      "aac"
+     ],
+     "data_codecs": [
+      "klv"
+     ],
+     "mode": "passthrough",
+     "effective_mode": "passthrough",
+     "encoder": "copy (passthrough)",
+     "passthrough_eligible": true,
+     "ineligible_codecs": [],
+     "source_frame_rate": 30.0,
+     "frame_rate": 30.0,
+     "frame_rate_explicit": false,
+     "gop_frames": 30,
+     "gop_explicit": false,
+     "enabled": true,
+     "loop_count": -1,
+     "filename": "boats.mp4",
+     "transport": "udp",
+     "port": 40000,
+     "name": "boats-udp",
+     "state": "running",
+     "reason": null,
+     "running": true,
+     "stopping": false,
+     "command": "ffmpeg -hide_banner -nostats -re -stream_loop -1 -i {videos_dir}/boats.mp4 -map 0 -copy_unknown -c:v copy -c:a copy -c:d copy -max_interleave_delta 1000 -bsf:d 'setts=dts=max(DTS\\,PREV_OUTDTS)' -fflags +genpts -avoid_negative_ts make_zero -max_muxing_queue_size 1024 -f mpegts 'udp://receiver:40000?pkt_size=1316'",
+     "delivery": "udp://receiver:40000?pkt_size=1316",
+     "transport_label": "UDP",
+     "direction": "push",
+     "carries_klv": true,
+     "delivery_label": "sends to",
+     "register": [
+      [
+       "register",
+       "udp://0.0.0.0:40000"
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "method": "GET",
+   "path": "/api/streams?x=1",
+   "headers": {
+    "Host": "operator-console"
+   },
+   "status": 200,
+   "content_type": "application/json",
+   "cache_control": null,
+   "json": [
+    {
+     "error": null,
+     "video_codecs": [
+      "h264"
+     ],
+     "audio_codecs": [
+      "aac"
+     ],
+     "data_codecs": [
+      "klv"
+     ],
+     "mode": "passthrough",
+     "effective_mode": "passthrough",
+     "encoder": "copy (passthrough)",
+     "passthrough_eligible": true,
+     "ineligible_codecs": [],
+     "source_frame_rate": 30.0,
+     "frame_rate": 30.0,
+     "frame_rate_explicit": false,
+     "gop_frames": 30,
+     "gop_explicit": false,
+     "enabled": true,
+     "loop_count": -1,
+     "filename": "boats.mp4",
+     "transport": "rtsp",
+     "port": null,
+     "name": "boats",
+     "state": "running",
+     "reason": null,
+     "running": true,
+     "stopping": false,
+     "command": "ffmpeg -hide_banner -nostats -re -stream_loop -1 -i {videos_dir}/boats.mp4 -map 0 -copy_unknown -c:v copy -c:a copy -c:d copy -max_interleave_delta 1000 -fflags +genpts -avoid_negative_ts make_zero -max_muxing_queue_size 1024 -f mpegts 'srt://127.0.0.1:8890?streamid=publish:boats'",
+     "delivery": "srt://127.0.0.1:8890?streamid=publish:boats",
+     "transport_label": "RTSP / HLS / RTMP via MediaMTX",
+     "direction": "serve",
+     "carries_klv": true,
+     "delivery_label": "publishes to",
+     "register": [
+      [
+       "rtsp",
+       "rtsp://operator-console:8554/boats"
+      ],
+      [
+       "hls",
+       "http://operator-console:8888/boats/index.m3u8"
+      ],
+      [
+       "rtmp",
+       "rtmp://operator-console:1935/boats"
+      ]
+     ]
+    },
+    {
+     "error": null,
+     "video_codecs": [
+      "h264"
+     ],
+     "audio_codecs": [
+      "aac"
+     ],
+     "data_codecs": [
+      "klv"
+     ],
+     "mode": "passthrough",
+     "effective_mode": "passthrough",
+     "encoder": "copy (passthrough)",
+     "passthrough_eligible": true,
+     "ineligible_codecs": [],
+     "source_frame_rate": 30.0,
+     "frame_rate": 30.0,
+     "frame_rate_explicit": false,
+     "gop_frames": 30,
+     "gop_explicit": false,
+     "enabled": true,
+     "loop_count": -1,
+     "filename": "boats.mp4",
+     "transport": "udp",
+     "port": 40000,
+     "name": "boats-udp",
+     "state": "running",
+     "reason": null,
+     "running": true,
+     "stopping": false,
+     "command": "ffmpeg -hide_banner -nostats -re -stream_loop -1 -i {videos_dir}/boats.mp4 -map 0 -copy_unknown -c:v copy -c:a copy -c:d copy -max_interleave_delta 1000 -bsf:d 'setts=dts=max(DTS\\,PREV_OUTDTS)' -fflags +genpts -avoid_negative_ts make_zero -max_muxing_queue_size 1024 -f mpegts 'udp://receiver:40000?pkt_size=1316'",
+     "delivery": "udp://receiver:40000?pkt_size=1316",
+     "transport_label": "UDP",
+     "direction": "push",
+     "carries_klv": true,
+     "delivery_label": "sends to",
+     "register": [
+      [
+       "register",
+       "udp://0.0.0.0:40000"
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "method": "GET",
+   "path": "/api/streams/",
+   "headers": {},
+   "status": 404,
+   "content_type": "application/json",
+   "cache_control": null,
+   "json": {
+    "error": "Not found"
+   }
+  },
+  {
+   "method": "GET",
+   "path": "/api/videos",
+   "headers": {},
+   "status": 200,
+   "content_type": "application/json",
+   "cache_control": null,
+   "json": [
+    "boats.mp4"
+   ]
+  },
+  {
+   "method": "GET",
+   "path": "/api/transports",
+   "headers": {},
+   "status": 200,
+   "content_type": "application/json",
+   "cache_control": null,
+   "json": [
+    {
+     "id": "rtsp",
+     "label": "RTSP / HLS / RTMP via MediaMTX",
+     "direction": "serve",
+     "carries_klv": true,
+     "first_port_setting": null,
+     "random_port": false,
+     "needs": []
+    },
+    {
+     "id": "udp",
+     "label": "UDP",
+     "direction": "push",
+     "carries_klv": true,
+     "first_port_setting": "udp_first_port",
+     "random_port": false,
+     "needs": [
+      "destination_host"
+     ]
+    },
+    {
+     "id": "multicast",
+     "label": "Multicast",
+     "direction": "push",
+     "carries_klv": true,
+     "first_port_setting": null,
+     "random_port": true,
+     "needs": [
+      "multicast_group"
+     ]
+    },
+    {
+     "id": "rtp",
+     "label": "RTP / TS",
+     "direction": "push",
+     "carries_klv": true,
+     "first_port_setting": "rtp_first_port",
+     "random_port": false,
+     "needs": [
+      "destination_host"
+     ]
+    },
+    {
+     "id": "srt_listen",
+     "label": "SRT listen",
+     "direction": "listen",
+     "carries_klv": true,
+     "first_port_setting": "srt_listen_first_port",
+     "random_port": false,
+     "needs": []
+    },
+    {
+     "id": "srt_call",
+     "label": "SRT call",
+     "direction": "push",
+     "carries_klv": true,
+     "first_port_setting": "srt_call_first_port",
+     "random_port": false,
+     "needs": [
+      "destination_host"
+     ]
+    },
+    {
+     "id": "tcp_listen",
+     "label": "TCP listen",
+     "direction": "listen",
+     "carries_klv": true,
+     "first_port_setting": "tcp_first_port",
+     "random_port": false,
+     "needs": []
+    },
+    {
+     "id": "http",
+     "label": "HTTP TS",
+     "direction": "listen",
+     "carries_klv": true,
+     "first_port_setting": "http_first_port",
+     "random_port": false,
+     "needs": []
+    },
+    {
+     "id": "hls",
+     "label": "HLS (TS segments)",
+     "direction": "serve",
+     "carries_klv": true,
+     "first_port_setting": null,
+     "random_port": false,
+     "needs": []
+    },
+    {
+     "id": "srtp",
+     "label": "SRTP",
+     "direction": "push",
+     "carries_klv": true,
+     "first_port_setting": "srtp_first_port",
+     "random_port": false,
+     "needs": [
+      "destination_host",
+      "srtp_key"
+     ]
+    }
+   ]
+  },
+  {
+   "method": "GET",
+   "path": "/api/settings",
+   "headers": {},
+   "status": 200,
+   "content_type": "application/json",
+   "cache_control": null,
+   "json": {
+    "destination_host": "receiver",
+    "multicast_group": "239.1.1.2",
+    "advertised_host": null,
+    "max_video_bitrate": "2M",
+    "srtp_key": "c2VjcmV0a2V5",
+    "udp_first_port": 40000,
+    "rtp_first_port": 40020,
+    "srt_call_first_port": 40040,
+    "srtp_first_port": 40060,
+    "srt_listen_first_port": 41000,
+    "tcp_first_port": 42000,
+    "http_first_port": 43000
+   }
+  },
+  {
+   "method": "GET",
+   "path": "/api/host",
+   "headers": {},
+   "status": 200,
+   "content_type": "application/json",
+   "cache_control": null,
+   "json": {
+    "hostname": "publisher",
+    "lan_ip": "192.168.1.20"
+   }
+  },
+  {
+   "method": "GET",
+   "path": "/hls/boats-hls/index.m3u8",
+   "headers": {},
+   "status": 200,
+   "content_type": "application/vnd.apple.mpegurl",
+   "cache_control": "no-store",
+   "body_length": 8,
+   "body_prefix": "#EXTM3U\n"
+  },
+  {
+   "method": "GET",
+   "path": "/hls/boats-hls/seg00001.ts",
+   "headers": {},
+   "status": 200,
+   "content_type": "video/mp2t",
+   "cache_control": "no-store",
+   "body_length": 188,
+   "body_prefix": "GGGGGGGG"
+  },
+  {
+   "method": "GET",
+   "path": "/hls/boats-hls/notes.txt",
+   "headers": {},
+   "status": 404,
+   "content_type": "application/json",
+   "cache_control": null,
+   "json": {
+    "error": "Not found"
+   }
+  },
+  {
+   "method": "GET",
+   "path": "/hls/../api.json",
+   "headers": {},
+   "status": 404,
+   "content_type": "application/json",
+   "cache_control": null,
+   "json": {
+    "error": "Not found"
+   }
+  },
+  {
+   "method": "GET",
+   "path": "/hls/missing/index.m3u8",
+   "headers": {},
+   "status": 404,
+   "content_type": "application/json",
+   "cache_control": null,
+   "json": {
+    "error": "Not found"
+   }
+  },
+  {
+   "method": "GET",
+   "path": "/hls/boats-hls",
+   "headers": {},
+   "status": 404,
+   "content_type": "application/json",
+   "cache_control": null,
+   "json": {
+    "error": "Not found"
+   }
+  },
+  {
+   "method": "GET",
+   "path": "/hls/",
+   "headers": {},
+   "status": 404,
+   "content_type": "application/json",
+   "cache_control": null,
+   "json": {
+    "error": "Not found"
+   }
+  },
+  {
+   "method": "GET",
+   "path": "/nope",
+   "headers": {},
+   "status": 404,
+   "content_type": "application/json",
+   "cache_control": null,
+   "json": {
+    "error": "Not found"
+   }
+  },
+  {
+   "method": "GET",
+   "path": "/api",
+   "headers": {},
+   "status": 404,
+   "content_type": "application/json",
+   "cache_control": null,
+   "json": {
+    "error": "Not found"
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/api/streams?name=&file=boats.mp4&transport=udp",
+   "headers": {},
+   "status": 400,
+   "content_type": "application/json",
+   "cache_control": null,
+   "json": {
+    "error": "Name the stream"
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/api/streams?name=x&file=&transport=udp",
+   "headers": {},
+   "status": 400,
+   "content_type": "application/json",
+   "cache_control": null,
+   "json": {
+    "error": "Choose a video file"
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/api/streams?name=x&file=boats.mp4&transport=pigeon",
+   "headers": {},
+   "status": 400,
+   "content_type": "application/json",
+   "cache_control": null,
+   "json": {
+    "error": "Choose a transport"
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/api/streams?name=x&file=boats.mp4&transport=udp&fps=nan",
+   "headers": {},
+   "status": 400,
+   "content_type": "application/json",
+   "cache_control": null,
+   "json": {
+    "error": "FPS must be a number from 1 to 120, or auto"
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/api/streams/boats/settings?transport=pigeon",
+   "headers": {},
+   "status": 400,
+   "content_type": "application/json",
+   "cache_control": null,
+   "json": {
+    "error": "Unknown transport"
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/api/streams/boats/settings?file=../etc/passwd",
+   "headers": {},
+   "status": 400,
+   "content_type": "application/json",
+   "cache_control": null,
+   "json": {
+    "error": "Choose a video file"
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/api/streams/boats/settings?name=bad%20name",
+   "headers": {},
+   "status": 400,
+   "content_type": "application/json",
+   "cache_control": null,
+   "json": {
+    "error": "Stream name: letters, digits, - and _ only, 64 at most"
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/api/settings?udp_first_port=abc",
+   "headers": {},
+   "status": 400,
+   "content_type": "application/json",
+   "cache_control": null,
+   "json": {
+    "error": "udp_first_port must be a whole number"
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/api/settings?multicast_group=10.0.0.1",
+   "headers": {},
+   "status": 400,
+   "content_type": "application/json",
+   "cache_control": null,
+   "json": {
+    "error": "multicast_group must be a multicast address such as 239.1.1.2"
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/api/streams?name=boats&file=boats.mp4&transport=udp",
+   "headers": {},
+   "status": 400,
+   "content_type": "application/json",
+   "cache_control": null,
+   "json": {
+    "error": "A stream named boats exists"
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/api/streams/boats/unknown",
+   "headers": {},
+   "status": 400,
+   "content_type": "application/json",
+   "cache_control": null,
+   "json": {
+    "error": "Unknown action"
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/api/streams/boats",
+   "headers": {},
+   "status": 404,
+   "content_type": "application/json",
+   "cache_control": null,
+   "json": {
+    "error": "Not found"
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/api/streams/a/b/c",
+   "headers": {},
+   "status": 404,
+   "content_type": "application/json",
+   "cache_control": null,
+   "json": {
+    "error": "Not found"
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/api/nope",
+   "headers": {},
+   "status": 404,
+   "content_type": "application/json",
+   "cache_control": null,
+   "json": {
+    "error": "Not found"
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/api/streams/absent/start",
+   "headers": {},
+   "status": 404,
+   "content_type": "application/json",
+   "cache_control": null,
+   "json": {
+    "error": "Stream not found"
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/api/streams/absent/settings?loop=1",
+   "headers": {},
+   "status": 404,
+   "content_type": "application/json",
+   "cache_control": null,
+   "json": {
+    "error": "Stream not found"
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/api/streams/boats-udp/settings?name=boats",
+   "headers": {},
+   "status": 400,
+   "content_type": "application/json",
+   "cache_control": null,
+   "json": {
+    "error": "A stream named boats exists"
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/api/streams/",
+   "headers": {},
+   "status": 400,
+   "content_type": "application/json",
+   "cache_control": null,
+   "json": {
+    "error": "Name the stream"
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/",
+   "headers": {},
+   "status": 404,
+   "content_type": "application/json",
+   "cache_control": null,
+   "json": {
+    "error": "Not found"
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/api/streams/boats/settings?loop=1&loop=2",
+   "headers": {},
+   "status": 200,
+   "content_type": "application/json",
+   "cache_control": null,
+   "json": {
+    "success": true
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/api/streams?name=boats-srt&file=boats.mp4&transport=srt_listen&mode=transcode&fps=15",
+   "headers": {},
+   "status": 200,
+   "content_type": "application/json",
+   "cache_control": null,
+   "json": {
+    "success": true
+   }
+  },
+  {
+   "method": "GET",
+   "path": "/api/streams",
+   "headers": {
+    "Host": "operator-console:9080"
+   },
+   "status": 200,
+   "content_type": "application/json",
+   "cache_control": null,
+   "json": [
+    {
+     "error": null,
+     "video_codecs": [
+      "h264"
+     ],
+     "audio_codecs": [
+      "aac"
+     ],
+     "data_codecs": [
+      "klv"
+     ],
+     "mode": "passthrough",
+     "effective_mode": "passthrough",
+     "encoder": "copy (passthrough)",
+     "passthrough_eligible": true,
+     "ineligible_codecs": [],
+     "source_frame_rate": 30.0,
+     "frame_rate": 30.0,
+     "frame_rate_explicit": false,
+     "gop_frames": 30,
+     "gop_explicit": false,
+     "enabled": true,
+     "loop_count": 1,
+     "filename": "boats.mp4",
+     "transport": "rtsp",
+     "port": null,
+     "name": "boats",
+     "state": "running",
+     "reason": null,
+     "running": true,
+     "stopping": false,
+     "command": "ffmpeg -hide_banner -nostats -re -stream_loop 1 -i {videos_dir}/boats.mp4 -map 0 -copy_unknown -c:v copy -c:a copy -c:d copy -max_interleave_delta 1000 -fflags +genpts -avoid_negative_ts make_zero -max_muxing_queue_size 1024 -f mpegts 'srt://127.0.0.1:8890?streamid=publish:boats'",
+     "delivery": "srt://127.0.0.1:8890?streamid=publish:boats",
+     "transport_label": "RTSP / HLS / RTMP via MediaMTX",
+     "direction": "serve",
+     "carries_klv": true,
+     "delivery_label": "publishes to",
+     "register": [
+      [
+       "rtsp",
+       "rtsp://operator-console:8554/boats"
+      ],
+      [
+       "hls",
+       "http://operator-console:8888/boats/index.m3u8"
+      ],
+      [
+       "rtmp",
+       "rtmp://operator-console:1935/boats"
+      ]
+     ]
+    },
+    {
+     "error": null,
+     "video_codecs": [
+      "h264"
+     ],
+     "audio_codecs": [
+      "aac"
+     ],
+     "data_codecs": [
+      "klv"
+     ],
+     "mode": "passthrough",
+     "effective_mode": "passthrough",
+     "encoder": "copy (passthrough)",
+     "passthrough_eligible": true,
+     "ineligible_codecs": [],
+     "source_frame_rate": 30.0,
+     "frame_rate": 30.0,
+     "frame_rate_explicit": false,
+     "gop_frames": 30,
+     "gop_explicit": false,
+     "enabled": true,
+     "loop_count": -1,
+     "filename": "boats.mp4",
+     "transport": "udp",
+     "port": 40000,
+     "name": "boats-udp",
+     "state": "running",
+     "reason": null,
+     "running": true,
+     "stopping": false,
+     "command": "ffmpeg -hide_banner -nostats -re -stream_loop -1 -i {videos_dir}/boats.mp4 -map 0 -copy_unknown -c:v copy -c:a copy -c:d copy -max_interleave_delta 1000 -bsf:d 'setts=dts=max(DTS\\,PREV_OUTDTS)' -fflags +genpts -avoid_negative_ts make_zero -max_muxing_queue_size 1024 -f mpegts 'udp://receiver:40000?pkt_size=1316'",
+     "delivery": "udp://receiver:40000?pkt_size=1316",
+     "transport_label": "UDP",
+     "direction": "push",
+     "carries_klv": true,
+     "delivery_label": "sends to",
+     "register": [
+      [
+       "register",
+       "udp://0.0.0.0:40000"
+      ]
+     ]
+    },
+    {
+     "error": null,
+     "video_codecs": [
+      "h264"
+     ],
+     "audio_codecs": [
+      "aac"
+     ],
+     "data_codecs": [
+      "klv"
+     ],
+     "mode": "transcode",
+     "effective_mode": "transcode",
+     "encoder": "libx264 (software)",
+     "passthrough_eligible": true,
+     "ineligible_codecs": [],
+     "source_frame_rate": 30.0,
+     "frame_rate": 15.0,
+     "frame_rate_explicit": true,
+     "gop_frames": 15,
+     "gop_explicit": false,
+     "enabled": true,
+     "loop_count": -1,
+     "filename": "boats.mp4",
+     "transport": "srt_listen",
+     "port": 41000,
+     "name": "boats-srt",
+     "state": "running",
+     "reason": null,
+     "running": true,
+     "stopping": false,
+     "command": "ffmpeg -hide_banner -nostats -re -stream_loop -1 -i {videos_dir}/boats.mp4 -map 0 -copy_unknown -c:v libx264 -preset ultrafast -tune zerolatency -g 15 -keyint_min 15 -sc_threshold 0 -bf 0 -x264-params ref=1 -r 15 -b:v 2000000 -maxrate 2000000 -bufsize 2000000 -c:a copy -c:d copy -max_interleave_delta 1000 -bsf:d 'setts=dts=max(DTS\\,PREV_OUTDTS)' -fflags +genpts+igndts -avoid_negative_ts make_zero -max_muxing_queue_size 1024 -f mpegts 'srt://0.0.0.0:41000?mode=listener'",
+     "delivery": "srt://0.0.0.0:41000?mode=listener",
+     "transport_label": "SRT listen",
+     "direction": "listen",
+     "carries_klv": true,
+     "delivery_label": "listens on",
+     "register": [
+      [
+       "register",
+       "srt://operator-console:41000"
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "method": "POST",
+   "path": "/api/streams/boats-udp/settings?transport=tcp_listen&loop=1",
+   "headers": {},
+   "status": 200,
+   "content_type": "application/json",
+   "cache_control": null,
+   "json": {
+    "success": true
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/api/streams/boats-udp/settings?name=boats-tcp",
+   "headers": {},
+   "status": 200,
+   "content_type": "application/json",
+   "cache_control": null,
+   "json": {
+    "success": true
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/api/settings?advertised_host=publisher-host&destination_host=receiver",
+   "headers": {},
+   "status": 200,
+   "content_type": "application/json",
+   "cache_control": null,
+   "json": {
+    "success": true
+   }
+  },
+  {
+   "method": "GET",
+   "path": "/api/streams",
+   "headers": {
+    "Host": "operator-console:9080"
+   },
+   "status": 200,
+   "content_type": "application/json",
+   "cache_control": null,
+   "json": [
+    {
+     "error": null,
+     "video_codecs": [
+      "h264"
+     ],
+     "audio_codecs": [
+      "aac"
+     ],
+     "data_codecs": [
+      "klv"
+     ],
+     "mode": "passthrough",
+     "effective_mode": "passthrough",
+     "encoder": "copy (passthrough)",
+     "passthrough_eligible": true,
+     "ineligible_codecs": [],
+     "source_frame_rate": 30.0,
+     "frame_rate": 30.0,
+     "frame_rate_explicit": false,
+     "gop_frames": 30,
+     "gop_explicit": false,
+     "enabled": true,
+     "loop_count": 1,
+     "filename": "boats.mp4",
+     "transport": "rtsp",
+     "port": null,
+     "name": "boats",
+     "state": "running",
+     "reason": null,
+     "running": true,
+     "stopping": false,
+     "command": "ffmpeg -hide_banner -nostats -re -stream_loop 1 -i {videos_dir}/boats.mp4 -map 0 -copy_unknown -c:v copy -c:a copy -c:d copy -max_interleave_delta 1000 -fflags +genpts -avoid_negative_ts make_zero -max_muxing_queue_size 1024 -f mpegts 'srt://127.0.0.1:8890?streamid=publish:boats'",
+     "delivery": "srt://127.0.0.1:8890?streamid=publish:boats",
+     "transport_label": "RTSP / HLS / RTMP via MediaMTX",
+     "direction": "serve",
+     "carries_klv": true,
+     "delivery_label": "publishes to",
+     "register": [
+      [
+       "rtsp",
+       "rtsp://publisher-host:8554/boats"
+      ],
+      [
+       "hls",
+       "http://publisher-host:8888/boats/index.m3u8"
+      ],
+      [
+       "rtmp",
+       "rtmp://publisher-host:1935/boats"
+      ]
+     ]
+    },
+    {
+     "error": null,
+     "video_codecs": [
+      "h264"
+     ],
+     "audio_codecs": [
+      "aac"
+     ],
+     "data_codecs": [
+      "klv"
+     ],
+     "mode": "passthrough",
+     "effective_mode": "passthrough",
+     "encoder": "copy (passthrough)",
+     "passthrough_eligible": true,
+     "ineligible_codecs": [],
+     "source_frame_rate": 30.0,
+     "frame_rate": 30.0,
+     "frame_rate_explicit": false,
+     "gop_frames": 30,
+     "gop_explicit": false,
+     "enabled": true,
+     "loop_count": 1,
+     "filename": "boats.mp4",
+     "transport": "tcp_listen",
+     "port": 42000,
+     "name": "boats-tcp",
+     "state": "running",
+     "reason": null,
+     "running": true,
+     "stopping": false,
+     "command": "ffmpeg -hide_banner -nostats -re -stream_loop 1 -i {videos_dir}/boats.mp4 -map 0 -copy_unknown -c:v copy -c:a copy -c:d copy -max_interleave_delta 1000 -bsf:d 'setts=dts=max(DTS\\,PREV_OUTDTS)' -fflags +genpts -avoid_negative_ts make_zero -max_muxing_queue_size 1024 -f mpegts 'tcp://0.0.0.0:42000?listen=1'",
+     "delivery": "tcp://0.0.0.0:42000?listen=1",
+     "transport_label": "TCP listen",
+     "direction": "listen",
+     "carries_klv": true,
+     "delivery_label": "listens on",
+     "register": [
+      [
+       "register",
+       "tcp://publisher-host:42000"
+      ]
+     ]
+    },
+    {
+     "error": null,
+     "video_codecs": [
+      "h264"
+     ],
+     "audio_codecs": [
+      "aac"
+     ],
+     "data_codecs": [
+      "klv"
+     ],
+     "mode": "transcode",
+     "effective_mode": "transcode",
+     "encoder": "libx264 (software)",
+     "passthrough_eligible": true,
+     "ineligible_codecs": [],
+     "source_frame_rate": 30.0,
+     "frame_rate": 15.0,
+     "frame_rate_explicit": true,
+     "gop_frames": 15,
+     "gop_explicit": false,
+     "enabled": true,
+     "loop_count": -1,
+     "filename": "boats.mp4",
+     "transport": "srt_listen",
+     "port": 41000,
+     "name": "boats-srt",
+     "state": "running",
+     "reason": null,
+     "running": true,
+     "stopping": false,
+     "command": "ffmpeg -hide_banner -nostats -re -stream_loop -1 -i {videos_dir}/boats.mp4 -map 0 -copy_unknown -c:v libx264 -preset ultrafast -tune zerolatency -g 15 -keyint_min 15 -sc_threshold 0 -bf 0 -x264-params ref=1 -r 15 -c:a copy -c:d copy -max_interleave_delta 1000 -bsf:d 'setts=dts=max(DTS\\,PREV_OUTDTS)' -fflags +genpts+igndts -avoid_negative_ts make_zero -max_muxing_queue_size 1024 -f mpegts 'srt://0.0.0.0:41000?mode=listener'",
+     "delivery": "srt://0.0.0.0:41000?mode=listener",
+     "transport_label": "SRT listen",
+     "direction": "listen",
+     "carries_klv": true,
+     "delivery_label": "listens on",
+     "register": [
+      [
+       "register",
+       "srt://publisher-host:41000"
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "method": "GET",
+   "path": "/api/settings",
+   "headers": {},
+   "status": 200,
+   "content_type": "application/json",
+   "cache_control": null,
+   "json": {
+    "destination_host": "receiver",
+    "multicast_group": "239.255.0.1",
+    "advertised_host": "publisher-host",
+    "max_video_bitrate": "",
+    "srtp_key": "autostreamautostreamautostreamautostream",
+    "udp_first_port": 40000,
+    "rtp_first_port": 40020,
+    "srt_call_first_port": 40040,
+    "srtp_first_port": 40060,
+    "srt_listen_first_port": 41000,
+    "tcp_first_port": 42000,
+    "http_first_port": 43000
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/api/settings?advertised_host=&destination_host=receiver&udp_first_port=40010",
+   "headers": {},
+   "status": 200,
+   "content_type": "application/json",
+   "cache_control": null,
+   "json": {
+    "success": true
+   }
+  },
+  {
+   "method": "GET",
+   "path": "/api/settings",
+   "headers": {},
+   "status": 200,
+   "content_type": "application/json",
+   "cache_control": null,
+   "json": {
+    "destination_host": "receiver",
+    "multicast_group": "239.255.0.1",
+    "advertised_host": null,
+    "max_video_bitrate": "",
+    "srtp_key": "autostreamautostreamautostreamautostream",
+    "udp_first_port": 40010,
+    "rtp_first_port": 40020,
+    "srt_call_first_port": 40040,
+    "srtp_first_port": 40060,
+    "srt_listen_first_port": 41000,
+    "tcp_first_port": 42000,
+    "http_first_port": 43000
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/api/streams/stop-all",
+   "headers": {},
+   "status": 200,
+   "content_type": "application/json",
+   "cache_control": null,
+   "json": {
+    "success": true
+   }
+  },
+  {
+   "method": "GET",
+   "path": "/api/streams",
+   "headers": {
+    "Host": "operator-console:9080"
+   },
+   "status": 200,
+   "content_type": "application/json",
+   "cache_control": null,
+   "json": [
+    {
+     "error": null,
+     "video_codecs": [
+      "h264"
+     ],
+     "audio_codecs": [
+      "aac"
+     ],
+     "data_codecs": [
+      "klv"
+     ],
+     "mode": "passthrough",
+     "effective_mode": "passthrough",
+     "encoder": "copy (passthrough)",
+     "passthrough_eligible": true,
+     "ineligible_codecs": [],
+     "source_frame_rate": 30.0,
+     "frame_rate": 30.0,
+     "frame_rate_explicit": false,
+     "gop_frames": 30,
+     "gop_explicit": false,
+     "enabled": false,
+     "loop_count": 1,
+     "filename": "boats.mp4",
+     "transport": "rtsp",
+     "port": null,
+     "name": "boats",
+     "state": "stopped",
+     "reason": "stopped",
+     "running": false,
+     "stopping": false,
+     "command": "ffmpeg -hide_banner -nostats -re -stream_loop 1 -i {videos_dir}/boats.mp4 -map 0 -copy_unknown -c:v copy -c:a copy -c:d copy -max_interleave_delta 1000 -fflags +genpts -avoid_negative_ts make_zero -max_muxing_queue_size 1024 -f mpegts 'srt://127.0.0.1:8890?streamid=publish:boats'",
+     "delivery": "srt://127.0.0.1:8890?streamid=publish:boats",
+     "transport_label": "RTSP / HLS / RTMP via MediaMTX",
+     "direction": "serve",
+     "carries_klv": true,
+     "delivery_label": "publishes to",
+     "register": [
+      [
+       "rtsp",
+       "rtsp://operator-console:8554/boats"
+      ],
+      [
+       "hls",
+       "http://operator-console:8888/boats/index.m3u8"
+      ],
+      [
+       "rtmp",
+       "rtmp://operator-console:1935/boats"
+      ]
+     ]
+    },
+    {
+     "error": null,
+     "video_codecs": [
+      "h264"
+     ],
+     "audio_codecs": [
+      "aac"
+     ],
+     "data_codecs": [
+      "klv"
+     ],
+     "mode": "passthrough",
+     "effective_mode": "passthrough",
+     "encoder": "copy (passthrough)",
+     "passthrough_eligible": true,
+     "ineligible_codecs": [],
+     "source_frame_rate": 30.0,
+     "frame_rate": 30.0,
+     "frame_rate_explicit": false,
+     "gop_frames": 30,
+     "gop_explicit": false,
+     "enabled": false,
+     "loop_count": 1,
+     "filename": "boats.mp4",
+     "transport": "tcp_listen",
+     "port": 42000,
+     "name": "boats-tcp",
+     "state": "stopped",
+     "reason": "stopped",
+     "running": false,
+     "stopping": false,
+     "command": "ffmpeg -hide_banner -nostats -re -stream_loop 1 -i {videos_dir}/boats.mp4 -map 0 -copy_unknown -c:v copy -c:a copy -c:d copy -max_interleave_delta 1000 -bsf:d 'setts=dts=max(DTS\\,PREV_OUTDTS)' -fflags +genpts -avoid_negative_ts make_zero -max_muxing_queue_size 1024 -f mpegts 'tcp://0.0.0.0:42000?listen=1'",
+     "delivery": "tcp://0.0.0.0:42000?listen=1",
+     "transport_label": "TCP listen",
+     "direction": "listen",
+     "carries_klv": true,
+     "delivery_label": "listens on",
+     "register": [
+      [
+       "register",
+       "tcp://operator-console:42000"
+      ]
+     ]
+    },
+    {
+     "error": null,
+     "video_codecs": [
+      "h264"
+     ],
+     "audio_codecs": [
+      "aac"
+     ],
+     "data_codecs": [
+      "klv"
+     ],
+     "mode": "transcode",
+     "effective_mode": "transcode",
+     "encoder": "libx264 (software)",
+     "passthrough_eligible": true,
+     "ineligible_codecs": [],
+     "source_frame_rate": 30.0,
+     "frame_rate": 15.0,
+     "frame_rate_explicit": true,
+     "gop_frames": 15,
+     "gop_explicit": false,
+     "enabled": false,
+     "loop_count": -1,
+     "filename": "boats.mp4",
+     "transport": "srt_listen",
+     "port": 41000,
+     "name": "boats-srt",
+     "state": "stopped",
+     "reason": "stopped",
+     "running": false,
+     "stopping": false,
+     "command": "ffmpeg -hide_banner -nostats -re -stream_loop -1 -i {videos_dir}/boats.mp4 -map 0 -copy_unknown -c:v libx264 -preset ultrafast -tune zerolatency -g 15 -keyint_min 15 -sc_threshold 0 -bf 0 -x264-params ref=1 -r 15 -c:a copy -c:d copy -max_interleave_delta 1000 -bsf:d 'setts=dts=max(DTS\\,PREV_OUTDTS)' -fflags +genpts+igndts -avoid_negative_ts make_zero -max_muxing_queue_size 1024 -f mpegts 'srt://0.0.0.0:41000?mode=listener'",
+     "delivery": "srt://0.0.0.0:41000?mode=listener",
+     "transport_label": "SRT listen",
+     "direction": "listen",
+     "carries_klv": true,
+     "delivery_label": "listens on",
+     "register": [
+      [
+       "register",
+       "srt://operator-console:41000"
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "method": "POST",
+   "path": "/api/streams/start-all",
+   "headers": {},
+   "status": 200,
+   "content_type": "application/json",
+   "cache_control": null,
+   "json": {
+    "success": true
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/api/streams/boats/stop",
+   "headers": {},
+   "status": 200,
+   "content_type": "application/json",
+   "cache_control": null,
+   "json": {
+    "success": true
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/api/streams/boats/start",
+   "headers": {},
+   "status": 200,
+   "content_type": "application/json",
+   "cache_control": null,
+   "json": {
+    "success": true
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/api/streams/boats-srt/delete",
+   "headers": {},
+   "status": 200,
+   "content_type": "application/json",
+   "cache_control": null,
+   "json": {
+    "success": true
+   }
+  },
+  {
+   "method": "GET",
+   "path": "/api/streams",
+   "headers": {
+    "Host": "operator-console:9080"
+   },
+   "status": 200,
+   "content_type": "application/json",
+   "cache_control": null,
+   "json": [
+    {
+     "error": null,
+     "video_codecs": [
+      "h264"
+     ],
+     "audio_codecs": [
+      "aac"
+     ],
+     "data_codecs": [
+      "klv"
+     ],
+     "mode": "passthrough",
+     "effective_mode": "passthrough",
+     "encoder": "copy (passthrough)",
+     "passthrough_eligible": true,
+     "ineligible_codecs": [],
+     "source_frame_rate": 30.0,
+     "frame_rate": 30.0,
+     "frame_rate_explicit": false,
+     "gop_frames": 30,
+     "gop_explicit": false,
+     "enabled": true,
+     "loop_count": 1,
+     "filename": "boats.mp4",
+     "transport": "rtsp",
+     "port": null,
+     "name": "boats",
+     "state": "running",
+     "reason": null,
+     "running": true,
+     "stopping": false,
+     "command": "ffmpeg -hide_banner -nostats -re -stream_loop 1 -i {videos_dir}/boats.mp4 -map 0 -copy_unknown -c:v copy -c:a copy -c:d copy -max_interleave_delta 1000 -fflags +genpts -avoid_negative_ts make_zero -max_muxing_queue_size 1024 -f mpegts 'srt://127.0.0.1:8890?streamid=publish:boats'",
+     "delivery": "srt://127.0.0.1:8890?streamid=publish:boats",
+     "transport_label": "RTSP / HLS / RTMP via MediaMTX",
+     "direction": "serve",
+     "carries_klv": true,
+     "delivery_label": "publishes to",
+     "register": [
+      [
+       "rtsp",
+       "rtsp://operator-console:8554/boats"
+      ],
+      [
+       "hls",
+       "http://operator-console:8888/boats/index.m3u8"
+      ],
+      [
+       "rtmp",
+       "rtmp://operator-console:1935/boats"
+      ]
+     ]
+    },
+    {
+     "error": null,
+     "video_codecs": [
+      "h264"
+     ],
+     "audio_codecs": [
+      "aac"
+     ],
+     "data_codecs": [
+      "klv"
+     ],
+     "mode": "passthrough",
+     "effective_mode": "passthrough",
+     "encoder": "copy (passthrough)",
+     "passthrough_eligible": true,
+     "ineligible_codecs": [],
+     "source_frame_rate": 30.0,
+     "frame_rate": 30.0,
+     "frame_rate_explicit": false,
+     "gop_frames": 30,
+     "gop_explicit": false,
+     "enabled": true,
+     "loop_count": 1,
+     "filename": "boats.mp4",
+     "transport": "tcp_listen",
+     "port": 42000,
+     "name": "boats-tcp",
+     "state": "running",
+     "reason": null,
+     "running": true,
+     "stopping": false,
+     "command": "ffmpeg -hide_banner -nostats -re -stream_loop 1 -i {videos_dir}/boats.mp4 -map 0 -copy_unknown -c:v copy -c:a copy -c:d copy -max_interleave_delta 1000 -bsf:d 'setts=dts=max(DTS\\,PREV_OUTDTS)' -fflags +genpts -avoid_negative_ts make_zero -max_muxing_queue_size 1024 -f mpegts 'tcp://0.0.0.0:42000?listen=1'",
+     "delivery": "tcp://0.0.0.0:42000?listen=1",
+     "transport_label": "TCP listen",
+     "direction": "listen",
+     "carries_klv": true,
+     "delivery_label": "listens on",
+     "register": [
+      [
+       "register",
+       "tcp://operator-console:42000"
+      ]
+     ]
+    }
+   ]
+  }
+ ],
+ "final_state": {
+  "streams": {
+   "boats": {
+    "filename": "boats.mp4",
+    "transport": "rtsp",
+    "port": null,
+    "enabled": true,
+    "mode": null,
+    "loop_count": 1,
+    "frame_rate": null,
+    "gop_frames": null
+   },
+   "boats-tcp": {
+    "filename": "boats.mp4",
+    "transport": "tcp_listen",
+    "port": 42000,
+    "enabled": true,
+    "mode": null,
+    "loop_count": 1,
+    "frame_rate": null,
+    "gop_frames": null
+   }
+  },
+  "settings": {
+   "destination_host": "receiver",
+   "multicast_group": "239.255.0.1",
+   "advertised_host": null,
+   "max_video_bitrate": "",
+   "srtp_key": "autostreamautostreamautostreamautostream",
+   "udp_first_port": 40010,
+   "rtp_first_port": 40020,
+   "srt_call_first_port": 40040,
+   "srtp_first_port": 40060,
+   "srt_listen_first_port": 41000,
+   "tcp_first_port": 42000,
+   "http_first_port": 43000
+  }
+ }
+}

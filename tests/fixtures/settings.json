@@ -1,0 +1,754 @@
+{
+ "defaults": {
+  "destination_host": null,
+  "multicast_group": "239.255.0.1",
+  "advertised_host": null,
+  "max_video_bitrate": "",
+  "srtp_key": "autostreamautostreamautostreamautostream",
+  "udp_first_port": 40000,
+  "rtp_first_port": 40020,
+  "srt_call_first_port": 40040,
+  "srtp_first_port": 40060,
+  "srt_listen_first_port": 41000,
+  "tcp_first_port": 42000,
+  "http_first_port": 43000
+ },
+ "from_query": [
+  {
+   "query": {
+    "destination_host": [
+     " receiver "
+    ],
+    "multicast_group": [
+     ""
+    ],
+    "advertised_host": [
+     ""
+    ],
+    "max_video_bitrate": [
+     ""
+    ],
+    "srtp_key": [
+     ""
+    ],
+    "udp_first_port": [
+     ""
+    ],
+    "rtp_first_port": [
+     ""
+    ],
+    "srt_call_first_port": [
+     ""
+    ],
+    "srtp_first_port": [
+     ""
+    ],
+    "srt_listen_first_port": [
+     ""
+    ],
+    "tcp_first_port": [
+     ""
+    ],
+    "http_first_port": [
+     ""
+    ]
+   },
+   "settings": {
+    "destination_host": "receiver",
+    "multicast_group": "239.255.0.1",
+    "advertised_host": null,
+    "max_video_bitrate": "",
+    "srtp_key": "autostreamautostreamautostreamautostream",
+    "udp_first_port": 40000,
+    "rtp_first_port": 40020,
+    "srt_call_first_port": 40040,
+    "srtp_first_port": 40060,
+    "srt_listen_first_port": 41000,
+    "tcp_first_port": 42000,
+    "http_first_port": 43000
+   },
+   "error": null
+  },
+  {
+   "query": {
+    "udp_first_port": [
+     "abc"
+    ]
+   },
+   "settings": null,
+   "error": "udp_first_port must be a whole number"
+  },
+  {
+   "query": {
+    "udp_first_port": [
+     "70000"
+    ]
+   },
+   "settings": null,
+   "error": "udp_first_port must be a whole number from 1 to 65535"
+  },
+  {
+   "query": {
+    "http_first_port": [
+     "45000"
+    ]
+   },
+   "settings": {
+    "destination_host": null,
+    "multicast_group": "239.255.0.1",
+    "advertised_host": null,
+    "max_video_bitrate": "",
+    "srtp_key": "autostreamautostreamautostreamautostream",
+    "udp_first_port": 40000,
+    "rtp_first_port": 40020,
+    "srt_call_first_port": 40040,
+    "srtp_first_port": 40060,
+    "srt_listen_first_port": 41000,
+    "tcp_first_port": 42000,
+    "http_first_port": 45000
+   },
+   "error": null
+  },
+  {
+   "query": {},
+   "settings": {
+    "destination_host": null,
+    "multicast_group": "239.255.0.1",
+    "advertised_host": null,
+    "max_video_bitrate": "",
+    "srtp_key": "autostreamautostreamautostreamautostream",
+    "udp_first_port": 40000,
+    "rtp_first_port": 40020,
+    "srt_call_first_port": 40040,
+    "srtp_first_port": 40060,
+    "srt_listen_first_port": 41000,
+    "tcp_first_port": 42000,
+    "http_first_port": 43000
+   },
+   "error": null
+  },
+  {
+   "query": {
+    "multicast_group": [
+     "10.0.0.1"
+    ]
+   },
+   "settings": null,
+   "error": "multicast_group must be a multicast address such as 239.1.1.2"
+  },
+  {
+   "query": {
+    "multicast_group": [
+     "ff02::1"
+    ]
+   },
+   "settings": {
+    "destination_host": null,
+    "multicast_group": "ff02::1",
+    "advertised_host": null,
+    "max_video_bitrate": "",
+    "srtp_key": "autostreamautostreamautostreamautostream",
+    "udp_first_port": 40000,
+    "rtp_first_port": 40020,
+    "srt_call_first_port": 40040,
+    "srtp_first_port": 40060,
+    "srt_listen_first_port": 41000,
+    "tcp_first_port": 42000,
+    "http_first_port": 43000
+   },
+   "error": null
+  },
+  {
+   "query": {
+    "multicast_group": [
+     "239.01.1.1"
+    ]
+   },
+   "settings": null,
+   "error": "multicast_group must be a multicast address such as 239.1.1.2"
+  },
+  {
+   "query": {
+    "max_video_bitrate": [
+     "3000K"
+    ]
+   },
+   "settings": {
+    "destination_host": null,
+    "multicast_group": "239.255.0.1",
+    "advertised_host": null,
+    "max_video_bitrate": "3000K",
+    "srtp_key": "autostreamautostreamautostreamautostream",
+    "udp_first_port": 40000,
+    "rtp_first_port": 40020,
+    "srt_call_first_port": 40040,
+    "srtp_first_port": 40060,
+    "srt_listen_first_port": 41000,
+    "tcp_first_port": 42000,
+    "http_first_port": 43000
+   },
+   "error": null
+  },
+  {
+   "query": {
+    "max_video_bitrate": [
+     "2.5m"
+    ]
+   },
+   "settings": {
+    "destination_host": null,
+    "multicast_group": "239.255.0.1",
+    "advertised_host": null,
+    "max_video_bitrate": "2.5m",
+    "srtp_key": "autostreamautostreamautostreamautostream",
+    "udp_first_port": 40000,
+    "rtp_first_port": 40020,
+    "srt_call_first_port": 40040,
+    "srtp_first_port": 40060,
+    "srt_listen_first_port": 41000,
+    "tcp_first_port": 42000,
+    "http_first_port": 43000
+   },
+   "error": null
+  },
+  {
+   "query": {
+    "max_video_bitrate": [
+     "bad"
+    ]
+   },
+   "settings": null,
+   "error": "max_video_bitrate must be like 2M, 3000K or 3000000"
+  },
+  {
+   "query": {
+    "max_video_bitrate": [
+     "0"
+    ]
+   },
+   "settings": null,
+   "error": "max_video_bitrate must be positive"
+  },
+  {
+   "query": {
+    "max_video_bitrate": [
+     "-2M"
+    ]
+   },
+   "settings": null,
+   "error": "max_video_bitrate must be positive"
+  },
+  {
+   "query": {
+    "max_video_bitrate": [
+     "3.5"
+    ]
+   },
+   "settings": null,
+   "error": "max_video_bitrate must be like 2M, 3000K or 3000000"
+  },
+  {
+   "query": {
+    "destination_host": [
+     "a b"
+    ]
+   },
+   "settings": null,
+   "error": "destination_host must be a host name or address"
+  },
+  {
+   "query": {
+    "destination_host": [
+     "a/b"
+    ]
+   },
+   "settings": null,
+   "error": "destination_host must be a host name or address"
+  },
+  {
+   "query": {
+    "destination_host": [
+     "[fe80::1]"
+    ]
+   },
+   "settings": {
+    "destination_host": "[fe80::1]",
+    "multicast_group": "239.255.0.1",
+    "advertised_host": null,
+    "max_video_bitrate": "",
+    "srtp_key": "autostreamautostreamautostreamautostream",
+    "udp_first_port": 40000,
+    "rtp_first_port": 40020,
+    "srt_call_first_port": 40040,
+    "srtp_first_port": 40060,
+    "srt_listen_first_port": 41000,
+    "tcp_first_port": 42000,
+    "http_first_port": 43000
+   },
+   "error": null
+  },
+  {
+   "query": {
+    "srtp_key": [
+     "has space"
+    ]
+   },
+   "settings": null,
+   "error": "srtp_key must be the base64 key text with no spaces"
+  },
+  {
+   "query": {
+    "srtp_key": [
+     "a2V5"
+    ]
+   },
+   "settings": {
+    "destination_host": null,
+    "multicast_group": "239.255.0.1",
+    "advertised_host": null,
+    "max_video_bitrate": "",
+    "srtp_key": "a2V5",
+    "udp_first_port": 40000,
+    "rtp_first_port": 40020,
+    "srt_call_first_port": 40040,
+    "srtp_first_port": 40060,
+    "srt_listen_first_port": 41000,
+    "tcp_first_port": 42000,
+    "http_first_port": 43000
+   },
+   "error": null
+  },
+  {
+   "query": {
+    "advertised_host": [
+     "publisher",
+     "second"
+    ]
+   },
+   "settings": {
+    "destination_host": null,
+    "multicast_group": "239.255.0.1",
+    "advertised_host": "publisher",
+    "max_video_bitrate": "",
+    "srtp_key": "autostreamautostreamautostreamautostream",
+    "udp_first_port": 40000,
+    "rtp_first_port": 40020,
+    "srt_call_first_port": 40040,
+    "srtp_first_port": 40060,
+    "srt_listen_first_port": 41000,
+    "tcp_first_port": 42000,
+    "http_first_port": 43000
+   },
+   "error": null
+  },
+  {
+   "query": {
+    "tcp_first_port": [
+     " 42001 "
+    ]
+   },
+   "settings": {
+    "destination_host": null,
+    "multicast_group": "239.255.0.1",
+    "advertised_host": null,
+    "max_video_bitrate": "",
+    "srtp_key": "autostreamautostreamautostreamautostream",
+    "udp_first_port": 40000,
+    "rtp_first_port": 40020,
+    "srt_call_first_port": 40040,
+    "srtp_first_port": 40060,
+    "srt_listen_first_port": 41000,
+    "tcp_first_port": 42001,
+    "http_first_port": 43000
+   },
+   "error": null
+  },
+  {
+   "query": {
+    "udp_first_port": [
+     "1.5"
+    ]
+   },
+   "settings": null,
+   "error": "udp_first_port must be a whole number"
+  },
+  {
+   "query": {
+    "udp_first_port": [
+     "0"
+    ]
+   },
+   "settings": null,
+   "error": "udp_first_port must be a whole number from 1 to 65535"
+  },
+  {
+   "query": {
+    "udp_first_port": [
+     "65535"
+    ]
+   },
+   "settings": {
+    "destination_host": null,
+    "multicast_group": "239.255.0.1",
+    "advertised_host": null,
+    "max_video_bitrate": "",
+    "srtp_key": "autostreamautostreamautostreamautostream",
+    "udp_first_port": 65535,
+    "rtp_first_port": 40020,
+    "srt_call_first_port": 40040,
+    "srtp_first_port": 40060,
+    "srt_listen_first_port": 41000,
+    "tcp_first_port": 42000,
+    "http_first_port": 43000
+   },
+   "error": null
+  },
+  {
+   "query": {
+    "udp_first_port": [
+     "+5"
+    ]
+   },
+   "settings": {
+    "destination_host": null,
+    "multicast_group": "239.255.0.1",
+    "advertised_host": null,
+    "max_video_bitrate": "",
+    "srtp_key": "autostreamautostreamautostreamautostream",
+    "udp_first_port": 5,
+    "rtp_first_port": 40020,
+    "srt_call_first_port": 40040,
+    "srtp_first_port": 40060,
+    "srt_listen_first_port": 41000,
+    "tcp_first_port": 42000,
+    "http_first_port": 43000
+   },
+   "error": null
+  }
+ ],
+ "from_document": [
+  {
+   "document": {},
+   "settings": {
+    "destination_host": null,
+    "multicast_group": "239.255.0.1",
+    "advertised_host": null,
+    "max_video_bitrate": "",
+    "srtp_key": "autostreamautostreamautostreamautostream",
+    "udp_first_port": 40000,
+    "rtp_first_port": 40020,
+    "srt_call_first_port": 40040,
+    "srtp_first_port": 40060,
+    "srt_listen_first_port": 41000,
+    "tcp_first_port": 42000,
+    "http_first_port": 43000
+   },
+   "max_video_bps": null,
+   "error": null
+  },
+  {
+   "document": {
+    "udp_first_port": 0
+   },
+   "settings": null,
+   "max_video_bps": null,
+   "error": "Invalid saved settings: udp_first_port must be a whole number from 1 to 65535"
+  },
+  {
+   "document": {
+    "tcp_first_port": "42000"
+   },
+   "settings": null,
+   "max_video_bps": null,
+   "error": "Invalid saved settings: tcp_first_port must be a whole number from 1 to 65535"
+  },
+  {
+   "document": {
+    "multicast_group": "10.0.0.1"
+   },
+   "settings": null,
+   "max_video_bps": null,
+   "error": "Invalid saved settings: multicast_group must be a multicast address such as 239.1.1.2"
+  },
+  {
+   "document": {
+    "multicast_group": "group"
+   },
+   "settings": null,
+   "max_video_bps": null,
+   "error": "Invalid saved settings: multicast_group must be a multicast address such as 239.1.1.2"
+  },
+  {
+   "document": {
+    "max_video_bitrate": "bad"
+   },
+   "settings": null,
+   "max_video_bps": null,
+   "error": "Invalid saved settings: max_video_bitrate must be like 2M, 3000K or 3000000"
+  },
+  {
+   "document": {
+    "max_video_bitrate": "0"
+   },
+   "settings": null,
+   "max_video_bps": null,
+   "error": "Invalid saved settings: max_video_bitrate must be positive"
+  },
+  {
+   "document": {
+    "destination_host": "a b"
+   },
+   "settings": null,
+   "max_video_bps": null,
+   "error": "Invalid saved settings: destination_host must be a host name or address"
+  },
+  {
+   "document": {
+    "advertised_host": 7
+   },
+   "settings": null,
+   "max_video_bps": null,
+   "error": "Invalid saved settings: advertised_host must be a host name or address"
+  },
+  {
+   "document": {
+    "srtp_key": "has space"
+   },
+   "settings": null,
+   "max_video_bps": null,
+   "error": "Invalid saved settings: srtp_key must be the base64 key text with no spaces"
+  },
+  {
+   "document": {
+    "srtp_key": ""
+   },
+   "settings": null,
+   "max_video_bps": null,
+   "error": "Invalid saved settings: srtp_key must be the base64 key text with no spaces"
+  },
+  {
+   "document": {
+    "multicast_group": null
+   },
+   "settings": null,
+   "max_video_bps": null,
+   "error": "Invalid saved settings: multicast_group must be a multicast address such as 239.1.1.2"
+  },
+  {
+   "document": {
+    "ignored": 1,
+    "udp_first_port": 50000
+   },
+   "settings": {
+    "destination_host": null,
+    "multicast_group": "239.255.0.1",
+    "advertised_host": null,
+    "max_video_bitrate": "",
+    "srtp_key": "autostreamautostreamautostreamautostream",
+    "udp_first_port": 50000,
+    "rtp_first_port": 40020,
+    "srt_call_first_port": 40040,
+    "srtp_first_port": 40060,
+    "srt_listen_first_port": 41000,
+    "tcp_first_port": 42000,
+    "http_first_port": 43000
+   },
+   "max_video_bps": null,
+   "error": null
+  },
+  {
+   "document": {
+    "udp_first_port": 40000.0
+   },
+   "settings": null,
+   "max_video_bps": null,
+   "error": "Invalid saved settings: udp_first_port must be a whole number from 1 to 65535"
+  },
+  {
+   "document": {
+    "udp_first_port": true
+   },
+   "settings": null,
+   "max_video_bps": null,
+   "error": "Invalid saved settings: udp_first_port must be a whole number from 1 to 65535"
+  },
+  {
+   "document": {
+    "destination_host": null,
+    "max_video_bitrate": "2M"
+   },
+   "settings": {
+    "destination_host": null,
+    "multicast_group": "239.255.0.1",
+    "advertised_host": null,
+    "max_video_bitrate": "2M",
+    "srtp_key": "autostreamautostreamautostreamautostream",
+    "udp_first_port": 40000,
+    "rtp_first_port": 40020,
+    "srt_call_first_port": 40040,
+    "srtp_first_port": 40060,
+    "srt_listen_first_port": 41000,
+    "tcp_first_port": 42000,
+    "http_first_port": 43000
+   },
+   "max_video_bps": 2000000,
+   "error": null
+  },
+  {
+   "document": {
+    "max_video_bitrate": null
+   },
+   "settings": null,
+   "max_video_bps": null,
+   "error": "Invalid saved settings: max_video_bitrate must be text such as 2M"
+  },
+  {
+   "document": {
+    "srtp_key": null
+   },
+   "settings": null,
+   "max_video_bps": null,
+   "error": "Invalid saved settings: srtp_key must be the base64 key text with no spaces"
+  },
+  {
+   "document": {
+    "udp_first_port": "x",
+    "destination_host": "a b"
+   },
+   "settings": null,
+   "max_video_bps": null,
+   "error": "Invalid saved settings: destination_host must be a host name or address"
+  },
+  {
+   "document": {
+    "destination_host": "",
+    "advertised_host": ""
+   },
+   "settings": null,
+   "max_video_bps": null,
+   "error": "Invalid saved settings: destination_host must be a host name or address"
+  },
+  {
+   "document": {
+    "multicast_group": "ff02::1"
+   },
+   "settings": {
+    "destination_host": null,
+    "multicast_group": "ff02::1",
+    "advertised_host": null,
+    "max_video_bitrate": "",
+    "srtp_key": "autostreamautostreamautostreamautostream",
+    "udp_first_port": 40000,
+    "rtp_first_port": 40020,
+    "srt_call_first_port": 40040,
+    "srtp_first_port": 40060,
+    "srt_listen_first_port": 41000,
+    "tcp_first_port": 42000,
+    "http_first_port": 43000
+   },
+   "max_video_bps": null,
+   "error": null
+  },
+  {
+   "document": {
+    "destination_host": "receiver",
+    "multicast_group": "239.1.1.2",
+    "advertised_host": null,
+    "max_video_bitrate": "2M",
+    "srtp_key": "c2VjcmV0a2V5",
+    "udp_first_port": 40000,
+    "rtp_first_port": 40020,
+    "srt_call_first_port": 40040,
+    "srtp_first_port": 40060,
+    "srt_listen_first_port": 41000,
+    "tcp_first_port": 42000,
+    "http_first_port": 43000
+   },
+   "settings": {
+    "destination_host": "receiver",
+    "multicast_group": "239.1.1.2",
+    "advertised_host": null,
+    "max_video_bitrate": "2M",
+    "srtp_key": "c2VjcmV0a2V5",
+    "udp_first_port": 40000,
+    "rtp_first_port": 40020,
+    "srt_call_first_port": 40040,
+    "srtp_first_port": 40060,
+    "srt_listen_first_port": 41000,
+    "tcp_first_port": 42000,
+    "http_first_port": 43000
+   },
+   "max_video_bps": 2000000,
+   "error": null
+  },
+  {
+   "document": {
+    "max_video_bitrate": "3000K",
+    "udp_first_port": 65535
+   },
+   "settings": {
+    "destination_host": null,
+    "multicast_group": "239.255.0.1",
+    "advertised_host": null,
+    "max_video_bitrate": "3000K",
+    "srtp_key": "autostreamautostreamautostreamautostream",
+    "udp_first_port": 65535,
+    "rtp_first_port": 40020,
+    "srt_call_first_port": 40040,
+    "srtp_first_port": 40060,
+    "srt_listen_first_port": 41000,
+    "tcp_first_port": 42000,
+    "http_first_port": 43000
+   },
+   "max_video_bps": 3000000,
+   "error": null
+  }
+ ],
+ "parse_bitrate": [
+  {
+   "text": "3M",
+   "value": 3000000,
+   "error": null
+  },
+  {
+   "text": "3000K",
+   "value": 3000000,
+   "error": null
+  },
+  {
+   "text": "3000000",
+   "value": 3000000,
+   "error": null
+  },
+  {
+   "text": "2.5M",
+   "value": 2500000,
+   "error": null
+  },
+  {
+   "text": " 2m ",
+   "value": 2000000,
+   "error": null
+  },
+  {
+   "text": "",
+   "value": null,
+   "error": null
+  },
+  {
+   "text": "0",
+   "value": 0,
+   "error": null
+  },
+  {
+   "text": "-1K",
+   "value": -1000,
+   "error": null
+  },
+  {
+   "text": "1e1M",
+   "value": 10000000,
+   "error": null
+  }
+ ]
+}

@@ -18,8 +18,10 @@ notices a dead process within one 2 s tick.
 
 ## Create, delete and persistence
 
-- Fresh boot with no state: no ffmpeg processes, the list says there are no
-  streams yet, the File dropdown in New stream lists every stable file.
+- Fresh boot with no state file: once the videos settle (about 6 s), each one
+  becomes a running MediaMTX stream named after its file, with one ffmpeg
+  process each; the File dropdown in New stream lists every stable file. A
+  state file whose streams were all deleted stays empty: no stream is seeded.
 - Create a stream per transport for the KLV file: each gets one ffmpeg
   process, its own port from its kind's first port (multicast: a random port
   from 50000-59999), and the Playback URL matches the Transports table in

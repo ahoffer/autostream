@@ -1,0 +1,302 @@
+[
+ {
+  "name": "DayFlight.mpg",
+  "returncode": 0,
+  "stdout": "{\n    \"programs\": [\n        {\n            \"streams\": [\n                {\n                    \"index\": 0,\n                    \"codec_name\": \"h264\",\n                    \"codec_type\": \"video\",\n                    \"pix_fmt\": \"yuv420p\",\n                    \"avg_frame_rate\": \"60/1\",\n                    \"extradata_size\": 22\n                },\n                {\n                    \"index\": 1,\n                    \"codec_name\": \"klv\",\n                    \"codec_type\": \"data\",\n                    \"avg_frame_rate\": \"0/0\"\n                }\n            ]\n        }\n    ],\n    \"stream_groups\": [\n\n    ],\n    \"streams\": [\n        {\n            \"index\": 0,\n            \"codec_name\": \"h264\",\n            \"codec_type\": \"video\",\n            \"pix_fmt\": \"yuv420p\",\n            \"avg_frame_rate\": \"60/1\",\n            \"extradata_size\": 22\n        },\n        {\n            \"index\": 1,\n            \"codec_name\": \"klv\",\n            \"codec_type\": \"data\",\n            \"avg_frame_rate\": \"0/0\"\n        }\n    ],\n    \"format\": {\n        \"bit_rate\": \"4187311\"\n    }\n}\n",
+  "profile": {
+   "video_codecs": [
+    "h264"
+   ],
+   "audio_codecs": [],
+   "audio_copyable": true,
+   "pix_fmt": "yuv420p",
+   "bitrate_bps": 4187311,
+   "frame_rate": 60.0,
+   "data_codecs": [
+    "klv"
+   ]
+  }
+ },
+ {
+  "name": "car_with_license_plate.mp4",
+  "returncode": 0,
+  "stdout": "{\n    \"programs\": [\n\n    ],\n    \"stream_groups\": [\n\n    ],\n    \"streams\": [\n        {\n            \"index\": 0,\n            \"codec_name\": \"h264\",\n            \"codec_type\": \"video\",\n            \"pix_fmt\": \"yuv420p\",\n            \"avg_frame_rate\": \"3080000/133779\",\n            \"bit_rate\": \"1218865\",\n            \"extradata_size\": 30\n        }\n    ],\n    \"format\": {\n        \"bit_rate\": \"1226321\"\n    }\n}\n",
+  "profile": {
+   "video_codecs": [
+    "h264"
+   ],
+   "audio_codecs": [],
+   "audio_copyable": true,
+   "pix_fmt": "yuv420p",
+   "bitrate_bps": 1218865,
+   "frame_rate": 23.023045470514806,
+   "data_codecs": []
+  }
+ },
+ {
+  "name": "cargoship.mp4",
+  "returncode": 0,
+  "stdout": "{\n    \"programs\": [\n\n    ],\n    \"stream_groups\": [\n\n    ],\n    \"streams\": [\n        {\n            \"index\": 0,\n            \"codec_name\": \"h264\",\n            \"codec_type\": \"video\",\n            \"pix_fmt\": \"yuv420p\",\n            \"avg_frame_rate\": \"24/1\",\n            \"bit_rate\": \"2041615\",\n            \"extradata_size\": 45\n        },\n        {\n            \"index\": 1,\n            \"codec_name\": \"aac\",\n            \"codec_type\": \"audio\",\n            \"avg_frame_rate\": \"0/0\",\n            \"bit_rate\": \"127979\",\n            \"extradata_size\": 5\n        }\n    ],\n    \"format\": {\n        \"bit_rate\": \"2174837\"\n    }\n}\n",
+  "profile": {
+   "video_codecs": [
+    "h264"
+   ],
+   "audio_codecs": [
+    "aac"
+   ],
+   "audio_copyable": true,
+   "pix_fmt": "yuv420p",
+   "bitrate_bps": 2041615,
+   "frame_rate": 24.0,
+   "data_codecs": []
+  }
+ },
+ {
+  "name": "rolling_boats.avi",
+  "returncode": 0,
+  "stdout": "{\n    \"programs\": [\n\n    ],\n    \"stream_groups\": [\n\n    ],\n    \"streams\": [\n        {\n            \"index\": 0,\n            \"codec_name\": \"mjpeg\",\n            \"codec_type\": \"video\",\n            \"pix_fmt\": \"yuvj420p\",\n            \"avg_frame_rate\": \"30/1\",\n            \"bit_rate\": \"42329517\"\n        }\n    ],\n    \"format\": {\n        \"bit_rate\": \"42248492\"\n    }\n}\n",
+  "profile": {
+   "video_codecs": [
+    "mjpeg"
+   ],
+   "audio_codecs": [],
+   "audio_copyable": true,
+   "pix_fmt": "yuvj420p",
+   "bitrate_bps": 42329517,
+   "frame_rate": 30.0,
+   "data_codecs": []
+  }
+ },
+ {
+  "name": "truck_klv_30s.ts",
+  "returncode": 0,
+  "stdout": "{\n    \"programs\": [\n        {\n            \"streams\": [\n                {\n                    \"index\": 0,\n                    \"codec_name\": \"h264\",\n                    \"codec_type\": \"video\",\n                    \"pix_fmt\": \"yuv420p\",\n                    \"avg_frame_rate\": \"30000/1001\",\n                    \"extradata_size\": 48\n                },\n                {\n                    \"index\": 1,\n                    \"codec_name\": \"aac\",\n                    \"codec_type\": \"audio\",\n                    \"avg_frame_rate\": \"0/0\",\n                    \"bit_rate\": \"127982\"\n                },\n                {\n                    \"index\": 2,\n                    \"codec_name\": \"klv\",\n                    \"codec_type\": \"data\",\n                    \"avg_frame_rate\": \"0/0\"\n                }\n            ]\n        }\n    ],\n    \"stream_groups\": [\n\n    ],\n    \"streams\": [\n        {\n            \"index\": 0,\n            \"codec_name\": \"h264\",\n            \"codec_type\": \"video\",\n            \"pix_fmt\": \"yuv420p\",\n            \"avg_frame_rate\": \"30000/1001\",\n            \"extradata_size\": 48\n        },\n        {\n            \"index\": 1,\n            \"codec_name\": \"aac\",\n            \"codec_type\": \"audio\",\n            \"avg_frame_rate\": \"0/0\",\n            \"bit_rate\": \"127982\"\n        },\n        {\n            \"index\": 2,\n            \"codec_name\": \"klv\",\n            \"codec_type\": \"data\",\n            \"avg_frame_rate\": \"0/0\"\n        }\n    ],\n    \"format\": {\n        \"bit_rate\": \"5316581\"\n    }\n}\n",
+  "profile": {
+   "video_codecs": [
+    "h264"
+   ],
+   "audio_codecs": [
+    "aac"
+   ],
+   "audio_copyable": false,
+   "pix_fmt": "yuv420p",
+   "bitrate_bps": 5316581,
+   "frame_rate": 29.97002997002997,
+   "data_codecs": [
+    "klv"
+   ]
+  }
+ },
+ {
+  "name": "out_of_order_and_unknown_bitrate",
+  "returncode": 0,
+  "stdout": "{\"streams\": [{\"index\": 1, \"codec_type\": \"audio\", \"codec_name\": \"aac\", \"extradata_size\": 5}, {\"index\": 0, \"codec_type\": \"video\", \"codec_name\": \"h264\", \"bit_rate\": \"N/A\", \"avg_frame_rate\": \"0/0\"}], \"format\": {\"bit_rate\": \"N/A\"}}",
+  "profile": {
+   "video_codecs": [
+    "h264"
+   ],
+   "audio_codecs": [
+    "aac"
+   ],
+   "audio_copyable": true,
+   "pix_fmt": null,
+   "bitrate_bps": null,
+   "frame_rate": null,
+   "data_codecs": []
+  }
+ },
+ {
+  "name": "audio_only",
+  "returncode": 0,
+  "stdout": "{\"streams\": [{\"index\": 0, \"codec_type\": \"audio\", \"codec_name\": \"aac\", \"extradata_size\": 5}], \"format\": {\"bit_rate\": \"128000\"}}",
+  "profile": {
+   "video_codecs": [],
+   "audio_codecs": [
+    "aac"
+   ],
+   "audio_copyable": true,
+   "pix_fmt": null,
+   "bitrate_bps": 128000,
+   "frame_rate": null,
+   "data_codecs": []
+  }
+ },
+ {
+  "name": "adts_aac_is_not_copyable",
+  "returncode": 0,
+  "stdout": "{\"streams\": [{\"index\": 0, \"codec_type\": \"video\", \"codec_name\": \"h264\", \"avg_frame_rate\": \"30000/1001\", \"bit_rate\": \"1000\"}, {\"index\": 1, \"codec_type\": \"audio\", \"codec_name\": \"aac\", \"extradata_size\": 0}], \"format\": {}}",
+  "profile": {
+   "video_codecs": [
+    "h264"
+   ],
+   "audio_codecs": [
+    "aac"
+   ],
+   "audio_copyable": false,
+   "pix_fmt": null,
+   "bitrate_bps": 1000,
+   "frame_rate": 29.97002997002997,
+   "data_codecs": []
+  }
+ },
+ {
+  "name": "mp3_audio",
+  "returncode": 0,
+  "stdout": "{\"streams\": [{\"index\": 0, \"codec_type\": \"video\", \"codec_name\": \"mpeg2video\", \"avg_frame_rate\": \"25/1\"}, {\"index\": 1, \"codec_type\": \"audio\", \"codec_name\": \"mp3\", \"extradata_size\": 9}]}",
+  "profile": {
+   "video_codecs": [
+    "mpeg2video"
+   ],
+   "audio_codecs": [
+    "mp3"
+   ],
+   "audio_copyable": false,
+   "pix_fmt": null,
+   "bitrate_bps": null,
+   "frame_rate": 25.0,
+   "data_codecs": []
+  }
+ },
+ {
+  "name": "no_streams",
+  "returncode": 0,
+  "stdout": "{\"streams\": []}",
+  "profile": {
+   "video_codecs": [],
+   "audio_codecs": [],
+   "audio_copyable": true,
+   "pix_fmt": null,
+   "bitrate_bps": null,
+   "frame_rate": null,
+   "data_codecs": []
+  }
+ },
+ {
+  "name": "empty_report",
+  "returncode": 0,
+  "stdout": "{}",
+  "profile": {
+   "video_codecs": [],
+   "audio_codecs": [],
+   "audio_copyable": true,
+   "pix_fmt": null,
+   "bitrate_bps": null,
+   "frame_rate": null,
+   "data_codecs": []
+  }
+ },
+ {
+  "name": "missing_names_and_bad_rates",
+  "returncode": 0,
+  "stdout": "{\"streams\": [{\"index\": 0, \"codec_type\": \"video\", \"avg_frame_rate\": \"30\", \"bit_rate\": \"12abc\"}, {\"index\": 2, \"codec_type\": \"data\"}, {\"index\": 1, \"codec_type\": \"data\", \"codec_name\": \"klv\"}], \"format\": {\"bit_rate\": 123}}",
+  "profile": {
+   "video_codecs": [
+    ""
+   ],
+   "audio_codecs": [],
+   "audio_copyable": true,
+   "pix_fmt": null,
+   "bitrate_bps": null,
+   "frame_rate": null,
+   "data_codecs": [
+    "klv",
+    ""
+   ]
+  }
+ },
+ {
+  "name": "negative_and_zero_rates",
+  "returncode": 0,
+  "stdout": "{\"streams\": [{\"index\": 0, \"codec_type\": \"video\", \"codec_name\": \"hevc\", \"avg_frame_rate\": \"-30/1\"}]}",
+  "profile": {
+   "video_codecs": [
+    "hevc"
+   ],
+   "audio_codecs": [],
+   "audio_copyable": true,
+   "pix_fmt": null,
+   "bitrate_bps": null,
+   "frame_rate": null,
+   "data_codecs": []
+  }
+ },
+ {
+  "name": "rate_with_zero_denominator",
+  "returncode": 0,
+  "stdout": "{\"streams\": [{\"index\": 0, \"codec_type\": \"video\", \"codec_name\": \"hevc\", \"avg_frame_rate\": \"30/0\"}]}",
+  "profile": {
+   "video_codecs": [
+    "hevc"
+   ],
+   "audio_codecs": [],
+   "audio_copyable": true,
+   "pix_fmt": null,
+   "bitrate_bps": null,
+   "frame_rate": null,
+   "data_codecs": []
+  }
+ },
+ {
+  "name": "two_video_tracks",
+  "returncode": 0,
+  "stdout": "{\"streams\": [{\"index\": 0, \"codec_type\": \"video\", \"codec_name\": \"h264\", \"avg_frame_rate\": \"24/1\", \"bit_rate\": \"3000000\", \"pix_fmt\": \"yuv420p\"}, {\"index\": 1, \"codec_type\": \"video\", \"codec_name\": \"mjpeg\", \"avg_frame_rate\": \"1/1\", \"pix_fmt\": \"yuvj420p\"}], \"format\": {\"bit_rate\": \"3100000\"}}",
+  "profile": {
+   "video_codecs": [
+    "h264",
+    "mjpeg"
+   ],
+   "audio_codecs": [],
+   "audio_copyable": true,
+   "pix_fmt": "yuv420p",
+   "bitrate_bps": 3000000,
+   "frame_rate": 24.0,
+   "data_codecs": []
+  }
+ },
+ {
+  "name": "no_index_fields",
+  "returncode": 0,
+  "stdout": "{\"streams\": [{\"codec_type\": \"audio\", \"codec_name\": \"aac\", \"extradata_size\": 2}, {\"codec_type\": \"video\", \"codec_name\": \"h264\"}]}",
+  "profile": {
+   "video_codecs": [
+    "h264"
+   ],
+   "audio_codecs": [
+    "aac"
+   ],
+   "audio_copyable": true,
+   "pix_fmt": null,
+   "bitrate_bps": null,
+   "frame_rate": null,
+   "data_codecs": []
+  }
+ },
+ {
+  "name": "invalid_json",
+  "returncode": 0,
+  "stdout": "{not json",
+  "profile": {
+   "video_codecs": null,
+   "audio_codecs": null,
+   "audio_copyable": false,
+   "pix_fmt": null,
+   "bitrate_bps": null,
+   "frame_rate": null,
+   "data_codecs": null
+  }
+ },
+ {
+  "name": "probe_failed",
+  "returncode": 1,
+  "stdout": "",
+  "profile": {
+   "video_codecs": null,
+   "audio_codecs": null,
+   "audio_copyable": false,
+   "pix_fmt": null,
+   "bitrate_bps": null,
+   "frame_rate": null,
+   "data_codecs": null
+  }
+ }
+]

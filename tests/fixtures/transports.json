@@ -1,0 +1,103 @@
+[
+ {
+  "id": "rtsp",
+  "label": "RTSP / HLS / RTMP via MediaMTX",
+  "direction": "serve",
+  "carries_klv": true,
+  "first_port_setting": null,
+  "random_port": false,
+  "needs": []
+ },
+ {
+  "id": "udp",
+  "label": "UDP",
+  "direction": "push",
+  "carries_klv": true,
+  "first_port_setting": "udp_first_port",
+  "random_port": false,
+  "needs": [
+   "destination_host"
+  ]
+ },
+ {
+  "id": "multicast",
+  "label": "Multicast",
+  "direction": "push",
+  "carries_klv": true,
+  "first_port_setting": null,
+  "random_port": true,
+  "needs": [
+   "multicast_group"
+  ]
+ },
+ {
+  "id": "rtp",
+  "label": "RTP / TS",
+  "direction": "push",
+  "carries_klv": true,
+  "first_port_setting": "rtp_first_port",
+  "random_port": false,
+  "needs": [
+   "destination_host"
+  ]
+ },
+ {
+  "id": "srt_listen",
+  "label": "SRT listen",
+  "direction": "listen",
+  "carries_klv": true,
+  "first_port_setting": "srt_listen_first_port",
+  "random_port": false,
+  "needs": []
+ },
+ {
+  "id": "srt_call",
+  "label": "SRT call",
+  "direction": "push",
+  "carries_klv": true,
+  "first_port_setting": "srt_call_first_port",
+  "random_port": false,
+  "needs": [
+   "destination_host"
+  ]
+ },
+ {
+  "id": "tcp_listen",
+  "label": "TCP listen",
+  "direction": "listen",
+  "carries_klv": true,
+  "first_port_setting": "tcp_first_port",
+  "random_port": false,
+  "needs": []
+ },
+ {
+  "id": "http",
+  "label": "HTTP TS",
+  "direction": "listen",
+  "carries_klv": true,
+  "first_port_setting": "http_first_port",
+  "random_port": false,
+  "needs": []
+ },
+ {
+  "id": "hls",
+  "label": "HLS (TS segments)",
+  "direction": "serve",
+  "carries_klv": true,
+  "first_port_setting": null,
+  "random_port": false,
+  "needs": []
+ },
+ {
+  "id": "srtp",
+  "label": "SRTP",
+  "direction": "push",
+  "carries_klv": true,
+  "first_port_setting": "srtp_first_port",
+  "random_port": false,
+  "needs": [
+   "destination_host",
+   "srtp_key"
+  ]
+ }
+]

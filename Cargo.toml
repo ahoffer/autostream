@@ -1,0 +1,45 @@
+[package]
+name = "autostream"
+version = "3.0.0"
+edition = "2024"
+rust-version = "1.92"
+description = "Video test feed publisher: streams files over many transports with FFmpeg and MediaMTX"
+publish = false
+default-run = "autostream"
+include = [
+    "Cargo.toml",
+    "src/**/*.rs",
+    "src/index.html",
+    "src/jost.woff2",
+    "tests/fixtures/*.json",
+]
+
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+name = "autostream"
+path = "src/bin/autostream.rs"
+
+[[bin]]
+name = "composeup"
+path = "src/bin/composeup.rs"
+
+[[bin]]
+name = "socketmemory"
+path = "src/bin/socketmemory.rs"
+
+[dependencies]
+axum = "0.8.9"
+form_urlencoded = "1.2.2"
+indexmap = { version = "2.14.2", features = ["serde"] }
+libc = "0.2.186"
+log = "0.4.35"
+rand = "0.9.4"
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = { version = "1.0.154", features = ["preserve_order"] }
+tempfile = "3.27.0"
+tokio = { version = "1.54.1", features = ["rt-multi-thread", "net", "signal", "sync", "macros", "time"] }
+
+[profile.release]
+strip = true

@@ -1,0 +1,420 @@
+{
+ "load_cases": [
+  {
+   "document": {
+    "streams": []
+   },
+   "error": "Invalid state document {path}; delete the file to start fresh",
+   "loaded": null
+  },
+  {
+   "document": [],
+   "error": "Invalid state document (Python: AttributeError)",
+   "loaded": null
+  },
+  {
+   "document": {
+    "streams": {
+     "bad name": {
+      "filename": "boats.mp4",
+      "transport": "udp",
+      "port": 40000,
+      "enabled": true,
+      "mode": null,
+      "loop_count": -1,
+      "frame_rate": null,
+      "gop_frames": null
+     }
+    }
+   },
+   "error": "Invalid saved stream 'bad name'",
+   "loaded": null
+  },
+  {
+   "document": {
+    "streams": {
+     "boats": "x"
+    }
+   },
+   "error": "Invalid saved stream 'boats'",
+   "loaded": null
+  },
+  {
+   "document": {
+    "streams": {
+     "boats": {
+      "filename": "",
+      "transport": "udp",
+      "port": 40000,
+      "enabled": true,
+      "mode": null,
+      "loop_count": -1,
+      "frame_rate": null,
+      "gop_frames": null
+     }
+    }
+   },
+   "error": "Stream boats must name a file",
+   "loaded": null
+  },
+  {
+   "document": {
+    "streams": {
+     "boats": {
+      "filename": "boats.mp4",
+      "transport": "pigeon",
+      "port": 40000,
+      "enabled": true,
+      "mode": null,
+      "loop_count": -1,
+      "frame_rate": null,
+      "gop_frames": null
+     }
+    }
+   },
+   "error": "Stream boats has an unknown transport",
+   "loaded": null
+  },
+  {
+   "document": {
+    "streams": {
+     "boats": {
+      "filename": "boats.mp4",
+      "transport": "udp",
+      "port": 70000,
+      "enabled": true,
+      "mode": null,
+      "loop_count": -1,
+      "frame_rate": null,
+      "gop_frames": null
+     }
+    }
+   },
+   "error": "Stream boats has an invalid port",
+   "loaded": null
+  },
+  {
+   "document": {
+    "streams": {
+     "boats": {
+      "filename": "boats.mp4",
+      "transport": "udp",
+      "port": 40000.0,
+      "enabled": true,
+      "mode": null,
+      "loop_count": -1,
+      "frame_rate": null,
+      "gop_frames": null
+     }
+    }
+   },
+   "error": "Stream boats has an invalid port",
+   "loaded": null
+  },
+  {
+   "document": {
+    "streams": {
+     "boats": {
+      "filename": "boats.mp4",
+      "transport": "udp",
+      "port": "40000",
+      "enabled": true,
+      "mode": null,
+      "loop_count": -1,
+      "frame_rate": null,
+      "gop_frames": null
+     }
+    }
+   },
+   "error": "Stream boats has an invalid port",
+   "loaded": null
+  },
+  {
+   "document": {
+    "streams": {
+     "boats": {
+      "filename": "boats.mp4",
+      "transport": "udp",
+      "port": 40000,
+      "enabled": 1,
+      "mode": null,
+      "loop_count": -1,
+      "frame_rate": null,
+      "gop_frames": null
+     }
+    }
+   },
+   "error": "Stream boats has no enabled flag",
+   "loaded": null
+  },
+  {
+   "document": {
+    "streams": {
+     "boats": {
+      "filename": "boats.mp4",
+      "transport": "udp",
+      "port": 40000,
+      "enabled": true,
+      "mode": "copy",
+      "loop_count": -1,
+      "frame_rate": null,
+      "gop_frames": null
+     }
+    }
+   },
+   "error": "Stream boats has an invalid mode",
+   "loaded": null
+  },
+  {
+   "document": {
+    "streams": {
+     "boats": {
+      "filename": "boats.mp4",
+      "transport": "udp",
+      "port": 40000,
+      "enabled": true,
+      "mode": null,
+      "loop_count": -3,
+      "frame_rate": null,
+      "gop_frames": null
+     }
+    }
+   },
+   "error": "Stream boats has an invalid loop count",
+   "loaded": null
+  },
+  {
+   "document": {
+    "streams": {
+     "boats": {
+      "filename": "boats.mp4",
+      "transport": "udp",
+      "port": 40000,
+      "enabled": true,
+      "mode": null,
+      "loop_count": 1.0,
+      "frame_rate": null,
+      "gop_frames": null
+     }
+    }
+   },
+   "error": "Stream boats has an invalid loop count",
+   "loaded": null
+  },
+  {
+   "document": {
+    "streams": {
+     "boats": {
+      "filename": "boats.mp4",
+      "transport": "udp",
+      "port": 40000,
+      "enabled": true,
+      "mode": null,
+      "loop_count": true,
+      "frame_rate": null,
+      "gop_frames": null
+     }
+    }
+   },
+   "error": "Stream boats has an invalid loop count",
+   "loaded": null
+  },
+  {
+   "document": {
+    "streams": {
+     "boats": {
+      "filename": "boats.mp4",
+      "transport": "udp",
+      "port": 40000,
+      "enabled": true,
+      "mode": null,
+      "loop_count": -1,
+      "frame_rate": 0.5,
+      "gop_frames": null
+     }
+    }
+   },
+   "error": "Stream boats has an invalid frame_rate",
+   "loaded": null
+  },
+  {
+   "document": {
+    "streams": {
+     "boats": {
+      "filename": "boats.mp4",
+      "transport": "udp",
+      "port": 40000,
+      "enabled": true,
+      "mode": null,
+      "loop_count": -1,
+      "frame_rate": 121,
+      "gop_frames": null
+     }
+    }
+   },
+   "error": "Stream boats has an invalid frame_rate",
+   "loaded": null
+  },
+  {
+   "document": {
+    "streams": {
+     "boats": {
+      "filename": "boats.mp4",
+      "transport": "udp",
+      "port": 40000,
+      "enabled": true,
+      "mode": null,
+      "loop_count": -1,
+      "frame_rate": "12",
+      "gop_frames": null
+     }
+    }
+   },
+   "error": "Stream boats has an invalid frame_rate",
+   "loaded": null
+  },
+  {
+   "document": {
+    "streams": {
+     "boats": {
+      "filename": "boats.mp4",
+      "transport": "udp",
+      "port": 40000,
+      "enabled": true,
+      "mode": null,
+      "loop_count": -1,
+      "frame_rate": null,
+      "gop_frames": 0
+     }
+    }
+   },
+   "error": "Stream boats has an invalid gop_frames",
+   "loaded": null
+  },
+  {
+   "document": {
+    "streams": {
+     "boats": {
+      "filename": "boats.mp4",
+      "transport": "udp",
+      "port": 40000,
+      "enabled": true,
+      "mode": null,
+      "loop_count": -1,
+      "frame_rate": null,
+      "gop_frames": 2.5
+     }
+    }
+   },
+   "error": null,
+   "loaded": {
+    "streams": {
+     "boats": {
+      "filename": "boats.mp4",
+      "transport": "udp",
+      "port": 40000,
+      "enabled": true,
+      "mode": null,
+      "loop_count": -1,
+      "frame_rate": null,
+      "gop_frames": 2.5
+     }
+    }
+   }
+  },
+  {
+   "document": {
+    "streams": {
+     "boats": {
+      "filename": "boats.mp4",
+      "transport": "udp",
+      "port": 40000,
+      "enabled": true,
+      "mode": null,
+      "loop_count": -1,
+      "frame_rate": 120,
+      "gop_frames": 100000
+     }
+    }
+   },
+   "error": null,
+   "loaded": {
+    "streams": {
+     "boats": {
+      "filename": "boats.mp4",
+      "transport": "udp",
+      "port": 40000,
+      "enabled": true,
+      "mode": null,
+      "loop_count": -1,
+      "frame_rate": 120,
+      "gop_frames": 100000
+     }
+    }
+   }
+  },
+  {
+   "document": {
+    "streams": {
+     "boats": {
+      "filename": "a.mp4",
+      "transport": "rtsp",
+      "enabled": false,
+      "loop_count": 0
+     }
+    }
+   },
+   "error": null,
+   "loaded": {
+    "streams": {
+     "boats": {
+      "filename": "a.mp4",
+      "transport": "rtsp",
+      "enabled": false,
+      "loop_count": 0
+     }
+    }
+   }
+  },
+  {
+   "document": {
+    "streams": {},
+    "settings": {
+     "udp_first_port": 0
+    }
+   },
+   "error": "Invalid saved settings: udp_first_port must be a whole number from 1 to 65535",
+   "loaded": null
+  },
+  {
+   "document": {
+    "streams": {},
+    "settings": []
+   },
+   "error": "Invalid saved settings",
+   "loaded": null
+  },
+  {
+   "document": {
+    "streams": {},
+    "settings": {},
+    "extra": {
+     "kept": true
+    }
+   },
+   "error": null,
+   "loaded": {
+    "streams": {},
+    "settings": {},
+    "extra": {
+     "kept": true
+    }
+   }
+  }
+ ],
+ "sequence_text": "{\n  \"streams\": {\n    \"ships\": {\n      \"filename\": \"boats.mp4\",\n      \"transport\": \"udp\",\n      \"port\": 40000,\n      \"enabled\": false,\n      \"mode\": \"transcode\",\n      \"loop_count\": -1,\n      \"frame_rate\": 12.0,\n      \"gop_frames\": 7\n    },\n    \"third\": {\n      \"filename\": \"boats.mp4\",\n      \"transport\": \"rtsp\",\n      \"port\": null,\n      \"enabled\": true,\n      \"mode\": null,\n      \"loop_count\": -1,\n      \"frame_rate\": null,\n      \"gop_frames\": null\n    }\n  },\n  \"settings\": {\n    \"destination_host\": \"receiver\",\n    \"multicast_group\": \"239.255.0.1\",\n    \"advertised_host\": null,\n    \"max_video_bitrate\": \"\",\n    \"srtp_key\": \"autostreamautostreamautostreamautostream\",\n    \"udp_first_port\": 40000,\n    \"rtp_first_port\": 40020,\n    \"srt_call_first_port\": 40040,\n    \"srtp_first_port\": 40060,\n    \"srt_listen_first_port\": 41000,\n    \"tcp_first_port\": 42000,\n    \"http_first_port\": 43000\n  }\n}\n",
+ "extra_keys_text": "{\n  \"extra\": 1,\n  \"streams\": {\n    \"b\": {\n      \"filename\": \"boats.mp4\",\n      \"transport\": \"udp\",\n      \"port\": 40000,\n      \"enabled\": true,\n      \"mode\": null,\n      \"loop_count\": -1,\n      \"frame_rate\": null,\n      \"gop_frames\": null,\n      \"note\": \"kept\"\n    },\n    \"a\": {\n      \"filename\": \"boats.mp4\",\n      \"transport\": \"udp\",\n      \"port\": 40000,\n      \"enabled\": true,\n      \"mode\": null,\n      \"loop_count\": -1,\n      \"frame_rate\": null,\n      \"gop_frames\": null\n    },\n    \"c\": {\n      \"filename\": \"boats.mp4\",\n      \"transport\": \"udp\",\n      \"port\": 40000,\n      \"enabled\": true,\n      \"mode\": null,\n      \"loop_count\": -1,\n      \"frame_rate\": null,\n      \"gop_frames\": null\n    }\n  },\n  \"settings\": {\n    \"udp_first_port\": 40001,\n    \"unknown\": 2\n  }\n}\n",
+ "missing_file_document": {
+  "streams": {}
+ }
+}

@@ -1,0 +1,542 @@
+{
+ "parse_settings": [
+  {
+   "query": "name=ships",
+   "value": {
+    "name": "ships"
+   },
+   "error": null
+  },
+  {
+   "query": "name=bad%20name",
+   "value": null,
+   "error": "Stream name: letters, digits, - and _ only, 64 at most"
+  },
+  {
+   "query": "name=",
+   "value": null,
+   "error": "Stream name: letters, digits, - and _ only, 64 at most"
+  },
+  {
+   "query": "file=other.mp4",
+   "value": {
+    "filename": "other.mp4"
+   },
+   "error": null
+  },
+  {
+   "query": "file=",
+   "value": null,
+   "error": "Choose a video file"
+  },
+  {
+   "query": "file=../etc/passwd",
+   "value": null,
+   "error": "Choose a video file"
+  },
+  {
+   "query": "file=.hidden",
+   "value": null,
+   "error": "Choose a video file"
+  },
+  {
+   "query": "transport=udp",
+   "value": {
+    "transport": "udp"
+   },
+   "error": null
+  },
+  {
+   "query": "transport=pigeon",
+   "value": null,
+   "error": "Unknown transport"
+  },
+  {
+   "query": "transport=",
+   "value": null,
+   "error": "Unknown transport"
+  },
+  {
+   "query": "loop=3",
+   "value": {
+    "loop_count": 3
+   },
+   "error": null
+  },
+  {
+   "query": "loop=-1",
+   "value": {
+    "loop_count": -1
+   },
+   "error": null
+  },
+  {
+   "query": "loop=-2",
+   "value": null,
+   "error": "Invalid loop count"
+  },
+  {
+   "query": "loop=x",
+   "value": null,
+   "error": "Invalid loop count"
+  },
+  {
+   "query": "loop=",
+   "value": null,
+   "error": "Invalid loop count"
+  },
+  {
+   "query": "mode=transcode",
+   "value": {
+    "mode": "transcode"
+   },
+   "error": null
+  },
+  {
+   "query": "mode=passthrough",
+   "value": {
+    "mode": "passthrough"
+   },
+   "error": null
+  },
+  {
+   "query": "mode=",
+   "value": null,
+   "error": "Invalid mode"
+  },
+  {
+   "query": "mode=x",
+   "value": null,
+   "error": "Invalid mode"
+  },
+  {
+   "query": "gop=auto",
+   "value": {
+    "gop_frames": null
+   },
+   "error": null
+  },
+  {
+   "query": "gop=12",
+   "value": {
+    "gop_frames": 12
+   },
+   "error": null
+  },
+  {
+   "query": "gop=0",
+   "value": null,
+   "error": "GOP length must be a whole number of frames, 1 or more, or auto"
+  },
+  {
+   "query": "gop=x",
+   "value": null,
+   "error": "GOP length must be a whole number of frames, 1 or more, or auto"
+  },
+  {
+   "query": "gop=12.5",
+   "value": null,
+   "error": "GOP length must be a whole number of frames, 1 or more, or auto"
+  },
+  {
+   "query": "fps=auto",
+   "value": {
+    "frame_rate": null
+   },
+   "error": null
+  },
+  {
+   "query": "fps=15",
+   "value": {
+    "frame_rate": 15.0
+   },
+   "error": null
+  },
+  {
+   "query": "fps=29.97",
+   "value": {
+    "frame_rate": 29.97
+   },
+   "error": null
+  },
+  {
+   "query": "fps=0.5",
+   "value": null,
+   "error": "FPS must be a number from 1 to 120, or auto"
+  },
+  {
+   "query": "fps=121",
+   "value": null,
+   "error": "FPS must be a number from 1 to 120, or auto"
+  },
+  {
+   "query": "fps=120",
+   "value": {
+    "frame_rate": 120.0
+   },
+   "error": null
+  },
+  {
+   "query": "fps=1",
+   "value": {
+    "frame_rate": 1.0
+   },
+   "error": null
+  },
+  {
+   "query": "fps=nan",
+   "value": null,
+   "error": "FPS must be a number from 1 to 120, or auto"
+  },
+  {
+   "query": "fps=inf",
+   "value": null,
+   "error": "FPS must be a number from 1 to 120, or auto"
+  },
+  {
+   "query": "fps=x",
+   "value": null,
+   "error": "FPS must be a number from 1 to 120, or auto"
+  },
+  {
+   "query": "fps=1e1",
+   "value": {
+    "frame_rate": 10.0
+   },
+   "error": null
+  },
+  {
+   "query": "loop=1&loop=2",
+   "value": {
+    "loop_count": 1
+   },
+   "error": null
+  },
+  {
+   "query": "name=+ships+",
+   "value": {
+    "name": "ships"
+   },
+   "error": null
+  },
+  {
+   "query": "fps=+15+",
+   "value": {
+    "frame_rate": 15.0
+   },
+   "error": null
+  },
+  {
+   "query": "loop=+3+",
+   "value": {
+    "loop_count": 3
+   },
+   "error": null
+  },
+  {
+   "query": "gop=+12+",
+   "value": {
+    "gop_frames": 12
+   },
+   "error": null
+  },
+  {
+   "query": "",
+   "value": {},
+   "error": null
+  },
+  {
+   "query": "unknown=1",
+   "value": {},
+   "error": null
+  },
+  {
+   "query": "name=ships&file=other.mp4&transport=tcp_listen&loop=2&mode=transcode&gop=auto&fps=24",
+   "value": {
+    "name": "ships",
+    "filename": "other.mp4",
+    "transport": "tcp_listen",
+    "loop_count": 2,
+    "mode": "transcode",
+    "gop_frames": null,
+    "frame_rate": 24.0
+   },
+   "error": null
+  },
+  {
+   "query": "name=%E2%9C%93",
+   "value": null,
+   "error": "Stream name: letters, digits, - and _ only, 64 at most"
+  },
+  {
+   "query": "file=a%2Fb.mp4",
+   "value": null,
+   "error": "Choose a video file"
+  },
+  {
+   "query": "transport=udp&transport=rtp",
+   "value": {
+    "transport": "udp"
+   },
+   "error": null
+  },
+  {
+   "query": "gop=-1",
+   "value": null,
+   "error": "GOP length must be a whole number of frames, 1 or more, or auto"
+  },
+  {
+   "query": "gop=",
+   "value": null,
+   "error": "GOP length must be a whole number of frames, 1 or more, or auto"
+  },
+  {
+   "query": "fps=",
+   "value": null,
+   "error": "FPS must be a number from 1 to 120, or auto"
+  },
+  {
+   "query": "name=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+   "value": {
+    "name": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+   },
+   "error": null
+  },
+  {
+   "query": "name=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+   "value": null,
+   "error": "Stream name: letters, digits, - and _ only, 64 at most"
+  },
+  {
+   "query": "name=-abc",
+   "value": null,
+   "error": "Stream name: letters, digits, - and _ only, 64 at most"
+  },
+  {
+   "query": "name=_abc",
+   "value": null,
+   "error": "Stream name: letters, digits, - and _ only, 64 at most"
+  },
+  {
+   "query": "name=abc-",
+   "value": {
+    "name": "abc-"
+   },
+   "error": null
+  }
+ ],
+ "parse_creation": [
+  {
+   "query": "name=boats&file=a.mp4&transport=udp",
+   "value": {
+    "name": "boats",
+    "filename": "a.mp4",
+    "transport": "udp",
+    "choices": {},
+    "start": true
+   },
+   "error": null
+  },
+  {
+   "query": "name=&file=a.mp4&transport=udp",
+   "value": null,
+   "error": "Name the stream"
+  },
+  {
+   "query": "name=x&file=&transport=udp",
+   "value": null,
+   "error": "Choose a video file"
+  },
+  {
+   "query": "name=x&file=a.mp4&transport=pigeon",
+   "value": null,
+   "error": "Choose a transport"
+  },
+  {
+   "query": "name=x&file=a.mp4&transport=udp&fps=nan",
+   "value": null,
+   "error": "FPS must be a number from 1 to 120, or auto"
+  },
+  {
+   "query": "name=x&file=a.mp4&transport=udp&start=0",
+   "value": {
+    "name": "x",
+    "filename": "a.mp4",
+    "transport": "udp",
+    "choices": {},
+    "start": false
+   },
+   "error": null
+  },
+  {
+   "query": "name=x&file=a.mp4&transport=udp&start=",
+   "value": {
+    "name": "x",
+    "filename": "a.mp4",
+    "transport": "udp",
+    "choices": {},
+    "start": true
+   },
+   "error": null
+  },
+  {
+   "query": "name=x&file=a.mp4&transport=udp&start=1",
+   "value": {
+    "name": "x",
+    "filename": "a.mp4",
+    "transport": "udp",
+    "choices": {},
+    "start": true
+   },
+   "error": null
+  },
+  {
+   "query": "name=x&file=a.mp4&transport=udp&start=no",
+   "value": {
+    "name": "x",
+    "filename": "a.mp4",
+    "transport": "udp",
+    "choices": {},
+    "start": true
+   },
+   "error": null
+  },
+  {
+   "query": "name=x&file=a.mp4&transport=udp&mode=transcode&loop=0&gop=auto&fps=12",
+   "value": {
+    "name": "x",
+    "filename": "a.mp4",
+    "transport": "udp",
+    "choices": {
+     "loop_count": 0,
+     "mode": "transcode",
+     "gop_frames": null,
+     "frame_rate": 12.0
+    },
+    "start": true
+   },
+   "error": null
+  },
+  {
+   "query": "name=bad%20name&file=a.mp4&transport=udp",
+   "value": null,
+   "error": "Stream name: letters, digits, - and _ only, 64 at most"
+  },
+  {
+   "query": "name=x&file=a.mp4&transport=udp&loop=x",
+   "value": null,
+   "error": "Invalid loop count"
+  },
+  {
+   "query": "file=a.mp4&transport=udp",
+   "value": null,
+   "error": "Name the stream"
+  },
+  {
+   "query": "name=x&file=a.mp4&transport=udp&fps=auto",
+   "value": {
+    "name": "x",
+    "filename": "a.mp4",
+    "transport": "udp",
+    "choices": {
+     "frame_rate": null
+    },
+    "start": true
+   },
+   "error": null
+  },
+  {
+   "query": "name=x&file=.hidden&transport=udp",
+   "value": null,
+   "error": "Choose a video file"
+  },
+  {
+   "query": "name=x&file=..%2Fa.mp4&transport=udp",
+   "value": null,
+   "error": "Choose a video file"
+  },
+  {
+   "query": "name=x&file=a.mp4&transport=rtsp&start=0&loop=1",
+   "value": {
+    "name": "x",
+    "filename": "a.mp4",
+    "transport": "rtsp",
+    "choices": {
+     "loop_count": 1
+    },
+    "start": false
+   },
+   "error": null
+  }
+ ],
+ "host_without_port": [
+  {
+   "host_header": "operator-console:9080",
+   "host": "operator-console"
+  },
+  {
+   "host_header": "operator-console",
+   "host": "operator-console"
+  },
+  {
+   "host_header": "[::1]:9080",
+   "host": "[::1]"
+  },
+  {
+   "host_header": "[::1]",
+   "host": "[::1]"
+  },
+  {
+   "host_header": "[::1",
+   "host": null
+  },
+  {
+   "host_header": ":9080",
+   "host": null
+  },
+  {
+   "host_header": "",
+   "host": null
+  },
+  {
+   "host_header": null,
+   "host": null
+  },
+  {
+   "host_header": "a:b:c",
+   "host": "a"
+  }
+ ],
+ "host_for": [
+  {
+   "advertised_host": null,
+   "host_header": "operator-console:9080",
+   "host": "operator-console"
+  },
+  {
+   "advertised_host": null,
+   "host_header": null,
+   "host": "localhost"
+  },
+  {
+   "advertised_host": null,
+   "host_header": "",
+   "host": "localhost"
+  },
+  {
+   "advertised_host": "publisher-host",
+   "host_header": "operator-console:9080",
+   "host": "publisher-host"
+  },
+  {
+   "advertised_host": "publisher-host",
+   "host_header": null,
+   "host": "publisher-host"
+  },
+  {
+   "advertised_host": "publisher-host",
+   "host_header": "",
+   "host": "publisher-host"
+  }
+ ]
+}
