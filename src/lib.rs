@@ -9,6 +9,7 @@ pub mod clocktext;
 pub mod ffmpegcmd;
 pub mod ffmpegprocess;
 pub mod filewatch;
+pub mod hostaddresses;
 pub mod mediamtxprocess;
 pub mod mediastream;
 pub mod queryform;

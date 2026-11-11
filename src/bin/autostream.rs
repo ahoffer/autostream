@@ -8,6 +8,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use autostream::appconfig::Config;
+use autostream::hostaddresses::watch_lan_ip;
 use autostream::mediamtxprocess::{MediamtxOutcome, spawn_mediamtx, supervise_mediamtx};
 use autostream::mediastream::{FfmpegTools, StreamServices};
 use autostream::statefile::StreamStateStore;
@@ -73,14 +74,20 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             api_port: config.api_port,
         },
         hls_dir: config.hls_dir.clone(),
-        host_addresses: HostAddresses {
+        host_addresses: Arc::new(Mutex::new(HostAddresses {
             hostname: config.host_name.clone(),
             lan_ip: config.host_lan_ip.clone(),
-        },
+        })),
     });
 
     let mut watcher = None;
+    let mut host_watcher = None;
     if wait_for_mediamtx(config.rtsp_port, &stop) {
+        if config.refresh_lan_ip {
+            let addresses = api_state.host_addresses.clone();
+            let watcher_stop = stop.clone();
+            host_watcher = Some(thread::spawn(move || watch_lan_ip(addresses, watcher_stop)));
+        }
         let server_stop = stop.clone();
         runtime.spawn(async move {
             let listener = match tokio::net::TcpListener::from_std(listener) {
@@ -118,6 +125,9 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
 
     stop.set();
     runtime.shutdown_timeout(Duration::from_secs(3));
+    if let Some(watcher) = host_watcher {
+        let _ = watcher.join();
+    }
     if let Some(watcher) = watcher
         && !wait_for_thread(&watcher, Duration::from_secs(3))
     {

@@ -5,7 +5,7 @@ use std::process::{Command, Stdio};
 use std::time::Duration;
 
 use autostream::boundedcommand::run_bounded;
-use serde_json::Value;
+use autostream::hostaddresses::lan_ip;
 
 /// How long each discovery command may run before it is killed.
 const DISCOVERY_TIMEOUT: Duration = Duration::from_secs(10);
@@ -35,62 +35,6 @@ impl CommandRunner for BoundedRunner {
             _ => String::new(),
         }
     }
-}
-
-/// Use the IPv4 address of the lowest-metric default-route interface.
-fn lan_ip(runner: &impl CommandRunner) -> String {
-    preferred_route_address(runner).unwrap_or_default()
-}
-
-fn preferred_route_address(runner: &impl CommandRunner) -> Option<String> {
-    let routes = parse_json_array(&runner.output(&["ip", "-j", "-4", "route", "show", "default"]))?;
-    // Iterator::min_by keeps the first of equal metrics, as Python's min does.
-    let route = routes
-        .iter()
-        .filter(|route| non_empty_text(route.get("dev")).is_some())
-        .min_by(|first, second| route_metric(first).total_cmp(&route_metric(second)))?;
-    if let Some(preferred_source) = non_empty_text(route.get("prefsrc")) {
-        return Some(preferred_source.to_string());
-    }
-    let device = non_empty_text(route.get("dev"))?;
-    let interfaces =
-        parse_json_array(&runner.output(&["ip", "-j", "-4", "address", "show", "dev", device]))?;
-    // Only the first global address counts, so one without a local field means no address.
-    let global_address = interfaces
-        .iter()
-        .flat_map(|interface| {
-            interface
-                .get("addr_info")
-                .and_then(Value::as_array)
-                .into_iter()
-                .flatten()
-        })
-        .find(|address| address.get("scope").and_then(Value::as_str) == Some("global"))?;
-    global_address
-        .get("local")
-        .and_then(Value::as_str)
-        .map(str::to_string)
-}
-
-/// Parse `ip -j` output, where empty output means no entries and anything unparsable means failure.
-fn parse_json_array(text: &str) -> Option<Vec<Value>> {
-    if text.is_empty() {
-        return Some(Vec::new());
-    }
-    match serde_json::from_str::<Value>(text) {
-        Ok(Value::Array(entries)) => Some(entries),
-        _ => None,
-    }
-}
-
-fn route_metric(route: &Value) -> f64 {
-    route.get("metric").and_then(Value::as_f64).unwrap_or(0.0)
-}
-
-fn non_empty_text(value: Option<&Value>) -> Option<&str> {
-    value
-        .and_then(Value::as_str)
-        .filter(|text| !text.is_empty())
 }
 
 fn is_set(environment: &Environment, name: &str) -> bool {
@@ -137,7 +81,9 @@ fn host_environment(
 
 fn main() {
     let runner = BoundedRunner;
-    let mut environment = host_environment(std::env::vars().collect(), &runner, || lan_ip(&runner));
+    let mut environment = host_environment(std::env::vars().collect(), &runner, || {
+        lan_ip(|argv| runner.output(argv))
+    });
     // Compose tags the image with VERSION, so default it to the version in Cargo.toml.
     if !is_set(&environment, "VERSION") {
         environment.insert("VERSION".to_string(), env!("CARGO_PKG_VERSION").to_string());
@@ -221,7 +167,7 @@ mod tests {
         let routes = json!([{"dev": "wifi", "metric": 600}, {"dev": "ethernet", "metric": 100}]);
         let addresses = json!([{"addr_info": [{"scope": "global", "local": "192.168.1.20"}]}]);
         let runner = ScriptedRunner::in_order(&[routes.to_string(), addresses.to_string()]);
-        assert_eq!(lan_ip(&runner), "192.168.1.20");
+        assert_eq!(lan_ip(|argv| runner.output(argv)), "192.168.1.20");
         assert_eq!(
             runner.last_call(),
             ["ip", "-j", "-4", "address", "show", "dev", "ethernet"]
@@ -231,7 +177,7 @@ mod tests {
     #[test]
     fn missing_route_leaves_address_unavailable() {
         let runner = ScriptedRunner::always("");
-        assert_eq!(lan_ip(&runner), "");
+        assert_eq!(lan_ip(|argv| runner.output(argv)), "");
     }
 
     #[test]

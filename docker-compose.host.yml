@@ -4,3 +4,5 @@
 services:
   autostream:
     network_mode: host
+    environment:
+      AUTOSTREAM_REFRESH_LAN_IP: ${AUTOSTREAM_REFRESH_LAN_IP:-true}

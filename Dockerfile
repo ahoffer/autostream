@@ -45,7 +45,7 @@ FROM bluenviron/mediamtx:${MEDIAMTX_VERSION}-ffmpeg
 COPY --from=mediamtx-build /out/mediamtx /mediamtx
 
 # Apply package fixes released since the base image was built.
-RUN apk upgrade --no-cache
+RUN apk upgrade --no-cache && apk add --no-cache iproute2
 
 # Create non-root user
 RUN addgroup -g 1000 autostream && \

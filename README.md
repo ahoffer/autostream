@@ -199,6 +199,9 @@ it is the `version` in `Cargo.toml`, which `make build` and `make up` read.
 
 ### Settings
 
+General contains the host and multicast settings, First ports contains the
+starting ports, and Other contains Bitrate cap and SRTP key.
+
 Settings in the UI edits these; `GET` and `POST /api/settings` carry the
 same keys. A blank host or bitrate cap means unset; any other blank takes its
 default. A save takes effect
@@ -213,18 +216,27 @@ at once.
 | SRTP key | Base64 master key the SRTP transport encrypts with; the consumer needs the same key. | `autostream` repeated four times |
 | First ports | One per transport kind that takes one. A new stream takes the lowest free port from its kind's first port and keeps it; changing a first port affects later streams only. | UDP 40000, RTP 40020, SRT call 40040, SRTP 40060, SRT listen 41000, TCP 42000, HTTP TS 43000 |
 
-Advertised host has **Use hostname**, **Use LAN IP**, and **Use localhost**
-shortcuts. They fill the field; Save applies the choice. Clear the field to
-return to using the browser's address. Existing saved values are preserved.
+Destination host and Advertised host each have a **Use LAN IP** shortcut.
+It fills that field; Save applies the choice. Clear Advertised host to return
+to using the browser's address. Existing saved values are preserved.
 
 `make up` runs the `composeup` helper, which supplies the Docker daemon's
 hostname and, for a local Linux daemon, the IPv4 address of the host's
-lowest-metric default-route interface, then starts Compose. The values are
-detected at startup and exposed through `GET /api/host`. A shortcut is
-disabled if its address is unavailable. For remote Docker, other host
-platforms, or a different preferred interface, supply `AUTOSTREAM_HOSTNAME`
-and `AUTOSTREAM_LAN_IP` in the shell environment. These optional variables
-also work with `docker compose up -d` directly (or in `.env` for direct Compose).
+lowest-metric default-route interface, then starts Compose. The addresses are
+exposed through `GET /api/host`. With host networking, the running service
+checks the LAN address every five seconds; the page picks up changes on its
+next five-second poll. No restart is needed after a network change. If no
+address is available, the LAN shortcut is disabled until detection recovers.
+These checks update the shortcut only; saved advertised and destination hosts
+remain explicit settings.
+
+Bridged networking keeps the address supplied at startup, since its network
+interfaces belong to the container. For remote Docker, other host platforms,
+or a different preferred interface, supply `AUTOSTREAM_HOSTNAME` and
+`AUTOSTREAM_LAN_IP` in the shell environment. To retain a fixed LAN shortcut
+with host networking, also set `AUTOSTREAM_REFRESH_LAN_IP=false` before
+`make up` (or in `.env`). The address variables also work with
+`docker compose up -d` directly (or in `.env` for direct Compose).
 
 The UI has no authentication, so anyone who can reach the API port can create
 streams and change where the feeds go.

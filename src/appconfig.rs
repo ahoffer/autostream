@@ -53,6 +53,7 @@ pub struct Config {
     pub ffmpeg_log_dir: PathBuf,
     pub host_name: String,
     pub host_lan_ip: String,
+    pub refresh_lan_ip: bool,
     pub srt_port: u16,
     pub rtp_port: u16,
     pub rtcp_port: u16,
@@ -85,6 +86,7 @@ impl Config {
             ffmpeg_log_dir: PathBuf::from("/tmp/ffmpeg-logs"),
             host_name: String::new(),
             host_lan_ip: String::new(),
+            refresh_lan_ip: false,
             srt_port: 8890,
             rtp_port: 8000,
             rtcp_port: 8001,
@@ -115,6 +117,11 @@ impl Config {
             .get("AUTOSTREAM_LAN_IP")
             .cloned()
             .unwrap_or_default();
+        if let Some(value) = environ.get("AUTOSTREAM_REFRESH_LAN_IP") {
+            config.refresh_lan_ip = value.parse().map_err(|_| {
+                ConfigError("AUTOSTREAM_REFRESH_LAN_IP must be true or false".into())
+            })?;
+        }
         Ok(config)
     }
 
@@ -151,6 +158,7 @@ mod tests {
         assert_eq!((config.rtp_port, config.rtcp_port), (18000, 18001));
         assert_eq!(config.log_level, "info");
         assert!(!config.show_ffmpeg_output());
+        assert!(!config.refresh_lan_ip);
         assert_eq!(
             (config.host_name.as_str(), config.host_lan_ip.as_str()),
             ("", "")
@@ -159,12 +167,16 @@ mod tests {
         with_hosts.insert("AUTOSTREAM_HOSTNAME".into(), "publisher".into());
         with_hosts.insert("AUTOSTREAM_LAN_IP".into(), "192.168.1.20".into());
         with_hosts.insert("LOG_LEVEL".into(), "DEBUG".into());
+        with_hosts.insert("AUTOSTREAM_REFRESH_LAN_IP".into(), "true".into());
         let config = Config::from_env(&with_hosts).unwrap();
         assert_eq!(
             (config.host_name.as_str(), config.host_lan_ip.as_str()),
             ("publisher", "192.168.1.20")
         );
         assert!(config.show_ffmpeg_output());
+        assert!(config.refresh_lan_ip);
+        with_hosts.insert("AUTOSTREAM_REFRESH_LAN_IP".into(), "false".into());
+        assert!(!Config::from_env(&with_hosts).unwrap().refresh_lan_ip);
     }
 
     #[test]
@@ -181,6 +193,11 @@ mod tests {
                 "MEDIAMTX_RTSP_PORT must be a port number",
             ),
             ("LOG_LEVEL", "verbose", "LOG_LEVEL must be one of"),
+            (
+                "AUTOSTREAM_REFRESH_LAN_IP",
+                "yes",
+                "AUTOSTREAM_REFRESH_LAN_IP must be true or false",
+            ),
         ] {
             let mut broken = environ();
             broken.insert(field.into(), value.into());

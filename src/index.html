@@ -536,11 +536,11 @@ function choiceQuery(draft) {
 
 /* ---------- settings ---------- */
 const SETTING_FIELDS = [
-  { key: "destination_host", label: "Destination host", purpose: "where push transports send", type: "text" },
-  { key: "multicast_group", label: "Multicast group", purpose: "address multicast streams send to", type: "text" },
   { key: "advertised_host", label: "Advertised host", purpose: "host written into playback URLs", type: "text" },
+  { key: "destination_host", label: "Destination host", purpose: "where push transports send", type: "text" },
   { key: "max_video_bitrate", label: "Bitrate cap", purpose: "video bitrate limit when transcoding", type: "text" },
   { key: "srtp_key", label: "SRTP key", purpose: "encryption key SRTP streams use", type: "text" },
+  { key: "multicast_group", label: "Multicast group", purpose: "address multicast streams send to", type: "text" },
   { key: "udp_first_port", label: "UDP first port", purpose: "", type: "number" },
   { key: "rtp_first_port", label: "RTP first port", purpose: "", type: "number" },
   { key: "srt_call_first_port", label: "SRT call first port", purpose: "", type: "number" },
@@ -974,34 +974,36 @@ function patchCreateForm(form) {
 
 /* ---------- settings ---------- */
 function buildSettingsPanel() {
+  const isOther = (field) => ["max_video_bitrate", "srtp_key"].includes(field.key);
   const fields = (filter) => SETTING_FIELDS.filter(filter).map((field) => `
     <div class="field">
       <label for="s-${field.key}">${field.label}${field.purpose ? `, <span class="purpose">${field.purpose}</span>` : ""}</label>
       <input id="s-${field.key}" name="${field.key}" type="${field.type}" ${field.type === "number" ? 'min="1" max="65535" step="1" inputmode="numeric"' : ""}>
-      ${field.key === "advertised_host" ? `
-        <span class="purpose">Blank uses the browser address: <span data-host-value="client_host"></span>.</span>
+      ${["destination_host", "advertised_host"].includes(field.key) ? `
         <div class="hostchoices">
-          <span><button type="button" data-act="advertised-host" data-host="hostname">Use hostname</button><span class="purpose" data-host-value="hostname"></span></span>
-          <span><button type="button" data-act="advertised-host" data-host="lan_ip">Use LAN IP</button><span class="purpose" data-host-value="lan_ip"></span></span>
-          <span><button type="button" data-act="advertised-host" data-host="localhost">Use localhost</button></span>
+          <span><button type="button" data-act="use-lan-ip" data-field="${field.key}">Use LAN IP</button><span class="purpose" data-host-value="lan_ip"></span></span>
         </div>` : ""}
     </div>`).join("");
   return `
     <div class="settings">
       <h2 tabindex="-1">Settings</h2>
-      <p class="rule">A blank host or bitrate cap means unset; any other blank field takes its default.</p>
       <form class="form" data-form="settings" autocomplete="off">
         <div class="notebook">
           <div class="tabs" role="tablist" aria-label="Settings">
             <button type="button" role="tab" id="tab-general" aria-controls="tabpanel-general" aria-selected="false" tabindex="-1" data-tab="general">General</button>
             <button type="button" role="tab" id="tab-ports" aria-controls="tabpanel-ports" aria-selected="false" tabindex="-1" data-tab="ports">First ports</button>
+            <button type="button" role="tab" id="tab-other" aria-controls="tabpanel-other" aria-selected="false" tabindex="-1" data-tab="other">Other</button>
           </div>
           <div class="tabpanel" role="tabpanel" id="tabpanel-general" aria-labelledby="tab-general" hidden>
-            <div class="form">${fields((f) => f.type === "text")}</div>
+            <div class="form">${fields((f) => f.type === "text" && !isOther(f))}</div>
           </div>
           <div class="tabpanel" role="tabpanel" id="tabpanel-ports" aria-labelledby="tab-ports" hidden>
             <p class="rule">The lowest port a new stream of each kind takes.</p>
             <div class="form">${fields((f) => f.type === "number")}</div>
+          </div>
+          <div class="tabpanel" role="tabpanel" id="tabpanel-other" aria-labelledby="tab-other" hidden>
+            <p class="rule">A blank host or bitrate cap means unset; any other blank field takes its default.</p>
+            <div class="form">${fields(isOther)}</div>
           </div>
         </div>
         <div class="formactions">
@@ -1020,12 +1022,9 @@ function fillSettingsForm(form, force) {
 function patchSettingsForm(form) {
   renderTabs(form);
   form.elements.advertised_host.placeholder = state.hostAddresses.client_host;
-  setText(form.querySelector('[data-host-value="client_host"]'), state.hostAddresses.client_host);
-  for (const key of ["hostname", "lan_ip"]) {
-    const value = state.hostAddresses[key];
-    form.querySelector(`[data-host="${key}"]`).disabled = !value;
-    setText(form.querySelector(`[data-host-value="${key}"]`), value || "Unavailable");
-  }
+  const lanIp = state.hostAddresses.lan_ip;
+  form.querySelectorAll('[data-act="use-lan-ip"]').forEach((button) => { button.disabled = !lanIp; });
+  form.querySelectorAll('[data-host-value="lan_ip"]').forEach((node) => setText(node, lanIp || "Unavailable"));
   if (!state.settingsDraft) fillSettingsForm(form, false);
   const hasDraft = Boolean(state.settingsDraft);
   form.querySelector('[data-act="settings-save"]').disabled = !hasDraft;
@@ -1177,10 +1176,10 @@ panelNode.addEventListener("click", (event) => {
   if (!button) return;
   const act = button.dataset.act;
   const name = state.panel.name;
-  if (act === "advertised-host") {
-    const value = button.dataset.host === "localhost" ? "localhost" : state.hostAddresses[button.dataset.host];
+  if (act === "use-lan-ip") {
+    const value = state.hostAddresses.lan_ip;
     if (!value) return;
-    const input = button.closest("form").elements.advertised_host;
+    const input = button.closest("form").elements[button.dataset.field];
     input.value = value;
     input.dispatchEvent(new Event("input", { bubbles: true }));
     return;

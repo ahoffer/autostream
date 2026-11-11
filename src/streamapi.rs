@@ -1,8 +1,8 @@
 //! HTTP transport: validate requests, queue mutations, serve snapshots and HLS segments.
 
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 use std::sync::mpsc::{SyncSender, TrySendError};
+use std::sync::{Arc, Mutex};
 
 use axum::Router;
 use axum::body::Body;
@@ -27,12 +27,7 @@ use crate::transports::kind_by_id;
 const INDEX_HTML: &str = include_str!("index.html");
 const FONT_WOFF2: &[u8] = include_bytes!("jost.woff2");
 
-/// The addresses `make up` detected on the host, offered as advertised-host shortcuts.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize)]
-pub struct HostAddresses {
-    pub hostname: String,
-    pub lan_ip: String,
-}
+pub use crate::hostaddresses::HostAddresses;
 
 /// The host choices the settings page offers, with the host a blank advertised
 /// host yields for the client that asked.
@@ -49,7 +44,7 @@ pub struct ApiState {
     pub snapshot: SnapshotCell,
     pub url_facts: UrlFacts,
     pub hls_dir: PathBuf,
-    pub host_addresses: HostAddresses,
+    pub host_addresses: Arc<Mutex<HostAddresses>>,
 }
 
 pub fn router(state: Arc<ApiState>) -> Router {
@@ -321,9 +316,13 @@ fn get(state: &ApiState, path: &str, headers: &HeaderMap) -> Response {
             &Value::Object(read_snapshot(&state.snapshot).settings.to_document()),
         ),
         "/api/host" => {
+            let addresses = state
+                .host_addresses
+                .lock()
+                .unwrap_or_else(|error| error.into_inner());
             let report = HostReport {
-                hostname: &state.host_addresses.hostname,
-                lan_ip: &state.host_addresses.lan_ip,
+                hostname: &addresses.hostname,
+                lan_ip: &addresses.lan_ip,
                 client_host: state.url_facts.host_for(None, host_header(headers)),
             };
             json_response(200, &serde_json::to_value(report).unwrap_or(Value::Null))
@@ -465,6 +464,7 @@ mod tests {
     /// A running API server over a supervisor thread and fake processes.
     struct ApiHarness {
         address: SocketAddr,
+        host_addresses: Arc<Mutex<HostAddresses>>,
         stop: StopSignal,
         supervisor: Option<thread::JoinHandle<()>>,
         runtime: Option<tokio::runtime::Runtime>,
@@ -510,10 +510,10 @@ mod tests {
                     api_port: 8080,
                 },
                 hls_dir: config.hls_dir.clone(),
-                host_addresses: HostAddresses {
+                host_addresses: Arc::new(Mutex::new(HostAddresses {
                     hostname: "publisher".into(),
                     lan_ip: "192.168.1.20".into(),
-                },
+                })),
             });
             let runtime = tokio::runtime::Builder::new_multi_thread()
                 .worker_threads(2)
@@ -524,6 +524,7 @@ mod tests {
             let address = listener.local_addr().unwrap();
             listener.set_nonblocking(true).unwrap();
             let server_stop = stop.clone();
+            let host_addresses = api_state.host_addresses.clone();
             runtime.spawn(async move {
                 let listener = tokio::net::TcpListener::from_std(listener).unwrap();
                 axum::serve(listener, router(api_state))
@@ -536,6 +537,7 @@ mod tests {
             });
             Self {
                 address,
+                host_addresses,
                 stop,
                 supervisor: Some(supervisor),
                 runtime: Some(runtime),
@@ -714,6 +716,20 @@ mod tests {
             api.stream("boats", Some("operator-console:9080"))["register"][0][1],
             "rtsp://operator-console:8554/boats"
         );
+    }
+
+    #[test]
+    fn host_api_reports_address_changes_without_changing_saved_settings() {
+        let api = setup();
+        let settings = api.request("GET", "/api/settings").1;
+        for address in ["172.31.50.72", "", "192.168.0.228"] {
+            api.host_addresses.lock().unwrap().lan_ip = address.into();
+            let report = api.fetch("GET", "/api/host", Some("localhost:9080")).json();
+            assert_eq!(report["lan_ip"], address);
+            assert_eq!(report["hostname"], "publisher");
+            assert_eq!(report["client_host"], "localhost");
+            assert_eq!(api.request("GET", "/api/settings").1, settings);
+        }
     }
 
     #[test]
