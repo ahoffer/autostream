@@ -1,11 +1,14 @@
 # Typical flow: build -> test -> up. Set COMPOSE_FILE in .env to select
 # the networking mode. The image version comes from Cargo.toml.
 
-.PHONY: help build test up
+.PHONY: help build test up push
 
 .DEFAULT_GOAL := help
 
 VERSION := $(shell sed -n 's/^version = "\(.*\)"$$/\1/p' Cargo.toml | head -n 1)
+
+# Where `make push` publishes the image. Override it on the command line.
+REGISTRY_IMAGE ?= registry.octo-cx-prod.runshiftup.com/octo-cx/common/autostream
 
 help:  ## List available targets
 	@awk 'BEGIN {FS = ":.*## "} /^[a-zA-Z0-9_-]+:.*## / {printf "  %-20s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -26,3 +29,9 @@ up:  ## Start the stack using COMPOSE_FILE in .env
 	mkdir -p mounted
 	cargo run --quiet --release --bin composeup
 	@. ./.env && printf '\nPlay page: http://localhost:%s/\nStream Control: http://localhost:%s/\n' "$$PLAY_PORT" "$$STREAM_API_PORT"
+
+# Requires `docker login registry.octo-cx-prod.runshiftup.com` and a GitLab
+# project at the REGISTRY_IMAGE path with its container registry enabled.
+push:  ## Tag the built image and push it to the octo-cx registry
+	set -a && . ./.env && docker tag $$CONTAINER_NAME:$(VERSION) $(REGISTRY_IMAGE):$(VERSION)
+	docker push $(REGISTRY_IMAGE):$(VERSION)
