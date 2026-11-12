@@ -8,7 +8,7 @@ Ground truth is always the process table and the API:
 
 ```bash
 docker exec autostream ps -o pid,etime,args | grep ffmpeg
-curl -s localhost:9080/api/streams | python3 -m json.tool
+curl -s localhost:9180/api/streams | python3 -m json.tool
 docker logs --since 5m autostream
 cat mounted/streams_config.json
 ```
@@ -111,7 +111,7 @@ notices a dead process within one 2 s tick.
 
 From the consumer host, inside its `video-streaming` container (`docker exec
 video-streaming ffprobe -v error -show_streams <url>`): RTSP over TCP and
-UDP, RTMP, HLS from MediaMTX, HLS (TS segments) from port 9080, SRT listen,
+UDP, RTMP, HLS from MediaMTX, HLS (TS segments) from port 9180, SRT listen,
 TCP listen and HTTP TS all open and list the tracks; the transport stream
 kinds list `klv` for the KLV file. MediaMTX RTSP carries the same metadata
 bytes as a data track (FFmpeg 8.1.2 leaves its codec name unset); MediaMTX

@@ -13,7 +13,7 @@ use autostream::mediamtxprocess::{MediamtxOutcome, spawn_mediamtx, supervise_med
 use autostream::mediastream::{FfmpegTools, StreamServices};
 use autostream::statefile::StreamStateStore;
 use autostream::stopsignal::StopSignal;
-use autostream::streamapi::{ApiState, HostAddresses, router};
+use autostream::streamapi::{ApiState, HostAddresses, play_router, router};
 use autostream::streamlog::{StreamLogger, configure_logging};
 use autostream::streamregistry::StreamRegistry;
 use autostream::streamresponses::UrlFacts;
@@ -21,6 +21,7 @@ use autostream::streamsupervisor::{
     QUEUE_CAPACITY, SnapshotCell, publish, run_loop, snapshot_of, wait_for_mediamtx, watch_files,
 };
 use autostream::udphost::UdpHostResolver;
+use axum::Router;
 use tokio::signal::unix::{SignalKind, signal};
 
 fn main() -> ExitCode {
@@ -56,8 +57,8 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()?;
-    let listener = TcpListener::bind(("0.0.0.0", config.api_port))?;
-    listener.set_nonblocking(true)?;
+    let api_listener = bind_listener(config.api_port)?;
+    let play_listener = bind_listener(config.play_port)?;
     install_signal_handlers(&runtime, &stop)?;
     // MediaMTX is a vital child: the thread raises `stop` if it exits first.
     let mediamtx =
@@ -78,6 +79,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             hostname: config.host_name.clone(),
             lan_ip: config.host_lan_ip.clone(),
         })),
+        network_host: config.container_name.clone(),
     });
 
     let mut watcher = None;
@@ -88,33 +90,18 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             let watcher_stop = stop.clone();
             host_watcher = Some(thread::spawn(move || watch_lan_ip(addresses, watcher_stop)));
         }
-        let server_stop = stop.clone();
-        runtime.spawn(async move {
-            let listener = match tokio::net::TcpListener::from_std(listener) {
-                Ok(listener) => listener,
-                Err(error) => {
-                    log::error!("Cannot serve the API: {error}");
-                    server_stop.set();
-                    return;
-                }
-            };
-            let shutdown = server_stop.clone();
-            let served = axum::serve(listener, router(api_state))
-                .with_graceful_shutdown(async move {
-                    let _ = tokio::task::spawn_blocking(move || shutdown.wait_forever()).await;
-                })
-                .await;
-            if let Err(error) = served {
-                log::error!("API server failed: {error}");
-                server_stop.set();
-            }
-        });
+        runtime.spawn(serve(api_listener, router(api_state.clone()), stop.clone()));
+        runtime.spawn(serve(play_listener, play_router(api_state), stop.clone()));
         let videos_dir = config.videos_dir.clone();
         let watcher_stop = stop.clone();
         watcher = Some(thread::spawn(move || {
             watch_files(&videos_dir, requests, watcher_stop)
         }));
-        log::info!("Supervisor starting, UI on port {}", config.api_port);
+        log::info!(
+            "Supervisor starting, play page on port {}, developer UI on port {}",
+            config.play_port,
+            config.api_port
+        );
         run_loop(
             &mut registry,
             &queue,
@@ -137,6 +124,34 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         Ok(MediamtxOutcome::Stopped) => Ok(()),
         Ok(MediamtxOutcome::Exited(status)) => Err(format!("MediaMTX exited ({status})").into()),
         Err(_) => Err("MediaMTX watcher panicked".into()),
+    }
+}
+
+fn bind_listener(port: u16) -> std::io::Result<TcpListener> {
+    let listener = TcpListener::bind(("0.0.0.0", port))?;
+    listener.set_nonblocking(true)?;
+    Ok(listener)
+}
+
+/// Serve one port until `stop` is set; a server that cannot run stops the service.
+async fn serve(listener: TcpListener, app: Router, stop: StopSignal) {
+    let listener = match tokio::net::TcpListener::from_std(listener) {
+        Ok(listener) => listener,
+        Err(error) => {
+            log::error!("Cannot serve the API: {error}");
+            stop.set();
+            return;
+        }
+    };
+    let shutdown = stop.clone();
+    let served = axum::serve(listener, app)
+        .with_graceful_shutdown(async move {
+            let _ = tokio::task::spawn_blocking(move || shutdown.wait_forever()).await;
+        })
+        .await;
+    if let Err(error) = served {
+        log::error!("API server failed: {error}");
+        stop.set();
     }
 }
 

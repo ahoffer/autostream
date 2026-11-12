@@ -3,6 +3,7 @@
 use serde::Serialize;
 
 use crate::runtimesettings::RuntimeSettings;
+use crate::streamregistry::is_play_stream;
 use crate::transports::{Direction, KINDS, TemplateFields, kind_by_id};
 
 /// The ffmpeg lifecycle word the UI shows for a stream.
@@ -149,6 +150,60 @@ pub fn describe_streams(
                     .iter()
                     .map(|(label, template)| (*label, fields.fill(template)))
                     .collect(),
+            }
+        })
+        .collect()
+}
+
+/// One video as the play page shows it: its play stream's state and the address to register.
+#[derive(Clone, Debug, PartialEq, Serialize)]
+pub struct PlayRow {
+    pub file: String,
+    pub state: Option<StreamState>,
+    pub reason: Option<String>,
+    pub playing: bool,
+    pub url: Option<String>,
+}
+
+/// Every offered video with its play stream. Addresses use the advertised host when one
+/// is set, and otherwise the container's name on the consumer network.
+pub fn describe_play_rows(
+    snapshot: &StatusSnapshot,
+    network_host: &str,
+    url_facts: &UrlFacts,
+) -> Vec<PlayRow> {
+    let host = snapshot
+        .settings
+        .advertised_host
+        .as_deref()
+        .filter(|host| !host.is_empty())
+        .unwrap_or(network_host);
+    snapshot
+        .videos
+        .iter()
+        .map(|file| {
+            let stream = snapshot
+                .statuses
+                .iter()
+                .find(|status| is_play_stream(&status.filename, &status.transport, file));
+            let url = stream.and_then(|status| {
+                describe_streams(
+                    std::slice::from_ref(status),
+                    &snapshot.settings,
+                    host,
+                    url_facts,
+                )
+                .remove(0)
+                .register
+                .into_iter()
+                .find_map(|(label, url)| (label == "rtsp").then_some(url))
+            });
+            PlayRow {
+                file: file.clone(),
+                state: stream.map(|status| status.state),
+                reason: stream.and_then(|status| status.reason.clone()),
+                playing: stream.is_some_and(|status| status.enabled),
+                url,
             }
         })
         .collect()

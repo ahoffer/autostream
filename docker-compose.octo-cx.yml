@@ -15,6 +15,7 @@ services:
       - "${MEDIAMTX_RTMP_PORT}:${MEDIAMTX_RTMP_PORT}"      # RTMP
       - "${MEDIAMTX_RTP_PORT}:${MEDIAMTX_RTP_PORT}/udp"    # RTP
       - "${MEDIAMTX_RTCP_PORT}:${MEDIAMTX_RTCP_PORT}/udp"  # RTCP
+      - "${PLAY_PORT}:${PLAY_PORT}"                        # Play page
       - "${STREAM_API_PORT}:${STREAM_API_PORT}"            # Stream Control UI, HLS (TS segments)
       - "41000-41099:41000-41099/udp"                      # SRT listen
       - "42000-42099:42000-42099"                          # TCP listen

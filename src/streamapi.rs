@@ -19,12 +19,13 @@ use crate::runtimesettings::RuntimeSettings;
 use crate::statefile::is_valid_stream_name;
 use crate::streamrecord::VideoMode;
 use crate::streamregistry::{OperationError, StreamRegistry};
-use crate::streamresponses::{UrlFacts, describe_streams, describe_transports};
+use crate::streamresponses::{UrlFacts, describe_play_rows, describe_streams, describe_transports};
 use crate::streamsupervisor::{ApiReply, SnapshotCell, SupervisorRequest, read_snapshot};
 use crate::transports::kind_by_id;
 
-/// The control page and its typeface, served so the page works offline.
+/// The control page, the evaluator's play page, and their typeface, served so the pages work offline.
 const INDEX_HTML: &str = include_str!("index.html");
+const PLAY_HTML: &str = include_str!("play.html");
 const FONT_WOFF2: &[u8] = include_bytes!("jost.woff2");
 
 pub use crate::hostaddresses::HostAddresses;
@@ -45,10 +46,17 @@ pub struct ApiState {
     pub url_facts: UrlFacts,
     pub hls_dir: PathBuf,
     pub host_addresses: Arc<Mutex<HostAddresses>>,
+    /// The container's name on the consumer network, for the play page's addresses.
+    pub network_host: String,
 }
 
 pub fn router(state: Arc<ApiState>) -> Router {
     Router::new().fallback(dispatch).with_state(state)
+}
+
+/// The evaluator's play page and the calls it makes; nothing else answers on its port.
+pub fn play_router(state: Arc<ApiState>) -> Router {
+    Router::new().fallback(dispatch_play).with_state(state)
 }
 
 /// A mutation the supervisor executes on its own thread.
@@ -62,6 +70,10 @@ pub enum Command {
     Stop(String),
     Delete(String),
     Settings(String, StreamChanges),
+    /// Play a video file from the play page: start its play stream, made if needed.
+    Play(String),
+    /// Stop a video file's play stream.
+    StopPlaying(String),
 }
 
 /// A new stream as the create request describes it.
@@ -100,6 +112,14 @@ pub fn execute_request(
                 Err(error) => return Err(error),
             }
         }
+        Command::Play(filename) => match registry.play_file(&filename) {
+            Ok(finished) => finished,
+            Err(OperationError::Refused(reason)) => {
+                return Ok(reply(json!({"error": reason}), 400));
+            }
+            Err(error) => return Err(error),
+        },
+        Command::StopPlaying(filename) => registry.stop_file(&filename)?,
         Command::StartAll => registry.start_all_streams()?,
         Command::StopAll => registry.stop_all_streams(true)?,
         Command::Start(name)
@@ -282,16 +302,54 @@ fn host_header(headers: &HeaderMap) -> Option<&str> {
         .and_then(|value| value.to_str().ok())
 }
 
+fn html_response(page: &'static str) -> Response {
+    let mut response = Response::new(Body::from(page));
+    response.headers_mut().insert(
+        header::CONTENT_TYPE,
+        HeaderValue::from_static("text/html; charset=utf-8"),
+    );
+    response
+}
+
+fn font_response() -> Response {
+    bytes_response("font/woff2", "public, max-age=86400", FONT_WOFF2.to_vec())
+}
+
+async fn dispatch_play(State(state): State<Arc<ApiState>>, method: Method, uri: Uri) -> Response {
+    let query = QueryForm::parse(uri.query().unwrap_or(""));
+    let play_command = |command: fn(String) -> Command| match query
+        .first("file")
+        .map(str::trim)
+        .filter(|file| !file.is_empty())
+    {
+        Some(file) => Ok(command(file.to_string())),
+        None => Err(json_response(400, &json!({"error": "Choose a video file"}))),
+    };
+    let command = match (&method, uri.path()) {
+        (&Method::GET, "/" | "/index.html") => return html_response(PLAY_HTML),
+        (&Method::GET, "/jost.woff2") => return font_response(),
+        (&Method::GET, "/api/play") => {
+            let rows = describe_play_rows(
+                &read_snapshot(&state.snapshot),
+                &state.network_host,
+                &state.url_facts,
+            );
+            return json_response(200, &serde_json::to_value(rows).unwrap_or(Value::Null));
+        }
+        (&Method::POST, "/api/play/start") => play_command(Command::Play),
+        (&Method::POST, "/api/play/stop") => play_command(Command::StopPlaying),
+        (&Method::GET | &Method::POST, _) => return not_found(),
+        _ => return json_response(501, &json!({"error": "Unsupported method"})),
+    };
+    match command {
+        Ok(command) => submit(&state, command).await,
+        Err(refusal) => refusal,
+    }
+}
+
 fn get(state: &ApiState, path: &str, headers: &HeaderMap) -> Response {
     match path {
-        "/" | "/index.html" => {
-            let mut response = Response::new(Body::from(INDEX_HTML));
-            response.headers_mut().insert(
-                header::CONTENT_TYPE,
-                HeaderValue::from_static("text/html; charset=utf-8"),
-            );
-            response
-        }
+        "/" | "/index.html" => html_response(INDEX_HTML),
         "/api/streams" => {
             let snapshot = read_snapshot(&state.snapshot);
             let host = state.url_facts.host_for(
@@ -327,7 +385,7 @@ fn get(state: &ApiState, path: &str, headers: &HeaderMap) -> Response {
             };
             json_response(200, &serde_json::to_value(report).unwrap_or(Value::Null))
         }
-        "/jost.woff2" => bytes_response("font/woff2", "public, max-age=86400", FONT_WOFF2.to_vec()),
+        "/jost.woff2" => font_response(),
         _ => match path.strip_prefix("/hls/") {
             Some(relative) => hls_file(&state.hls_dir, relative),
             None => not_found(),
@@ -478,6 +536,14 @@ mod tests {
 
     impl ApiHarness {
         fn start(harness: Harness, queue_capacity: usize) -> Self {
+            Self::serve(harness, queue_capacity, router)
+        }
+
+        fn serve(
+            harness: Harness,
+            queue_capacity: usize,
+            make_router: fn(Arc<ApiState>) -> Router,
+        ) -> Self {
             let Harness {
                 mut registry,
                 ffmpeg,
@@ -514,6 +580,7 @@ mod tests {
                     hostname: "publisher".into(),
                     lan_ip: "192.168.1.20".into(),
                 })),
+                network_host: "autostream".into(),
             });
             let runtime = tokio::runtime::Builder::new_multi_thread()
                 .worker_threads(2)
@@ -527,7 +594,7 @@ mod tests {
             let host_addresses = api_state.host_addresses.clone();
             runtime.spawn(async move {
                 let listener = tokio::net::TcpListener::from_std(listener).unwrap();
-                axum::serve(listener, router(api_state))
+                axum::serve(listener, make_router(api_state))
                     .with_graceful_shutdown(async move {
                         let _ =
                             tokio::task::spawn_blocking(move || server_stop.wait_forever()).await;
@@ -627,6 +694,46 @@ mod tests {
     fn source_name(api: &ApiHarness) -> String {
         let row = api.stream("boats", None);
         row["filename"].as_str().unwrap().to_string()
+    }
+
+    #[test]
+    fn the_play_port_plays_and_stops_videos_and_offers_nothing_else() {
+        let api = ApiHarness::serve(Harness::new(), 8, play_router);
+        let page = api.fetch("GET", "/", None);
+        assert_eq!(page.status, 200);
+        assert_eq!(
+            page.content_type.as_deref(),
+            Some("text/html; charset=utf-8")
+        );
+        assert_eq!(api.fetch("GET", "/api/streams", None).status, 404);
+        assert_eq!(
+            api.fetch("POST", "/api/streams/start-all", None).status,
+            404
+        );
+        assert_eq!(
+            api.request("POST", "/api/play/start"),
+            (400, json!({"error": "Choose a video file"}))
+        );
+
+        let rows = api.request("GET", "/api/play").1;
+        assert_eq!(
+            rows,
+            json!([{"file": "source.mp4", "state": null, "reason": null, "playing": false, "url": null}])
+        );
+        assert_eq!(
+            api.request("POST", "/api/play/start?file=source.mp4"),
+            (200, json!({"success": true}))
+        );
+        let row = &api.request("GET", "/api/play").1[0];
+        assert_eq!(row["playing"], true);
+        // The test settings advertise no host, so the address names the container.
+        assert_eq!(row["url"], "rtsp://autostream:8554/source");
+        assert_eq!(
+            api.request("POST", "/api/play/stop?file=source.mp4"),
+            (200, json!({"success": true}))
+        );
+        assert_eq!(api.request("GET", "/api/play").1[0]["playing"], false);
+        assert_eq!(api.request("POST", "/api/play/start?file=other.mp4").0, 400);
     }
 
     #[test]

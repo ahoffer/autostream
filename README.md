@@ -19,7 +19,7 @@ multicast, RTP, SRT, TCP, HTTP, HLS segments or SRTP.
    make up          # Uses COMPOSE_FILE in .env; see "Networking modes"
    ```
 
-4. **Point the feeds at their consumer**: open `http://<this host>:9080`,
+4. **Point the feeds at their consumer**: open `http://<this host>:9180`,
    press Settings, and enter the destination host.
 
 5. **Find your videos streaming**: each stream's detail shows the playback
@@ -27,6 +27,20 @@ multicast, RTP, SRT, TCP, HTTP, HLS segments or SRTP.
 
 6. **Create other streams**: press New stream, choose the file and the
    transport, name it, and press Create and start.
+
+## Play page
+
+For people evaluating cxedge on the same host. Start autostream in the
+consumer network mode (see "Networking modes") and open
+`http://<this host>:9080`. The page lists every file in `videos/` with
+Play, Stop, and the RTSP address to register in cxedge, such as
+`rtsp://autostream:10554/cargoship`.
+
+Play starts the file's first RTSP / HLS / RTMP stream, or creates one named
+after the file as a first start does. Stop stops that stream. The address uses
+the advertised host when one is set, and otherwise the container name, which
+cxedge resolves on `octo-cx-network`. Only the page and its calls answer on
+this port. Stream Control stays on `STREAM_API_PORT`.
 
 ## How It Works
 
@@ -60,7 +74,7 @@ multicast, RTP, SRT, TCP, HTTP, HLS segments or SRTP.
 | SRT call | we push | yes | `srt://0.0.0.0:<port>?mode=listener` |
 | TCP listen | consumer pulls | yes | `tcp://<host>:<port>` |
 | HTTP TS | consumer pulls | yes | `http://<host>:<port>` |
-| HLS (TS segments) | consumer pulls | yes | `http://<host>:9080/hls/<name>/index.m3u8` |
+| HLS (TS segments) | consumer pulls | yes | `http://<host>:9180/hls/<name>/index.m3u8` |
 | SRTP | we push | yes | `srtp://0.0.0.0:<port>` plus the key |
 
 `<host>` is the advertised host (see Settings). Multicast takes a random port
@@ -194,7 +208,8 @@ it is the `version` in `Cargo.toml`, which `make build` and `make up` read.
 | `MEDIAMTX_SRT_PORT` | Local SRT ingest port (loopback only) |
 | `MEDIAMTX_RTP_PORT` | RTP UDP port |
 | `MEDIAMTX_RTCP_PORT` | RTCP UDP port |
-| `STREAM_API_PORT` | Stream control UI/API port |
+| `PLAY_PORT` | Play page port (see "Play page") |
+| `STREAM_API_PORT` | Stream Control page, full API and HLS (TS segments) port |
 | `LOG_LEVEL` | Supervisor log level; `debug` also shows ffmpeg output |
 
 ### Settings
@@ -257,6 +272,10 @@ Every mutation is a `POST`; GETs read the last published snapshot.
 - `POST /api/streams/start-all`, `POST /api/streams/stop-all`, `POST /api/settings?...`.
 - `GET /hls/<name>/index.m3u8` and segments for HLS (TS segments) streams.
 
+On `PLAY_PORT` only: `GET /api/play` lists every video with its play stream
+state and RTSP address, and `POST /api/play/start?file=` and
+`POST /api/play/stop?file=` play and stop one.
+
 Queue saturation returns 503; an operation that cannot finish returns 409;
 storage failures return 500; a refused creation or setting returns 400 with
 the reason. Requests are not automatically retried.
@@ -269,7 +288,7 @@ the service that ships in the image; `composeup`, the host helper behind
 `make up`; and `socketmemory`, a host-side diagnostic that captures slab
 counters and socket queues in every running container once per minute into
 `.generated/socket-memory.jsonl` (`cargo run --release --bin socketmemory -- --help`;
-Linux and a Docker CLI required). The UI page and its font live in `src/` and
+Linux and a Docker CLI required). The two pages, `index.html` and `play.html`, and their font live in `src/` and
 are embedded in the service binary.
 
 `streamsupervisor.rs` owns all stream changes and persistence. HTTP handlers
@@ -359,6 +378,7 @@ The `COMPOSE_FILE` line in `.env` selects the networking mode:
   sudo ufw allow from <lan subnet> to any port 8888 proto tcp
   sudo ufw allow from <lan subnet> to any port 1935 proto tcp
   sudo ufw allow from <lan subnet> to any port 9080 proto tcp
+  sudo ufw allow from <lan subnet> to any port 9180 proto tcp
   sudo ufw allow from <lan subnet> to any port 8000:8001 proto udp
   sudo ufw allow from <lan subnet> to any port 41000:41099 proto udp
   sudo ufw allow from <lan subnet> to any port 42000:43099 proto tcp

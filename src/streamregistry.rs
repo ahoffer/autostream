@@ -55,6 +55,12 @@ pub fn is_ignored(path: &Path) -> bool {
     name.starts_with('.') || name.to_lowercase().starts_with("readme")
 }
 
+/// The play page plays a file through the first stream, in creation order,
+/// that serves that file through MediaMTX.
+pub fn is_play_stream(stream_filename: &str, stream_transport: &str, filename: &str) -> bool {
+    stream_filename == filename && stream_transport == SEED_TRANSPORT
+}
+
 /// The file's stem as a valid stream name: runs of other characters become one dash,
 /// the name starts with a letter or digit, and a name already taken gets a number.
 pub fn seeded_stream_name(filename: &str, taken: &dyn Fn(&str) -> bool) -> String {
@@ -507,6 +513,52 @@ impl StreamRegistry {
             }
         }
         self.seeding = self.streams.is_empty();
+    }
+
+    /// Start the file's play stream, made under its seeded name when the file has none yet.
+    pub fn play_file(&mut self, filename: &str) -> Result<bool, OperationError> {
+        if !self.videos.iter().any(|video| video == filename) {
+            return Err(OperationError::Refused(format!(
+                "No video named {filename}"
+            )));
+        }
+        match self.play_stream_name(filename) {
+            Some(name) => {
+                let (stream, services) = self.stream_mut(&name).expect("found above");
+                Ok(stream.start_streaming(services)?)
+            }
+            None => {
+                let name =
+                    seeded_stream_name(filename, &|candidate| self.streams.contains_key(candidate));
+                self.create_stream(
+                    &name,
+                    filename,
+                    SEED_TRANSPORT,
+                    &StreamChanges::default(),
+                    true,
+                )?;
+                Ok(true)
+            }
+        }
+    }
+
+    /// Stop the file's play stream; a file without one has nothing to stop.
+    pub fn stop_file(&mut self, filename: &str) -> Result<bool, OperationError> {
+        let Some(name) = self.play_stream_name(filename) else {
+            return Ok(true);
+        };
+        let (stream, services) = self.stream_mut(&name).expect("found above");
+        Ok(stream.stop_streaming(services)?)
+    }
+
+    fn play_stream_name(&self, filename: &str) -> Option<String> {
+        self.streams
+            .iter()
+            .find(|(_, stream)| {
+                let binding = stream.binding();
+                is_play_stream(&binding.filename, &binding.transport, filename)
+            })
+            .map(|(name, _)| name.clone())
     }
 
     pub fn status(&mut self) -> Vec<StreamStatus> {
@@ -984,6 +1036,35 @@ mod tests {
             .registry
             .supervise(Some(&with_creates(&["cargoship.mp4"], &["cargoship.mp4"])));
         assert_eq!(harness.registry.stream_names(), ["mine"]);
+    }
+
+    #[test]
+    fn playing_a_file_starts_its_first_mediamtx_stream_or_makes_one() {
+        let mut harness = Harness::new();
+        let source = harness.source_name();
+        harness.create("source-udp", &source, "udp");
+        assert!(harness.registry.play_file(&source).unwrap());
+        assert_eq!(harness.registry.stream_names(), ["source-udp", "source"]);
+        assert_eq!(harness.status("source").transport, "rtsp");
+        assert!(harness.status("source").enabled);
+
+        assert!(harness.registry.stop_file(&source).unwrap());
+        assert!(!harness.status("source").enabled);
+        assert!(harness.status("source-udp").enabled);
+        assert!(harness.registry.play_file(&source).unwrap());
+        assert!(harness.status("source").enabled);
+        assert_eq!(harness.registry.stream_names().len(), 2);
+    }
+
+    #[test]
+    fn only_offered_videos_play_and_a_file_without_a_stream_has_nothing_to_stop() {
+        let mut harness = Harness::new();
+        assert!(matches!(
+            harness.registry.play_file("missing.mp4"),
+            Err(OperationError::Refused(_))
+        ));
+        assert!(harness.registry.stop_file("missing.mp4").unwrap());
+        assert!(harness.registry.stream_names().is_empty());
     }
 
     #[test]

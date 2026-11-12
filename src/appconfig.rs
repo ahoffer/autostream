@@ -46,6 +46,10 @@ pub struct Config {
     pub hls_port: u16,
     pub rtmp_port: u16,
     pub api_port: u16,
+    /// The evaluator page's port; the developer page and full API stay on `api_port`.
+    pub play_port: u16,
+    /// The container's name on the consumer network, where the play page's addresses point.
+    pub container_name: String,
     pub log_level: String,
     pub videos_dir: PathBuf,
     pub state_path: PathBuf,
@@ -79,6 +83,8 @@ impl Config {
             hls_port,
             rtmp_port,
             api_port,
+            play_port: 9080,
+            container_name: "autostream".to_string(),
             log_level: log_level.to_string(),
             videos_dir: PathBuf::from("/app/videos"),
             state_path: PathBuf::from("/app/mounted/streams_config.json"),
@@ -106,6 +112,8 @@ impl Config {
             require_port("STREAM_API_PORT", environ)?,
             &require_env("LOG_LEVEL", environ)?.to_lowercase(),
         )?;
+        config.play_port = require_port("PLAY_PORT", environ)?;
+        config.container_name = require_env("CONTAINER_NAME", environ)?;
         config.srt_port = require_port("MEDIAMTX_SRT_PORT", environ)?;
         config.rtp_port = require_port("MEDIAMTX_RTP_PORT", environ)?;
         config.rtcp_port = require_port("MEDIAMTX_RTCP_PORT", environ)?;
@@ -143,6 +151,8 @@ mod tests {
             ("MEDIAMTX_RTP_PORT", "18000"),
             ("MEDIAMTX_RTCP_PORT", "18001"),
             ("STREAM_API_PORT", "8080"),
+            ("PLAY_PORT", "8070"),
+            ("CONTAINER_NAME", "publisher"),
             ("LOG_LEVEL", "info"),
         ]
         .into_iter()
@@ -155,6 +165,8 @@ mod tests {
         let config = Config::from_env(&environ()).unwrap();
         assert_eq!(config.rtsp_port, 8554);
         assert_eq!(config.srt_port, 18890);
+        assert_eq!(config.play_port, 8070);
+        assert_eq!(config.container_name, "publisher");
         assert_eq!((config.rtp_port, config.rtcp_port), (18000, 18001));
         assert_eq!(config.log_level, "info");
         assert!(!config.show_ffmpeg_output());

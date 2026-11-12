@@ -25,4 +25,4 @@ test:  ## Run the Rust tests in the image's test stage, beside the shipped ffmpe
 up:  ## Start the stack using COMPOSE_FILE in .env
 	mkdir -p mounted
 	cargo run --quiet --release --bin composeup
-	@. ./.env && printf '\nWeb app: http://localhost:%s/\n' "$$STREAM_API_PORT"
+	@. ./.env && printf '\nPlay page: http://localhost:%s/\nStream Control: http://localhost:%s/\n' "$$PLAY_PORT" "$$STREAM_API_PORT"
