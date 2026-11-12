@@ -19,5 +19,5 @@ services:
     environment:
       AUTOSTREAM_HOSTNAME: ${AUTOSTREAM_HOSTNAME:-}
       AUTOSTREAM_LAN_IP: ${AUTOSTREAM_LAN_IP:-}
-    # The make start targets add the networking file, docker-compose.host.yml
-    # or docker-compose.octo-cx.yml, through COMPOSE_FILE.
+    # make run-host-mode adds docker-compose.host.yml for networking through
+    # COMPOSE_FILE. Docker mode is package/compose.yaml on its own.

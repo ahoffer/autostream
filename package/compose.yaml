@@ -1,0 +1,37 @@
+# Autostream in docker mode, as testers run it beside cxedge. It joins the
+# cxedge stack's octo-cx-network, where cxedge reaches it by name, so only the
+# two web pages are published on the host. Compose pulls AUTOSTREAM_IMAGE from
+# the registry when it is missing.
+services:
+  autostream:
+    image: ${AUTOSTREAM_IMAGE}
+    container_name: ${CONTAINER_NAME}
+    restart: unless-stopped
+    # Bound runaway ffmpeg allocations to this container; equal limits disable swap.
+    mem_limit: 6g
+    memswap_limit: 6g
+    # The supervisor gives each ffmpeg five seconds to exit on SIGTERM and five
+    # more after SIGKILL before it gives up, so let that cleanup finish.
+    stop_grace_period: 15s
+    env_file:
+      - .env
+    # Every advertised URL uses the container name, the one name cxedge resolves.
+    environment:
+      AUTOSTREAM_NETWORK_HOST: ${CONTAINER_NAME}
+    # A named volume keeps the stream state writable for the container user
+    # (UID 1000) whatever user unpacked this folder.
+    volumes:
+      - ./videos:/app/videos:ro
+      - state:/app/mounted
+    ports:
+      - "${PLAY_PORT}:${PLAY_PORT}"                        # Play page
+      - "${STREAM_API_PORT}:${STREAM_API_PORT}"            # Stream Control
+    networks:
+      - octo-cx-network
+
+volumes:
+  state:
+
+networks:
+  octo-cx-network:
+    external: true

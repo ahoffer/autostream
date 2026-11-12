@@ -6,37 +6,33 @@ multicast, RTP, SRT, TCP, HTTP, HLS segments or SRTP.
 
 ## Play videos into cxedge
 
-For people evaluating cxedge. Autostream runs on the same host as cxedge and
-joins its Docker network, so cxedge reaches the videos by the name
-`autostream`.
+For people testing cxedge. They receive a zip folder, run autostream in
+docker mode on the same host as cxedge, and use the play page on port 9080.
+Their instructions are `package/README.md`, which the zip carries. They need
+Docker and registry credentials, and no make, Rust, or source tree.
 
-1. **Install cxedge** with Docker Compose and start it. Its stack creates
-   `octo-cx-network`, which `make run` expects to exist.
-
-2. **Place your videos** in the `videos/` directory:
-   ```bash
-   cp your-video.mp4 videos/
-   ```
-
-3. **Pull and start** the image from the octo-cx registry:
-   ```bash
-   docker login registry.octo-cx-prod.runshiftup.com   # Only needed once
-   make run
-   ```
-
-4. **Open the play page** at `http://<this host>:9080`. It lists every
-   video. A video added to `videos/` appears within a few seconds.
-
-5. **Play a video** and press Copy beside its address, such as
-   `rtsp://autostream:10554/cargoship`. Register that address in cxedge.
-   Stop ends the stream.
-
-6. **Finish** with `make down`, which stops and removes the container.
-
+The play page lists every file in `videos/` with Play, Stop, and the RTSP
+address to register in cxedge, such as `rtsp://autostream:10554/cargoship`.
 On a first start every video is already playing. Play starts the file's
 first RTSP / HLS / RTMP stream, or creates one named after the file. On
 `octo-cx-network` every advertised URL uses the host name `autostream`.
 Only the play page and its calls answer on port 9080.
+
+To make the zip:
+
+```bash
+make build
+make run-local-docker      # Test the tester's compose file with the local image
+make push                  # Publish the image the package pulls
+make package-docker-mode   # Writes .generated/autostream-<version>.zip
+```
+
+The zip holds `package/compose.yaml`, `package/README.md`, this `.env` with
+the registry image added as `AUTOSTREAM_IMAGE`, and the files in `videos/`.
+`make package-docker-mode PACKAGE_VIDEOS=` ships an empty `videos/` folder,
+and `PACKAGE_VIDEOS="videos/a.mp4 videos/b.ts"` picks files. Testers need
+read access to the registry, such as a GitLab deploy token with the
+`read_registry` scope.
 
 ## Developer quickstart
 
@@ -62,12 +58,10 @@ setting.
 6. **Create other streams**: press New stream, choose the file and the
    transport, name it, and press Create and start.
 
-7. **Publish for evaluators**: `make run-local-docker` starts the built image
-   on `octo-cx-network` exactly as evaluators will, so you can test it first.
-   `make push` then sends the image to the octo-cx registry, where `make run`
-   finds it. The registry path is `REGISTRY_IMAGE` in the Makefile, and a
-   GitLab project must exist there. `make run-host-mode` returns to host
-   mode, and `make down` stops either mode.
+7. **Publish for testers**: see "Play videos into cxedge". The registry path
+   is `REGISTRY_IMAGE` in the Makefile, and a GitLab project must exist
+   there. `make run-host-mode` returns to host mode, and `make down` stops
+   either mode.
 
 ## How It Works
 
@@ -414,11 +408,12 @@ Each make start target picks its networking mode:
   sudo ufw allow from <lan subnet> to any port 42000:43099 proto tcp
   ```
 
-- **Consumer network** (`make run` and `make run-local-docker`,
-  `docker-compose.octo-cx.yml`): joins the consumer's
+- **Docker mode** (`make run-local-docker` and the tester package, both
+  `package/compose.yaml`): joins the consumer's
   external `octo-cx-network`, which the consumer stack must already have
   created. Containers there reach this one as `autostream` on its own ports,
-  and advertised URLs use that name. No stream port is published on the host,
+  and advertised URLs use that name. Stream state lives in a named volume
+  rather than `mounted/`. No stream port is published on the host,
   so none can clash with the consumer's own published ports, such as its
   relay's 8554. Only the play page and Stream Control are published, for
   browsers. Clients outside the Docker network, such as a player elsewhere on
