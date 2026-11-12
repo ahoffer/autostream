@@ -5,10 +5,10 @@
 # browsers outside Docker.
 services:
   autostream:
-    # Consumers on the network reach this container by name, so advertised URLs
-    # use it unless Settings names another advertised host.
+    # Consumers on the network reach this container by name only, so every
+    # advertised URL uses it and the advertised host setting does not apply.
     environment:
-      AUTOSTREAM_DEFAULT_HOST: ${CONTAINER_NAME}
+      AUTOSTREAM_NETWORK_HOST: ${CONTAINER_NAME}
     ports:
       - "${PLAY_PORT}:${PLAY_PORT}"                        # Play page
       - "${STREAM_API_PORT}:${STREAM_API_PORT}"            # Stream Control UI

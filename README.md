@@ -35,9 +35,8 @@ joins its Docker network, so cxedge reaches the videos by the name
 
 On a first start every video is already playing. Play starts the file's
 first RTSP / HLS / RTMP stream, or creates one named after the file. On
-`octo-cx-network` every advertised URL uses the host name `autostream`
-unless an advertised host is set in Stream Control. Only the play page and
-its calls answer on port 9080.
+`octo-cx-network` every advertised URL uses the host name `autostream`.
+Only the play page and its calls answer on port 9080.
 
 ## Developer quickstart
 
@@ -254,15 +253,16 @@ at once.
 |---------|---------|---------|
 | Destination host | Where pushed transports send: the consumer host's address as reachable from the publisher. Changing it restarts them. | unset |
 | Multicast group | The group the Multicast transport sends to, and what the consumer registers. | 239.255.0.1 |
-| Advertised host | Host in the URLs the consumer registers. Blank uses the container name in the consumer network mode, and otherwise the address the client reached the API by. | blank |
+| Advertised host | Host in the URLs the consumer registers. Blank uses the address the client reached the API by. On a consumer's network the container name replaces it. | blank |
 | Bitrate cap | Transcode-only cap such as `2M` or `3000K`. Changing it restarts only streams transcoding above it. Blank disables the cap. | blank |
 | SRTP key | Base64 master key the SRTP transport encrypts with; the consumer needs the same key. | `autostream` repeated four times |
 | First ports | One per transport kind that takes one. A new stream takes the lowest free port from its kind's first port and keeps it; changing a first port affects later streams only. | UDP 40000, RTP 40020, SRT call 40040, SRTP 40060, SRT listen 41000, TCP 42000, HTTP TS 43000 |
 
 Destination host and Advertised host each have a **Use LAN IP** shortcut.
 It fills that field; Save applies the choice. Clear Advertised host to return
-to the default. That is the container name in the consumer network mode, and
-the browser's address otherwise. Existing saved values are preserved.
+to using the browser's address. On a consumer's network the field is fixed to
+the container name, and the saved value waits for host mode. Existing saved
+values are preserved.
 
 `make run-host-mode` runs the `composeup` helper, which supplies the Docker daemon's
 hostname and, for a local Linux daemon, the IPv4 address of the host's

@@ -31,12 +31,15 @@ const FONT_WOFF2: &[u8] = include_bytes!("jost.woff2");
 pub use crate::hostaddresses::HostAddresses;
 
 /// The host choices the settings page offers, with the host a blank advertised
-/// host yields for the client that asked.
+/// host yields for the client that asked. The network host, present only on a
+/// consumer's network, replaces the advertised host there.
 #[derive(Serialize)]
 struct HostReport<'a> {
     hostname: &'a str,
     lan_ip: &'a str,
     client_host: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    network_host: Option<&'a str>,
 }
 
 /// Everything a request handler needs; none of it is mutable stream state.
@@ -46,17 +49,19 @@ pub struct ApiState {
     pub url_facts: UrlFacts,
     pub hls_dir: PathBuf,
     pub host_addresses: Arc<Mutex<HostAddresses>>,
-    /// The deployment's host for advertised URLs when Settings leaves the advertised host blank.
-    pub default_host: Option<String>,
+    /// This container's name on a consumer's Docker network, set only when it joins one.
+    /// Consumers there can reach it by that name alone, so it overrides the advertised host.
+    pub network_host: Option<String>,
 }
 
 impl ApiState {
-    /// The host in advertised URLs: the saved advertised host, else the
-    /// deployment's default, else the address the client reached the API by.
+    /// The host in advertised URLs: the network name when on a consumer's network,
+    /// else the saved advertised host, else the address the client reached the API by.
     fn url_host(&self, advertised_host: Option<&str>, headers: &HeaderMap) -> String {
-        let advertised = advertised_host
-            .filter(|host| !host.is_empty())
-            .or(self.default_host.as_deref());
+        let advertised = self
+            .network_host
+            .as_deref()
+            .or(advertised_host.filter(|host| !host.is_empty()));
         self.url_facts.host_for(advertised, host_header(headers))
     }
 }
@@ -393,6 +398,7 @@ fn get(state: &ApiState, path: &str, headers: &HeaderMap) -> Response {
                 hostname: &addresses.hostname,
                 lan_ip: &addresses.lan_ip,
                 client_host: state.url_host(None, headers),
+                network_host: state.network_host.as_deref(),
             };
             json_response(200, &serde_json::to_value(report).unwrap_or(Value::Null))
         }
@@ -554,7 +560,7 @@ mod tests {
             harness: Harness,
             queue_capacity: usize,
             make_router: fn(Arc<ApiState>) -> Router,
-            default_host: Option<&str>,
+            network_host: Option<&str>,
         ) -> Self {
             let Harness {
                 mut registry,
@@ -592,7 +598,7 @@ mod tests {
                     hostname: "publisher".into(),
                     lan_ip: "192.168.1.20".into(),
                 })),
-                default_host: default_host.map(str::to_string),
+                network_host: network_host.map(str::to_string),
             });
             let runtime = tokio::runtime::Builder::new_multi_thread()
                 .worker_threads(2)
@@ -738,7 +744,7 @@ mod tests {
         );
         let row = &api.request("GET", "/api/play").1[0];
         assert_eq!(row["playing"], true);
-        // The test settings advertise no host, so the deployment's default names it.
+        // On a consumer's network, addresses use the container's network name.
         assert_eq!(row["url"], "rtsp://autostream:8554/source");
         assert_eq!(
             api.request("POST", "/api/play/stop?file=source.mp4"),
@@ -749,7 +755,7 @@ mod tests {
     }
 
     #[test]
-    fn a_default_host_replaces_the_client_address_until_an_advertised_host_is_set() {
+    fn a_network_host_overrides_the_client_address_and_any_advertised_host() {
         let mut harness = Harness::new();
         let source = harness.source_name();
         harness.create("boats", &source, "rtsp");
@@ -760,14 +766,19 @@ mod tests {
         assert_eq!(register(&api), "rtsp://autostream:8554/boats");
         assert_eq!(
             api.fetch("GET", "/api/host", Some("operator-console:9180"))
-                .json()["client_host"],
-            "autostream"
+                .json(),
+            json!({
+                "hostname": "publisher",
+                "lan_ip": "192.168.1.20",
+                "client_host": "autostream",
+                "network_host": "autostream"
+            })
         );
         assert_eq!(
             api.request("POST", "/api/settings?advertised_host=media.example"),
             (200, json!({"success": true}))
         );
-        assert_eq!(register(&api), "rtsp://media.example:8554/boats");
+        assert_eq!(register(&api), "rtsp://autostream:8554/boats");
     }
 
     #[test]

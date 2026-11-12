@@ -1021,11 +1021,18 @@ function fillSettingsForm(form, force) {
 }
 function patchSettingsForm(form) {
   renderTabs(form);
-  form.elements.advertised_host.placeholder = state.hostAddresses.client_host;
+  /* On a consumer's network the network name replaces the advertised host, so its field is fixed. */
+  const networkHost = state.hostAddresses.network_host;
+  const advertised = form.elements.advertised_host;
+  advertised.placeholder = state.hostAddresses.client_host;
+  advertised.disabled = Boolean(networkHost);
   const lanIp = state.hostAddresses.lan_ip;
-  form.querySelectorAll('[data-act="use-lan-ip"]').forEach((button) => { button.disabled = !lanIp; });
+  form.querySelectorAll('[data-act="use-lan-ip"]').forEach((button) => {
+    button.disabled = !lanIp || (button.dataset.field === "advertised_host" && Boolean(networkHost));
+  });
   form.querySelectorAll('[data-host-value="lan_ip"]').forEach((node) => setText(node, lanIp || "Unavailable"));
   if (!state.settingsDraft) fillSettingsForm(form, false);
+  if (networkHost) advertised.value = networkHost;
   const hasDraft = Boolean(state.settingsDraft);
   form.querySelector('[data-act="settings-save"]').disabled = !hasDraft;
   form.querySelector('[data-act="settings-cancel"]').disabled = !hasDraft;
@@ -1237,9 +1244,13 @@ panelNode.addEventListener("input", (event) => {
     state.createDraft = draft;
   }
   if (form.dataset.form === "settings") {
-    const values = {};
-    SETTING_FIELDS.forEach((field) => { values[field.key] = form.elements[field.key].value; });
     const base = settingsAsText(state.settings);
+    /* A fixed field shows the network name but keeps its saved value. */
+    const values = {};
+    SETTING_FIELDS.forEach((field) => {
+      const control = form.elements[field.key];
+      values[field.key] = control.disabled ? base[field.key] : control.value;
+    });
     state.settingsDraft = SETTING_FIELDS.every((field) => values[field.key] === base[field.key]) ? null : values;
   }
   render();

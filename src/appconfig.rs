@@ -48,9 +48,9 @@ pub struct Config {
     pub api_port: u16,
     /// The evaluator page's port; the developer page and full API stay on `api_port`.
     pub play_port: u16,
-    /// The host advertised URLs use when Settings leaves the advertised host blank;
-    /// None falls back to the address the client reached the API by.
-    pub default_host: Option<String>,
+    /// This container's name on a consumer's Docker network, set only when it joins one.
+    /// Advertised URLs use it in place of the advertised host setting.
+    pub network_host: Option<String>,
     pub log_level: String,
     pub videos_dir: PathBuf,
     pub state_path: PathBuf,
@@ -85,7 +85,7 @@ impl Config {
             rtmp_port,
             api_port,
             play_port: 9080,
-            default_host: None,
+            network_host: None,
             log_level: log_level.to_string(),
             videos_dir: PathBuf::from("/app/videos"),
             state_path: PathBuf::from("/app/mounted/streams_config.json"),
@@ -114,8 +114,8 @@ impl Config {
             &require_env("LOG_LEVEL", environ)?.to_lowercase(),
         )?;
         config.play_port = require_port("PLAY_PORT", environ)?;
-        config.default_host = environ
-            .get("AUTOSTREAM_DEFAULT_HOST")
+        config.network_host = environ
+            .get("AUTOSTREAM_NETWORK_HOST")
             .map(|host| host.trim().to_string())
             .filter(|host| !host.is_empty());
         config.srt_port = require_port("MEDIAMTX_SRT_PORT", environ)?;
@@ -169,7 +169,7 @@ mod tests {
         assert_eq!(config.rtsp_port, 8554);
         assert_eq!(config.srt_port, 18890);
         assert_eq!(config.play_port, 8070);
-        assert_eq!(config.default_host, None);
+        assert_eq!(config.network_host, None);
         assert_eq!((config.rtp_port, config.rtcp_port), (18000, 18001));
         assert_eq!(config.log_level, "info");
         assert!(!config.show_ffmpeg_output());
@@ -183,9 +183,9 @@ mod tests {
         with_hosts.insert("AUTOSTREAM_LAN_IP".into(), "192.168.1.20".into());
         with_hosts.insert("LOG_LEVEL".into(), "DEBUG".into());
         with_hosts.insert("AUTOSTREAM_REFRESH_LAN_IP".into(), "true".into());
-        with_hosts.insert("AUTOSTREAM_DEFAULT_HOST".into(), "autostream".into());
+        with_hosts.insert("AUTOSTREAM_NETWORK_HOST".into(), "autostream".into());
         let config = Config::from_env(&with_hosts).unwrap();
-        assert_eq!(config.default_host.as_deref(), Some("autostream"));
+        assert_eq!(config.network_host.as_deref(), Some("autostream"));
         assert_eq!(
             (config.host_name.as_str(), config.host_lan_ip.as_str()),
             ("publisher", "192.168.1.20")
