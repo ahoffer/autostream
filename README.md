@@ -11,9 +11,7 @@ joins its Docker network, so cxedge reaches the videos by the name
 `autostream`.
 
 1. **Install cxedge** with Docker Compose and start it. Its stack creates
-   `octo-cx-network`. The host also needs Rust, installed with `rustup`.
-   `make up` runs a small Rust helper before Compose, and
-   `rust-toolchain.toml` picks the version.
+   `octo-cx-network`.
 
 2. **Join that network**: in `.env`, set
    ```
@@ -25,10 +23,10 @@ joins its Docker network, so cxedge reaches the videos by the name
    cp your-video.mp4 videos/
    ```
 
-4. **Build and start**:
+4. **Pull and start** the image from the octo-cx registry:
    ```bash
-   make build       # Only needed once, or after code changes
-   make up
+   docker login registry.octo-cx-prod.runshiftup.com   # Only needed once
+   make run
    ```
 
 5. **Open the play page** at `http://<this host>:9080`. It lists every
@@ -67,6 +65,10 @@ setting.
 
 6. **Create other streams**: press New stream, choose the file and the
    transport, name it, and press Create and start.
+
+7. **Publish for evaluators**: `make push` sends the built image to the
+   octo-cx registry, where `make run` finds it. The registry path is
+   `REGISTRY_IMAGE` in the Makefile, and a GitLab project must exist there.
 
 ## How It Works
 

@@ -1,14 +1,16 @@
 # Typical flow: build -> test -> up. Set COMPOSE_FILE in .env to select
 # the networking mode. The image version comes from Cargo.toml.
 
-.PHONY: help build test up push
+.PHONY: help build test up run push
 
 .DEFAULT_GOAL := help
 
 VERSION := $(shell sed -n 's/^version = "\(.*\)"$$/\1/p' Cargo.toml | head -n 1)
 
-# Where `make push` publishes the image. Override it on the command line.
+# Where `make push` publishes the image and `make run` pulls it. Override it on the command line.
 REGISTRY_IMAGE ?= registry.octo-cx-prod.runshiftup.com/octo-cx/common/autostream
+
+SHOW_PAGES = @. ./.env && printf '\nPlay page: http://localhost:%s/\nStream Control: http://localhost:%s/\n' "$$PLAY_PORT" "$$STREAM_API_PORT"
 
 help:  ## List available targets
 	@awk 'BEGIN {FS = ":.*## "} /^[a-zA-Z0-9_-]+:.*## / {printf "  %-20s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -28,7 +30,17 @@ test:  ## Run the Rust tests in the image's test stage, beside the shipped ffmpe
 up:  ## Start the stack using COMPOSE_FILE in .env
 	mkdir -p mounted
 	cargo run --quiet --release --bin composeup
-	@. ./.env && printf '\nPlay page: http://localhost:%s/\nStream Control: http://localhost:%s/\n' "$$PLAY_PORT" "$$STREAM_API_PORT"
+	$(SHOW_PAGES)
+
+# The same start from the registry image, with no build and no Rust. The
+# image is tagged with its local name so Compose finds it. Without the
+# composeup helper, the LAN IP shortcut in Stream Control stays disabled.
+run:  ## Pull the image from the octo-cx registry and start the stack
+	mkdir -p mounted
+	docker pull $(REGISTRY_IMAGE):$(VERSION)
+	set -a && . ./.env && docker tag $(REGISTRY_IMAGE):$(VERSION) $$CONTAINER_NAME:$(VERSION)
+	VERSION=$(VERSION) docker compose up -d
+	$(SHOW_PAGES)
 
 # Requires `docker login registry.octo-cx-prod.runshiftup.com` and a GitLab
 # project at the REGISTRY_IMAGE path with its container registry enabled.
