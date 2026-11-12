@@ -383,7 +383,7 @@ image was built. The compiler and source files stay in the build stages,
 outside the runtime image.
 
 Plain `docker compose up -d` also works after the image is built, given the
-image tag: `VERSION=4.1.0 docker compose up -d`, with the `version` from
+image tag: `VERSION=4.2.0 docker compose up -d`, with the `version` from
 `Cargo.toml`. The make start targets create the `mounted/` directory first,
 pick the networking mode, and supply the version themselves. Logs:
 `docker compose logs -f`. Stop: `make down`. Both work in this directory.
