@@ -23,8 +23,6 @@ joins its Docker network, so cxedge reaches the videos by the name
    docker login registry.octo-cx-prod.runshiftup.com   # Only needed once
    make run
    ```
-   `make run` always joins `octo-cx-network`, whatever `COMPOSE_FILE` in
-   `.env` says.
 
 4. **Open the play page** at `http://<this host>:9080`. It lists every
    video. A video added to `videos/` appears within a few seconds.
@@ -32,6 +30,8 @@ joins its Docker network, so cxedge reaches the videos by the name
 5. **Play a video** and press Copy beside its address, such as
    `rtsp://autostream:10554/cargoship`. Register that address in cxedge.
    Stop ends the stream.
+
+6. **Finish** with `make down`, which stops and removes the container.
 
 On a first start every video is already playing. Play starts the file's
 first RTSP / HLS / RTMP stream, or creates one named after the file. On
@@ -48,10 +48,10 @@ setting.
 
 2. **Place your videos** in the `videos/` directory, as above.
 
-3. **Build and deploy** via Docker Compose:
+3. **Build and start** in host mode (see "Networking modes"):
    ```bash
-   make build       # Only needed once, or after code changes
-   make up          # Uses COMPOSE_FILE in .env; see "Networking modes"
+   make build            # Only needed once, or after code changes
+   make run-host-mode
    ```
 
 4. **Point the feeds at their consumer**: open `http://<this host>:9180`,
@@ -63,12 +63,12 @@ setting.
 6. **Create other streams**: press New stream, choose the file and the
    transport, name it, and press Create and start.
 
-7. **Publish for evaluators**: `make run-local` starts the built image on
-   `octo-cx-network` exactly as evaluators will, so you can test it first.
+7. **Publish for evaluators**: `make run-local-docker` starts the built image
+   on `octo-cx-network` exactly as evaluators will, so you can test it first.
    `make push` then sends the image to the octo-cx registry, where `make run`
    finds it. The registry path is `REGISTRY_IMAGE` in the Makefile, and a
-   GitLab project must exist there. `make up` returns to the networking mode
-   in `.env`.
+   GitLab project must exist there. `make run-host-mode` returns to host
+   mode, and `make down` stops either mode.
 
 ## How It Works
 
@@ -224,12 +224,12 @@ at run time in the web UI under **Settings**.
 
 `.env` is checked in with working values. Docker Compose reads `.env` directly and passes the whole file through to the
 container. Every variable must be set. The image version tag is not in `.env`:
-it is the `version` in `Cargo.toml`, which `make build` and `make up` read.
+it is the `version` in `Cargo.toml`, which the make targets read. The
+networking mode is not in `.env` either. Each make start target picks it.
 
 | Variable | Description |
 |----------|-------------|
 | `CONTAINER_NAME` | Image and container name |
-| `COMPOSE_FILE` | Networking mode: the base file plus `docker-compose.host.yml` or `docker-compose.octo-cx.yml` (see "Networking modes") |
 | `MEDIAMTX_RTSP_PORT` | RTSP listener port |
 | `MEDIAMTX_HLS_PORT` | HLS HTTP port |
 | `MEDIAMTX_RTMP_PORT` | RTMP listener port |
@@ -264,7 +264,7 @@ It fills that field; Save applies the choice. Clear Advertised host to return
 to the default. That is the container name in the consumer network mode, and
 the browser's address otherwise. Existing saved values are preserved.
 
-`make up` runs the `composeup` helper, which supplies the Docker daemon's
+`make run-host-mode` runs the `composeup` helper, which supplies the Docker daemon's
 hostname and, for a local Linux daemon, the IPv4 address of the host's
 lowest-metric default-route interface, then starts Compose. The addresses are
 exposed through `GET /api/host`. With host networking, the running service
@@ -279,7 +279,7 @@ interfaces belong to the container. For remote Docker, other host platforms,
 or a different preferred interface, supply `AUTOSTREAM_HOSTNAME` and
 `AUTOSTREAM_LAN_IP` in the shell environment. To retain a fixed LAN shortcut
 with host networking, also set `AUTOSTREAM_REFRESH_LAN_IP=false` before
-`make up` (or in `.env`). The address variables also work with
+`make run-host-mode` (or in `.env`). The address variables also work with
 `docker compose up -d` directly (or in `.env` for direct Compose).
 
 The UI has no authentication, so anyone who can reach the API port can create
@@ -314,7 +314,7 @@ the reason. Requests are not automatically retried.
 The application is one Cargo package. The library under `src/` holds every
 module and its tests; `src/bin/` holds the three executables: `autostream`,
 the service that ships in the image; `composeup`, the host helper behind
-`make up`; and `socketmemory`, a host-side diagnostic that captures slab
+`make run-host-mode`; and `socketmemory`, a host-side diagnostic that captures slab
 counters and socket queues in every running container once per minute into
 `.generated/socket-memory.jsonl` (`cargo run --release --bin socketmemory -- --help`;
 Linux and a Docker CLI required). The two pages, `index.html` and `play.html`, and their font live in `src/` and
@@ -386,17 +386,18 @@ outside the runtime image.
 
 Plain `docker compose up -d` also works after the image is built, given the
 image tag: `VERSION=4.0.0 docker compose up -d`, with the `version` from
-`Cargo.toml`. `make up` creates the `mounted/` directory first and supplies the
-version itself. Logs: `docker compose logs -f`; stop:
-`docker compose down`, both in this directory.
-`mediamtx.yml` is part of the image: edit it, run `make build`, then `make up`
+`Cargo.toml`. The make start targets create the `mounted/` directory first,
+pick the networking mode, and supply the version themselves. Logs:
+`docker compose logs -f`. Stop: `make down`. Both work in this directory.
+`mediamtx.yml` is part of the image. Edit it, run `make build`, then start
 again, and Compose recreates the container on the new image.
 
 ### Networking modes
 
-The `COMPOSE_FILE` line in `.env` selects the networking mode:
+Each make start target picks its networking mode:
 
-- **Host networking** (`COMPOSE_FILE=docker-compose.yml:docker-compose.host.yml`): MediaMTX, the API and every
+- **Host mode** (`make run-host-mode`, `docker-compose.host.yml`): the
+  container runs in the host's network namespace, so MediaMTX, the API and every
   listening transport bind the host's interfaces on their ports directly, with
   no NAT, and pushed feeds leave from the host's own address. For a publisher
   on its own host. The host firewall applies to these listeners; on a host
@@ -413,8 +414,8 @@ The `COMPOSE_FILE` line in `.env` selects the networking mode:
   sudo ufw allow from <lan subnet> to any port 42000:43099 proto tcp
   ```
 
-- **Consumer network** (`COMPOSE_FILE=docker-compose.yml:docker-compose.octo-cx.yml`,
-  and always under `make run` and `make run-local`): joins the consumer's
+- **Consumer network** (`make run` and `make run-local-docker`,
+  `docker-compose.octo-cx.yml`): joins the consumer's
   external `octo-cx-network`, which the consumer stack must already have
   created. Containers there reach this one as `autostream` on its own ports,
   and advertised URLs use that name. No stream port is published on the host,
@@ -440,8 +441,8 @@ addresses, and reserve those addresses on the router: a changed publisher
 address breaks every advertised URL and CX registration, and a changed
 consumer address sends pushed feeds nowhere without any error here.
 
-1. On the publisher: `.env` with the host networking line, `make build`,
-   `make up`, and the firewall rules above if ufw is active.
+1. On the publisher: `make build`, `make run-host-mode`, and the firewall
+   rules above if ufw is active.
 2. Open the web UI, expand Settings, and set the destination host to the
    consumer host's address and, for multicast tests, a group. Set the
    advertised host only if the consumer must use a different address than
