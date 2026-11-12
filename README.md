@@ -21,7 +21,7 @@ Only the play page and its calls answer on port 9080.
 To make the zip:
 
 ```bash
-make build
+make image
 make run-local-docker      # Test the tester's compose file with the local image
 make push                  # Publish the image the package pulls
 make package-docker-mode   # Writes .generated/autostream-<version>.zip
@@ -45,7 +45,7 @@ setting.
 
 3. **Build and start** in host mode (see "Networking modes"):
    ```bash
-   make build            # Only needed once, or after code changes
+   make image            # Only needed once, or after code changes
    make run-host-mode
    ```
 
@@ -383,7 +383,7 @@ image tag: `VERSION=4.0.0 docker compose up -d`, with the `version` from
 `Cargo.toml`. The make start targets create the `mounted/` directory first,
 pick the networking mode, and supply the version themselves. Logs:
 `docker compose logs -f`. Stop: `make down`. Both work in this directory.
-`mediamtx.yml` is part of the image. Edit it, run `make build`, then start
+`mediamtx.yml` is part of the image. Edit it, run `make image`, then start
 again, and Compose recreates the container on the new image.
 
 ### Networking modes
@@ -436,7 +436,7 @@ addresses, and reserve those addresses on the router: a changed publisher
 address breaks every advertised URL and CX registration, and a changed
 consumer address sends pushed feeds nowhere without any error here.
 
-1. On the publisher: `make build`, `make run-host-mode`, and the firewall
+1. On the publisher: `make image`, `make run-host-mode`, and the firewall
    rules above if ufw is active.
 2. Open the web UI, expand Settings, and set the destination host to the
    consumer host's address and, for multicast tests, a group. Set the

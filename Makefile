@@ -1,8 +1,8 @@
-# Developer flow: build -> test -> run-host-mode -> run-local-docker -> push
+# Developer flow: image -> test -> run-host-mode -> run-local-docker -> push
 # -> package-docker-mode. Testers unpack the package and start it with
 # `docker compose up -d`. The image version comes from Cargo.toml.
 
-.PHONY: help build test run-host-mode run-local-docker push package-docker-mode down
+.PHONY: help image test run-host-mode run-local-docker push package-docker-mode down
 
 .DEFAULT_GOAL := help
 
@@ -24,7 +24,7 @@ SHOW_PAGES = @. ./.env && printf '\nPlay page: http://localhost:%s/\nStream Cont
 help:  ## List available targets
 	@awk 'BEGIN {FS = ":.*## "} /^[a-zA-Z0-9_-]+:.*## / {printf "  %-20s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 
-build:  ## Build the container image
+image:  ## Build the whole Docker image
 	set -a && . ./.env && docker build -t $$CONTAINER_NAME:$(VERSION) .
 
 test:  ## Run the Rust tests in the image's test stage, beside the shipped ffmpeg

@@ -1,7 +1,7 @@
 # Regression checklist
 
 Manual checks that have caught real defects in the control UI and supervisor.
-Run against a stack in host mode (`make build && make run-host-mode`) with the
+Run against a stack in host mode (`make image && make run-host-mode`) with the
 sample videos in `videos/` (H.264 MP4s, an MJPEG AVI, an MPEG-TS with KLV).
 Ground truth is always the process table and the API:
 
