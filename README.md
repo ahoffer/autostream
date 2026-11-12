@@ -4,14 +4,54 @@ A test-rig video server with web-based stream control. A video can be served
 over RTSP, HLS and RTMP through MediaMTX, or as an MPEG-TS feed over UDP,
 multicast, RTP, SRT, TCP, HTTP, HLS segments or SRTP.
 
-## Quickstart
+## Play videos into cxedge
 
-1. **Check `.env`** and edit it for your environment if needed.
+For people evaluating cxedge. Autostream runs on the same host as cxedge and
+joins its Docker network, so cxedge reaches the videos by the name
+`autostream`.
 
-2. **Place your videos** in the `videos/` directory:
+1. **Install cxedge** with Docker Compose and start it. Its stack creates
+   `octo-cx-network`. The host also needs Rust, installed with `rustup`.
+   `make up` runs a small Rust helper before Compose, and
+   `rust-toolchain.toml` picks the version.
+
+2. **Join that network**: in `.env`, set
+   ```
+   COMPOSE_FILE=docker-compose.yml:docker-compose.octo-cx.yml
+   ```
+
+3. **Place your videos** in the `videos/` directory:
    ```bash
    cp your-video.mp4 videos/
    ```
+
+4. **Build and start**:
+   ```bash
+   make build       # Only needed once, or after code changes
+   make up
+   ```
+
+5. **Open the play page** at `http://<this host>:9080`. It lists every
+   video. A video added to `videos/` appears within a few seconds.
+
+6. **Play a video** and press Copy beside its address, such as
+   `rtsp://autostream:10554/cargoship`. Register that address in cxedge.
+   Stop ends the stream.
+
+On a first start every video is already playing. Play starts the file's
+first RTSP / HLS / RTMP stream, or creates one named after the file. The
+address uses the advertised host when one is set in Stream Control, and
+otherwise the container name. Only the play page and its calls answer on
+port 9080.
+
+## Developer quickstart
+
+Stream Control, on port 9180, offers every transport, encoding choice and
+setting.
+
+1. **Check `.env`** and edit it for your environment if needed.
+
+2. **Place your videos** in the `videos/` directory, as above.
 
 3. **Build and deploy** via Docker Compose:
    ```bash
@@ -27,20 +67,6 @@ multicast, RTP, SRT, TCP, HTTP, HLS segments or SRTP.
 
 6. **Create other streams**: press New stream, choose the file and the
    transport, name it, and press Create and start.
-
-## Play page
-
-For people evaluating cxedge on the same host. Start autostream in the
-consumer network mode (see "Networking modes") and open
-`http://<this host>:9080`. The page lists every file in `videos/` with
-Play, Stop, and the RTSP address to register in cxedge, such as
-`rtsp://autostream:10554/cargoship`.
-
-Play starts the file's first RTSP / HLS / RTMP stream, or creates one named
-after the file as a first start does. Stop stops that stream. The address uses
-the advertised host when one is set, and otherwise the container name, which
-cxedge resolves on `octo-cx-network`. Only the page and its calls answer on
-this port. Stream Control stays on `STREAM_API_PORT`.
 
 ## How It Works
 
@@ -208,7 +234,7 @@ it is the `version` in `Cargo.toml`, which `make build` and `make up` read.
 | `MEDIAMTX_SRT_PORT` | Local SRT ingest port (loopback only) |
 | `MEDIAMTX_RTP_PORT` | RTP UDP port |
 | `MEDIAMTX_RTCP_PORT` | RTCP UDP port |
-| `PLAY_PORT` | Play page port (see "Play page") |
+| `PLAY_PORT` | Play page port (see "Play videos into cxedge") |
 | `STREAM_API_PORT` | Stream Control page, full API and HLS (TS segments) port |
 | `LOG_LEVEL` | Supervisor log level; `debug` also shows ffmpeg output |
 
