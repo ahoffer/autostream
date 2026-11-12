@@ -73,6 +73,7 @@ button {
   padding: 4px 14px;
   min-height: 36px;
   min-width: 84px;
+  white-space: nowrap;
   cursor: pointer;
 }
 button.primary { background: var(--blue-fill); border-color: var(--blue-fill); color: var(--on-fill); }
@@ -117,11 +118,12 @@ button:disabled { color: var(--muted); border-color: var(--rule); background: tr
   .list, .list tbody { display: block; }
   .list tr {
     display: grid;
-    grid-template-columns: 1fr auto;
+    grid-template-columns: 1fr;
     grid-template-areas:
-      "file action"
-      "state state"
-      "address address";
+      "file"
+      "state"
+      "address"
+      "action";
     gap: 8px 12px;
     padding: 12px 0;
     border-bottom: 1px solid var(--rule);
@@ -130,7 +132,8 @@ button:disabled { color: var(--muted); border-color: var(--rule); background: tr
   .list td.c-file { grid-area: file; align-self: center; }
   .list td.c-state { grid-area: state; }
   .list td.c-address { grid-area: address; }
-  .list td.c-action { grid-area: action; }
+  .list td.c-action { grid-area: action; text-align: left; }
+  .actions { justify-content: flex-start; }
 }
 </style>
 </head>
@@ -167,10 +170,9 @@ function rowHtml(row) {
          <button type="button" data-act="copy">Copy</button>
        </div>`
     : "";
-  const action = row.playing
-    ? `<button type="button" data-act="stop">Stop</button>`
-    : `<button type="button" class="primary" data-act="once">Play once</button>
-       <button type="button" class="primary" data-act="forever">Play forever</button>`;
+  const action = `<button type="button" class="primary" data-act="once">Play once</button>
+    <button type="button" class="primary" data-act="forever">Play forever</button>
+    <button type="button" data-act="stop"${row.playing ? "" : " disabled"}>Stop</button>`;
   return `<tr data-file="${escapeHtml(row.file)}">
     <td class="c-file">${escapeHtml(row.file)}</td>
     <td class="c-state"><span class="state is-${escapeHtml(state)}">${escapeHtml(state)}</span>

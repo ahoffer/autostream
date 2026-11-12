@@ -16,7 +16,7 @@ Stop, and the RTSP address to register in cxedge, such as
 `rtsp://autostream:10554/cargoship`. On a first start every video is already
 playing forever. Play once and Play forever start the file's first RTSP /
 HLS / RTMP stream, or create one named after the file, and set its loop
-count. A video that played once to the end offers both again. On
+count. On a playing video they restart it with the new loop count. On
 `octo-cx-network` every advertised URL uses the host name `autostream`.
 Only the play page and its calls answer on port 9080.
 
