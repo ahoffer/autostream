@@ -516,27 +516,30 @@ impl StreamRegistry {
     }
 
     /// Start the file's play stream, made under its seeded name when the file has none yet.
-    pub fn play_file(&mut self, filename: &str) -> Result<bool, OperationError> {
+    /// A loop count replaces the stream's saved one; none keeps it.
+    pub fn play_file(
+        &mut self,
+        filename: &str,
+        loop_count: Option<i64>,
+    ) -> Result<bool, OperationError> {
         if !self.videos.iter().any(|video| video == filename) {
             return Err(OperationError::Refused(format!(
                 "No video named {filename}"
             )));
         }
+        let changes = StreamChanges {
+            loop_count,
+            ..StreamChanges::default()
+        };
         match self.play_stream_name(filename) {
             Some(name) => {
                 let (stream, services) = self.stream_mut(&name).expect("found above");
-                Ok(stream.start_streaming(services)?)
+                Ok(stream.start_with(&changes, services)?)
             }
             None => {
                 let name =
                     seeded_stream_name(filename, &|candidate| self.streams.contains_key(candidate));
-                self.create_stream(
-                    &name,
-                    filename,
-                    SEED_TRANSPORT,
-                    &StreamChanges::default(),
-                    true,
-                )?;
+                self.create_stream(&name, filename, SEED_TRANSPORT, &changes, true)?;
                 Ok(true)
             }
         }
@@ -576,7 +579,9 @@ mod tests {
     use crate::mediastream::Adjustment;
     use crate::statefile::StreamStateStore;
     use crate::streamrecord::VideoMode;
-    use crate::streamresponses::{StreamState, UrlFacts, describe_streams};
+    use crate::streamresponses::{
+        StatusSnapshot, StreamState, UrlFacts, describe_play_rows, describe_streams,
+    };
     use crate::testsupport::{
         Harness, block_writes, build_registry, fixture, inventory, test_settings,
     };
@@ -1043,24 +1048,60 @@ mod tests {
         let mut harness = Harness::new();
         let source = harness.source_name();
         harness.create("source-udp", &source, "udp");
-        assert!(harness.registry.play_file(&source).unwrap());
+        assert!(harness.registry.play_file(&source, Some(0)).unwrap());
         assert_eq!(harness.registry.stream_names(), ["source-udp", "source"]);
         assert_eq!(harness.status("source").transport, "rtsp");
         assert!(harness.status("source").enabled);
+        assert_eq!(harness.status("source").loop_count, 0);
 
         assert!(harness.registry.stop_file(&source).unwrap());
         assert!(!harness.status("source").enabled);
         assert!(harness.status("source-udp").enabled);
-        assert!(harness.registry.play_file(&source).unwrap());
+        assert!(harness.registry.play_file(&source, Some(-1)).unwrap());
         assert!(harness.status("source").enabled);
+        assert_eq!(harness.status("source").loop_count, -1);
+        assert_eq!(harness.saved_stream("source").loop_count, -1);
         assert_eq!(harness.registry.stream_names().len(), 2);
+
+        assert!(harness.registry.play_file(&source, None).unwrap());
+        assert_eq!(harness.status("source").loop_count, -1);
+    }
+
+    #[test]
+    fn a_file_played_once_can_play_again_after_it_ends() {
+        let mut harness = Harness::new();
+        let source = harness.source_name();
+        let play_row = |registry: &mut StreamRegistry| {
+            let snapshot = StatusSnapshot {
+                statuses: registry.status(),
+                settings: registry.settings().clone(),
+                videos: vec![source.clone()],
+            };
+            let url_facts = UrlFacts {
+                rtsp_port: 8554,
+                hls_port: 8888,
+                rtmp_port: 1935,
+                api_port: 8080,
+            };
+            describe_play_rows(&snapshot, "publisher", &url_facts).remove(0)
+        };
+        assert!(harness.registry.play_file(&source, Some(0)).unwrap());
+        harness.ffmpeg.last_run().lock().unwrap().finish(0);
+        harness.registry.supervise(None);
+        assert_eq!(harness.status("source").state, StreamState::Completed);
+        assert!(!play_row(&mut harness.registry).playing);
+
+        let runs = harness.ffmpeg.run_count();
+        assert!(harness.registry.play_file(&source, Some(0)).unwrap());
+        assert_eq!(harness.ffmpeg.run_count(), runs + 1);
+        assert!(play_row(&mut harness.registry).playing);
     }
 
     #[test]
     fn only_offered_videos_play_and_a_file_without_a_stream_has_nothing_to_stop() {
         let mut harness = Harness::new();
         assert!(matches!(
-            harness.registry.play_file("missing.mp4"),
+            harness.registry.play_file("missing.mp4", None),
             Err(OperationError::Refused(_))
         ));
         assert!(harness.registry.stop_file("missing.mp4").unwrap());

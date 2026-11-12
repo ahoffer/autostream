@@ -11,10 +11,12 @@ docker mode on the same host as cxedge, and use the play page on port 9080.
 Their instructions are `package/README.md`, which the zip carries. They need
 Docker and registry credentials, and no make, Rust, or source tree.
 
-The play page lists every file in `videos/` with Play, Stop, and the RTSP
-address to register in cxedge, such as `rtsp://autostream:10554/cargoship`.
-On a first start every video is already playing. Play starts the file's
-first RTSP / HLS / RTMP stream, or creates one named after the file. On
+The play page lists every file in `videos/` with Play once, Play forever,
+Stop, and the RTSP address to register in cxedge, such as
+`rtsp://autostream:10554/cargoship`. On a first start every video is already
+playing forever. Play once and Play forever start the file's first RTSP /
+HLS / RTMP stream, or create one named after the file, and set its loop
+count. A video that played once to the end offers both again. On
 `octo-cx-network` every advertised URL uses the host name `autostream`.
 Only the play page and its calls answer on port 9080.
 
@@ -296,8 +298,9 @@ Every mutation is a `POST`; GETs read the last published snapshot.
 - `GET /hls/<name>/index.m3u8` and segments for HLS (TS segments) streams.
 
 On `PLAY_PORT` only: `GET /api/play` lists every video with its play stream
-state and RTSP address, and `POST /api/play/start?file=` and
-`POST /api/play/stop?file=` play and stop one.
+state and RTSP address, and `POST /api/play/start?file=&loop=` and
+`POST /api/play/stop?file=` play and stop one. `loop=0` plays once,
+`loop=-1` loops forever, and no `loop` keeps the stream's loop count.
 
 Queue saturation returns 503; an operation that cannot finish returns 409;
 storage failures return 500; a refused creation or setting returns 400 with
@@ -379,7 +382,7 @@ image was built. The compiler and source files stay in the build stages,
 outside the runtime image.
 
 Plain `docker compose up -d` also works after the image is built, given the
-image tag: `VERSION=4.0.0 docker compose up -d`, with the `version` from
+image tag: `VERSION=4.1.0 docker compose up -d`, with the `version` from
 `Cargo.toml`. The make start targets create the `mounted/` directory first,
 pick the networking mode, and supply the version themselves. Logs:
 `docker compose logs -f`. Stop: `make down`. Both work in this directory.

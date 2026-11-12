@@ -195,7 +195,10 @@ pub fn describe_play_rows(
                 file: file.clone(),
                 state: stream.map(|status| status.state),
                 reason: stream.and_then(|status| status.reason.clone()),
-                playing: stream.is_some_and(|status| status.enabled),
+                // A stream that played to the end can be played again.
+                playing: stream.is_some_and(|status| {
+                    status.enabled && status.state != StreamState::Completed
+                }),
                 url,
             }
         })

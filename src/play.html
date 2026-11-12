@@ -94,6 +94,7 @@ button:disabled { color: var(--muted); border-color: var(--rule); background: tr
 .list td { padding: 12px 12px 12px 0; border-bottom: 1px solid var(--rule); vertical-align: middle; }
 .list td.c-file { font-weight: 500; overflow-wrap: anywhere; }
 .list td.c-action { text-align: right; padding-right: 0; }
+.actions { display: inline-flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
 .state { font-weight: 500; }
 .state.is-running { color: var(--blue); }
 .state.is-failed, .state.is-crashing { color: var(--red); }
@@ -168,13 +169,14 @@ function rowHtml(row) {
     : "";
   const action = row.playing
     ? `<button type="button" data-act="stop">Stop</button>`
-    : `<button type="button" class="primary" data-act="start">Play</button>`;
+    : `<button type="button" class="primary" data-act="once">Play once</button>
+       <button type="button" class="primary" data-act="forever">Play forever</button>`;
   return `<tr data-file="${escapeHtml(row.file)}">
     <td class="c-file">${escapeHtml(row.file)}</td>
     <td class="c-state"><span class="state is-${escapeHtml(state)}">${escapeHtml(state)}</span>
       <span class="reason">${row.reason === state ? "" : escapeHtml(row.reason)}</span></td>
     <td class="c-address">${address}</td>
-    <td class="c-action">${action}
+    <td class="c-action"><span class="actions">${action}</span>
       <span class="message">${escapeHtml(messages.get(row.file))}</span></td>
   </tr>`;
 }
@@ -187,21 +189,30 @@ async function refresh() {
     document.getElementById("rows").innerHTML = rows.map(rowHtml).join("");
     document.getElementById("empty").hidden = rows.length > 0;
     for (const file of busy) {
-      const button = document.querySelector(`tr[data-file="${CSS.escape(file)}"] .c-action button`);
-      if (button) button.disabled = true;
+      const buttons = document.querySelectorAll(`tr[data-file="${CSS.escape(file)}"] .c-action button`);
+      for (const button of buttons) button.disabled = true;
     }
   } catch (error) {
     /* The next poll tries again. */
   }
 }
 
-async function playOrStop(file, action) {
+/* Each button's call: the play stream's loop count is 0 to play once and -1 to loop forever. */
+const REQUESTS = {
+  once: { path: "/api/play/start", loop: "0" },
+  forever: { path: "/api/play/start", loop: "-1" },
+  stop: { path: "/api/play/stop" }
+};
+
+async function playOrStop(file, act) {
+  const request = REQUESTS[act];
   busy.add(file);
   messages.delete(file);
   await refresh();
   try {
-    const query = new URLSearchParams({ file }).toString();
-    const response = await fetch(`/api/play/${action}?${query}`, { method: "POST" });
+    const params = new URLSearchParams({ file });
+    if (request.loop) params.set("loop", request.loop);
+    const response = await fetch(`${request.path}?${params}`, { method: "POST" });
     if (!response.ok) {
       const body = await response.json().catch(() => ({}));
       messages.set(file, body.error || `Request failed (${response.status})`);

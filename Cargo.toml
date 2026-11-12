@@ -1,6 +1,6 @@
 [package]
 name = "autostream"
-version = "4.0.0"
+version = "4.1.0"
 edition = "2024"
 rust-version = "1.92"
 description = "Video test feed publisher: streams files over many transports with FFmpeg and MediaMTX"

@@ -29,7 +29,9 @@ The first start downloads the image. Open the play page at
 The play page lists every file in `videos/`. On a first start every video is
 already playing.
 
-1. Press **Play** beside a video, if it is not already running.
+1. Press **Play once** or **Play forever** beside a video, if it is not
+   already running. Play once ends at the end of the file. Play forever
+   starts over at the end.
 2. Press **Copy** beside its address, such as
    `rtsp://autostream:10554/cargoship`.
 3. Register that address in cxedge.

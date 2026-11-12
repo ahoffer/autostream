@@ -162,9 +162,18 @@ impl MediaStream {
     }
 
     pub fn start_streaming(&mut self, services: &mut StreamServices) -> io::Result<bool> {
+        self.start_with(&StreamChanges::default(), services)
+    }
+
+    /// Apply any setting changes and start, in one restart.
+    pub fn start_with(
+        &mut self,
+        changes: &StreamChanges,
+        services: &mut StreamServices,
+    ) -> io::Result<bool> {
         let choices = StreamChoices {
             enabled: true,
-            ..self.choices.clone()
+            ..changes.applied_to(&self.choices)
         };
         self.save(&choices, &mut services.store)?;
         self.choices = choices;

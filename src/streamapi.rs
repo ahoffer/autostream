@@ -86,8 +86,9 @@ pub enum Command {
     Stop(String),
     Delete(String),
     Settings(String, StreamChanges),
-    /// Play a video file from the play page: start its play stream, made if needed.
-    Play(String),
+    /// Play a video file from the play page: start its play stream, made if needed,
+    /// with the loop count asked for (0 plays once, -1 forever) or its saved one.
+    Play(String, Option<i64>),
     /// Stop a video file's play stream.
     StopPlaying(String),
 }
@@ -128,7 +129,7 @@ pub fn execute_request(
                 Err(error) => return Err(error),
             }
         }
-        Command::Play(filename) => match registry.play_file(&filename) {
+        Command::Play(filename, loop_count) => match registry.play_file(&filename, loop_count) {
             Ok(finished) => finished,
             Err(OperationError::Refused(reason)) => {
                 return Ok(reply(json!({"error": reason}), 400));
@@ -234,14 +235,7 @@ pub fn parse_settings(query: &QueryForm) -> Result<StreamChanges, String> {
         changes.transport = Some(transport.to_string());
     }
     if let Some(loop_text) = query.first("loop") {
-        let loop_count: i64 = loop_text
-            .trim()
-            .parse()
-            .map_err(|_| "Invalid loop count".to_string())?;
-        if loop_count < -1 {
-            return Err("Invalid loop count".to_string());
-        }
-        changes.loop_count = Some(loop_count);
+        changes.loop_count = Some(parse_loop_count(loop_text)?);
     }
     if let Some(mode) = query.first("mode") {
         changes.mode = Some(VideoMode::parse(mode).ok_or_else(|| "Invalid mode".to_string())?);
@@ -338,13 +332,13 @@ async fn dispatch_play(
     headers: HeaderMap,
 ) -> Response {
     let query = QueryForm::parse(uri.query().unwrap_or(""));
-    let play_command = |command: fn(String) -> Command| match query
+    let chosen_file = || match query
         .first("file")
         .map(str::trim)
         .filter(|file| !file.is_empty())
     {
-        Some(file) => Ok(command(file.to_string())),
-        None => Err(json_response(400, &json!({"error": "Choose a video file"}))),
+        Some(file) => Ok(file.to_string()),
+        None => Err("Choose a video file".to_string()),
     };
     let command = match (&method, uri.path()) {
         (&Method::GET, "/" | "/index.html") => return html_response(PLAY_HTML),
@@ -355,14 +349,25 @@ async fn dispatch_play(
             let rows = describe_play_rows(&snapshot, &host, &state.url_facts);
             return json_response(200, &serde_json::to_value(rows).unwrap_or(Value::Null));
         }
-        (&Method::POST, "/api/play/start") => play_command(Command::Play),
-        (&Method::POST, "/api/play/stop") => play_command(Command::StopPlaying),
+        (&Method::POST, "/api/play/start") => chosen_file().and_then(|file| {
+            let loop_count = query.first("loop").map(parse_loop_count).transpose()?;
+            Ok(Command::Play(file, loop_count))
+        }),
+        (&Method::POST, "/api/play/stop") => chosen_file().map(Command::StopPlaying),
         (&Method::GET | &Method::POST, _) => return not_found(),
         _ => return json_response(501, &json!({"error": "Unsupported method"})),
     };
     match command {
         Ok(command) => submit(&state, command).await,
-        Err(refusal) => refusal,
+        Err(reason) => json_response(400, &json!({"error": reason})),
+    }
+}
+
+/// A loop count as ffmpeg takes it: 0 plays once, -1 loops forever.
+fn parse_loop_count(text: &str) -> Result<i64, String> {
+    match text.trim().parse::<i64>() {
+        Ok(loop_count) if loop_count >= -1 => Ok(loop_count),
+        _ => Err("Invalid loop count".to_string()),
     }
 }
 
@@ -739,7 +744,11 @@ mod tests {
             json!([{"file": "source.mp4", "state": null, "reason": null, "playing": false, "url": null}])
         );
         assert_eq!(
-            api.request("POST", "/api/play/start?file=source.mp4"),
+            api.request("POST", "/api/play/start?file=source.mp4&loop=-2"),
+            (400, json!({"error": "Invalid loop count"}))
+        );
+        assert_eq!(
+            api.request("POST", "/api/play/start?file=source.mp4&loop=0"),
             (200, json!({"success": true}))
         );
         let row = &api.request("GET", "/api/play").1[0];
