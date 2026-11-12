@@ -1,12 +1,8 @@
 # Consumer network: for a publisher on the same host as the Compose form of
 # the consumer. Joins its octo-cx-network so containers there reach this one
-# by name, and publishes the listeners one to one so the RTP/RTCP ports
-# MediaMTX advertises are the ones LAN clients reach. Pick free numbers in
-# .env when the consumer stack already uses a port on this host.
-#
-# The listening transports (SRT listen, TCP, HTTP TS) bind ports chosen at
-# run time from their first ports in Settings; under this mode those must stay
-# inside the ranges published here. Host networking has no such limit.
+# by name on its own ports, so no stream port is published on the host and
+# none can clash with the consumer's. Only the two pages are published, for
+# browsers outside Docker.
 services:
   autostream:
     # Consumers on the network reach this container by name, so advertised URLs
@@ -14,16 +10,8 @@ services:
     environment:
       AUTOSTREAM_DEFAULT_HOST: ${CONTAINER_NAME}
     ports:
-      - "${MEDIAMTX_RTSP_PORT}:${MEDIAMTX_RTSP_PORT}"      # RTSP
-      - "${MEDIAMTX_HLS_PORT}:${MEDIAMTX_HLS_PORT}"        # HLS
-      - "${MEDIAMTX_RTMP_PORT}:${MEDIAMTX_RTMP_PORT}"      # RTMP
-      - "${MEDIAMTX_RTP_PORT}:${MEDIAMTX_RTP_PORT}/udp"    # RTP
-      - "${MEDIAMTX_RTCP_PORT}:${MEDIAMTX_RTCP_PORT}/udp"  # RTCP
       - "${PLAY_PORT}:${PLAY_PORT}"                        # Play page
-      - "${STREAM_API_PORT}:${STREAM_API_PORT}"            # Stream Control UI, HLS (TS segments)
-      - "41000-41099:41000-41099/udp"                      # SRT listen
-      - "42000-42099:42000-42099"                          # TCP listen
-      - "43000-43099:43000-43099"                          # HTTP TS
+      - "${STREAM_API_PORT}:${STREAM_API_PORT}"            # Stream Control UI
     networks:
       - octo-cx-network
 

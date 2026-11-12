@@ -413,17 +413,16 @@ The `COMPOSE_FILE` line in `.env` selects the networking mode:
   sudo ufw allow from <lan subnet> to any port 42000:43099 proto tcp
   ```
 
-- **Consumer network** (`COMPOSE_FILE=docker-compose.yml:docker-compose.octo-cx.yml`): joins the consumer's
-  external `octo-cx-network`, so containers there reach this one as
-  `autostream` and advertised URLs use that name, and publishes the ports one to one so the RTP/RTCP ports
-  MediaMTX advertises are the ones LAN clients reach. For a publisher on the
-  same host as the Compose form of the consumer, which must already have
-  created the network. Published ports bypass ufw. Pick free numbers in `.env`
-  when the consumer stack already uses a port on that host (its relay
-  publishes 8554); with one-to-one publishing that is the only change. The
-  listening transports are published as fixed ranges (41000-41099/udp for SRT,
-  42000-42099 for TCP, 43000-43099 for HTTP TS), so their first ports must
-  stay inside those ranges in this mode.
+- **Consumer network** (`COMPOSE_FILE=docker-compose.yml:docker-compose.octo-cx.yml`,
+  and always under `make run` and `make run-local`): joins the consumer's
+  external `octo-cx-network`, which the consumer stack must already have
+  created. Containers there reach this one as `autostream` on its own ports,
+  and advertised URLs use that name. No stream port is published on the host,
+  so none can clash with the consumer's own published ports, such as its
+  relay's 8554. Only the play page and Stream Control are published, for
+  browsers. Clients outside the Docker network, such as a player elsewhere on
+  the LAN, cannot reach the streams in this mode. Use host networking for
+  them.
 
 In both modes the ports clients use are the ones shown on each card, so
 `ffplay rtsp://<advertised host>:8554/<name>` works over UDP or TCP;
