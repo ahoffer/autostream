@@ -175,13 +175,14 @@ pub enum PlayChoice {
 }
 
 impl PlayChoice {
-    /// None once a finite play ends, or for a loop count other than once or forever.
-    fn of(status: &StreamStatus) -> Option<PlayChoice> {
-        if !status.enabled {
+    /// Stop for a video without a play stream, stopped, or played to the end; none for a
+    /// loop count other than once or forever.
+    fn of(status: Option<&StreamStatus>) -> Option<PlayChoice> {
+        let Some(status) = status else {
             return Some(PlayChoice::Stop);
-        }
-        if status.state == StreamState::Completed {
-            return None;
+        };
+        if !status.enabled || status.state == StreamState::Completed {
+            return Some(PlayChoice::Stop);
         }
         match status.loop_count {
             0 => Some(PlayChoice::Once),
@@ -221,7 +222,7 @@ pub fn describe_play_rows(
                 file: file.clone(),
                 state: stream.map(|status| status.state),
                 reason: stream.and_then(|status| status.reason.clone()),
-                selected: stream.and_then(PlayChoice::of),
+                selected: PlayChoice::of(stream),
                 url,
             }
         })

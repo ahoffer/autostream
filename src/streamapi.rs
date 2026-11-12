@@ -741,7 +741,7 @@ mod tests {
         let rows = api.request("GET", "/api/play").1;
         assert_eq!(
             rows,
-            json!([{"file": "source.mp4", "state": null, "reason": null, "selected": null, "url": null}])
+            json!([{"file": "source.mp4", "state": null, "reason": null, "selected": "stop", "url": null}])
         );
         assert_eq!(
             api.request("POST", "/api/play/start?file=source.mp4&loop=-2"),

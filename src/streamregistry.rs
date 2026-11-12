@@ -1089,7 +1089,7 @@ mod tests {
         harness.ffmpeg.last_run().lock().unwrap().finish(0);
         harness.registry.supervise(None);
         assert_eq!(harness.status("source").state, StreamState::Completed);
-        assert_eq!(play_row(&mut harness.registry).selected, None);
+        assert_eq!(play_row(&mut harness.registry).selected, Some(PlayChoice::Stop));
 
         let runs = harness.ffmpeg.run_count();
         assert!(harness.registry.play_file(&source, Some(0)).unwrap());

@@ -298,8 +298,8 @@ Every mutation is a `POST`; GETs read the last published snapshot.
 - `GET /hls/<name>/index.m3u8` and segments for HLS (TS segments) streams.
 
 On `PLAY_PORT` only: `GET /api/play` lists every video with its play stream
-state, RTSP address, and `selected` button (`once`, `forever`, `stop`, or
-null after a finite play ends), and `POST /api/play/start?file=&loop=` and
+state, RTSP address, and `selected` button (`once`, `forever`, or `stop`,
+which includes a video that played to the end or was never played), and `POST /api/play/start?file=&loop=` and
 `POST /api/play/stop?file=` play and stop one. `loop=0` plays once,
 `loop=-1` loops forever, and no `loop` keeps the stream's loop count.
 
