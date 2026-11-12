@@ -741,7 +741,7 @@ mod tests {
         let rows = api.request("GET", "/api/play").1;
         assert_eq!(
             rows,
-            json!([{"file": "source.mp4", "state": null, "reason": null, "playing": false, "url": null}])
+            json!([{"file": "source.mp4", "state": null, "reason": null, "selected": null, "url": null}])
         );
         assert_eq!(
             api.request("POST", "/api/play/start?file=source.mp4&loop=-2"),
@@ -752,14 +752,19 @@ mod tests {
             (200, json!({"success": true}))
         );
         let row = &api.request("GET", "/api/play").1[0];
-        assert_eq!(row["playing"], true);
+        assert_eq!(row["selected"], "once");
         // On a consumer's network, addresses use the container's network name.
         assert_eq!(row["url"], "rtsp://autostream:8554/source");
+        assert_eq!(
+            api.request("POST", "/api/play/start?file=source.mp4&loop=-1"),
+            (200, json!({"success": true}))
+        );
+        assert_eq!(api.request("GET", "/api/play").1[0]["selected"], "forever");
         assert_eq!(
             api.request("POST", "/api/play/stop?file=source.mp4"),
             (200, json!({"success": true}))
         );
-        assert_eq!(api.request("GET", "/api/play").1[0]["playing"], false);
+        assert_eq!(api.request("GET", "/api/play").1[0]["selected"], "stop");
         assert_eq!(api.request("POST", "/api/play/start?file=other.mp4").0, 400);
     }
 

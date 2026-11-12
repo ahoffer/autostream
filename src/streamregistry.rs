@@ -580,7 +580,7 @@ mod tests {
     use crate::statefile::StreamStateStore;
     use crate::streamrecord::VideoMode;
     use crate::streamresponses::{
-        StatusSnapshot, StreamState, UrlFacts, describe_play_rows, describe_streams,
+        PlayChoice, StatusSnapshot, StreamState, UrlFacts, describe_play_rows, describe_streams,
     };
     use crate::testsupport::{
         Harness, block_writes, build_registry, fixture, inventory, test_settings,
@@ -1089,12 +1089,12 @@ mod tests {
         harness.ffmpeg.last_run().lock().unwrap().finish(0);
         harness.registry.supervise(None);
         assert_eq!(harness.status("source").state, StreamState::Completed);
-        assert!(!play_row(&mut harness.registry).playing);
+        assert_eq!(play_row(&mut harness.registry).selected, None);
 
         let runs = harness.ffmpeg.run_count();
         assert!(harness.registry.play_file(&source, Some(0)).unwrap());
         assert_eq!(harness.ffmpeg.run_count(), runs + 1);
-        assert!(play_row(&mut harness.registry).playing);
+        assert_eq!(play_row(&mut harness.registry).selected, Some(PlayChoice::Once));
     }
 
     #[test]

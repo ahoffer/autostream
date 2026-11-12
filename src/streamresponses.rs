@@ -161,8 +161,34 @@ pub struct PlayRow {
     pub file: String,
     pub state: Option<StreamState>,
     pub reason: Option<String>,
-    pub playing: bool,
+    pub selected: Option<PlayChoice>,
     pub url: Option<String>,
+}
+
+/// The play page button that describes what a video's play stream is doing.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum PlayChoice {
+    Once,
+    Forever,
+    Stop,
+}
+
+impl PlayChoice {
+    /// None once a finite play ends, or for a loop count other than once or forever.
+    fn of(status: &StreamStatus) -> Option<PlayChoice> {
+        if !status.enabled {
+            return Some(PlayChoice::Stop);
+        }
+        if status.state == StreamState::Completed {
+            return None;
+        }
+        match status.loop_count {
+            0 => Some(PlayChoice::Once),
+            -1 => Some(PlayChoice::Forever),
+            _ => None,
+        }
+    }
 }
 
 /// Every offered video with its play stream and its address on `host`.
@@ -195,10 +221,7 @@ pub fn describe_play_rows(
                 file: file.clone(),
                 state: stream.map(|status| status.state),
                 reason: stream.and_then(|status| status.reason.clone()),
-                // A stream that played to the end can be played again.
-                playing: stream.is_some_and(|status| {
-                    status.enabled && status.state != StreamState::Completed
-                }),
+                selected: stream.and_then(PlayChoice::of),
                 url,
             }
         })
