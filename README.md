@@ -11,36 +11,33 @@ joins its Docker network, so cxedge reaches the videos by the name
 `autostream`.
 
 1. **Install cxedge** with Docker Compose and start it. Its stack creates
-   `octo-cx-network`.
+   `octo-cx-network`, which `make run` expects to exist.
 
-2. **Join that network**: in `.env`, set
-   ```
-   COMPOSE_FILE=docker-compose.yml:docker-compose.octo-cx.yml
-   ```
-
-3. **Place your videos** in the `videos/` directory:
+2. **Place your videos** in the `videos/` directory:
    ```bash
    cp your-video.mp4 videos/
    ```
 
-4. **Pull and start** the image from the octo-cx registry:
+3. **Pull and start** the image from the octo-cx registry:
    ```bash
    docker login registry.octo-cx-prod.runshiftup.com   # Only needed once
    make run
    ```
+   `make run` always joins `octo-cx-network`, whatever `COMPOSE_FILE` in
+   `.env` says.
 
-5. **Open the play page** at `http://<this host>:9080`. It lists every
+4. **Open the play page** at `http://<this host>:9080`. It lists every
    video. A video added to `videos/` appears within a few seconds.
 
-6. **Play a video** and press Copy beside its address, such as
+5. **Play a video** and press Copy beside its address, such as
    `rtsp://autostream:10554/cargoship`. Register that address in cxedge.
    Stop ends the stream.
 
 On a first start every video is already playing. Play starts the file's
-first RTSP / HLS / RTMP stream, or creates one named after the file. The
-address uses the advertised host when one is set in Stream Control, and
-otherwise the container name. Only the play page and its calls answer on
-port 9080.
+first RTSP / HLS / RTMP stream, or creates one named after the file. On
+`octo-cx-network` every advertised URL uses the host name `autostream`
+unless an advertised host is set in Stream Control. Only the play page and
+its calls answer on port 9080.
 
 ## Developer quickstart
 
@@ -254,14 +251,15 @@ at once.
 |---------|---------|---------|
 | Destination host | Where pushed transports send: the consumer host's address as reachable from the publisher. Changing it restarts them. | unset |
 | Multicast group | The group the Multicast transport sends to, and what the consumer registers. | 239.255.0.1 |
-| Advertised host | Host in the URLs the consumer registers. Blank uses the address the client reached the API by. | blank |
+| Advertised host | Host in the URLs the consumer registers. Blank uses the container name in the consumer network mode, and otherwise the address the client reached the API by. | blank |
 | Bitrate cap | Transcode-only cap such as `2M` or `3000K`. Changing it restarts only streams transcoding above it. Blank disables the cap. | blank |
 | SRTP key | Base64 master key the SRTP transport encrypts with; the consumer needs the same key. | `autostream` repeated four times |
 | First ports | One per transport kind that takes one. A new stream takes the lowest free port from its kind's first port and keeps it; changing a first port affects later streams only. | UDP 40000, RTP 40020, SRT call 40040, SRTP 40060, SRT listen 41000, TCP 42000, HTTP TS 43000 |
 
 Destination host and Advertised host each have a **Use LAN IP** shortcut.
 It fills that field; Save applies the choice. Clear Advertised host to return
-to using the browser's address. Existing saved values are preserved.
+to the default. That is the container name in the consumer network mode, and
+the browser's address otherwise. Existing saved values are preserved.
 
 `make up` runs the `composeup` helper, which supplies the Docker daemon's
 hostname and, for a local Linux daemon, the IPv4 address of the host's
@@ -414,7 +412,7 @@ The `COMPOSE_FILE` line in `.env` selects the networking mode:
 
 - **Consumer network** (`COMPOSE_FILE=docker-compose.yml:docker-compose.octo-cx.yml`): joins the consumer's
   external `octo-cx-network`, so containers there reach this one as
-  `autostream`, and publishes the ports one to one so the RTP/RTCP ports
+  `autostream` and advertised URLs use that name, and publishes the ports one to one so the RTP/RTCP ports
   MediaMTX advertises are the ones LAN clients reach. For a publisher on the
   same host as the Compose form of the consumer, which must already have
   created the network. Published ports bypass ufw. Pick free numbers in `.env`

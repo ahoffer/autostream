@@ -32,14 +32,17 @@ up:  ## Start the stack using COMPOSE_FILE in .env
 	cargo run --quiet --release --bin composeup
 	$(SHOW_PAGES)
 
-# The same start from the registry image, with no build and no Rust. The
+# Start the registry image on the consumer's octo-cx-network, with no build and
+# no Rust. The network must already exist, created by the cxedge stack. The
 # image is tagged with its local name so Compose finds it. Without the
 # composeup helper, the LAN IP shortcut in Stream Control stays disabled.
-run:  ## Pull the image from the octo-cx registry and start the stack
+OCTO_CX_COMPOSE_FILE := docker-compose.yml:docker-compose.octo-cx.yml
+
+run:  ## Pull the image from the octo-cx registry and start it on octo-cx-network
 	mkdir -p mounted
 	docker pull $(REGISTRY_IMAGE):$(VERSION)
 	set -a && . ./.env && docker tag $(REGISTRY_IMAGE):$(VERSION) $$CONTAINER_NAME:$(VERSION)
-	VERSION=$(VERSION) docker compose up -d
+	COMPOSE_FILE=$(OCTO_CX_COMPOSE_FILE) VERSION=$(VERSION) docker compose up -d
 	$(SHOW_PAGES)
 
 # Requires `docker login registry.octo-cx-prod.runshiftup.com` and a GitLab

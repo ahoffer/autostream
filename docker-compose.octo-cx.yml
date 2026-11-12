@@ -9,6 +9,10 @@
 # inside the ranges published here. Host networking has no such limit.
 services:
   autostream:
+    # Consumers on the network reach this container by name, so advertised URLs
+    # use it unless Settings names another advertised host.
+    environment:
+      AUTOSTREAM_DEFAULT_HOST: ${CONTAINER_NAME}
     ports:
       - "${MEDIAMTX_RTSP_PORT}:${MEDIAMTX_RTSP_PORT}"      # RTSP
       - "${MEDIAMTX_HLS_PORT}:${MEDIAMTX_HLS_PORT}"        # HLS

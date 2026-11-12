@@ -46,8 +46,19 @@ pub struct ApiState {
     pub url_facts: UrlFacts,
     pub hls_dir: PathBuf,
     pub host_addresses: Arc<Mutex<HostAddresses>>,
-    /// The container's name on the consumer network, for the play page's addresses.
-    pub network_host: String,
+    /// The deployment's host for advertised URLs when Settings leaves the advertised host blank.
+    pub default_host: Option<String>,
+}
+
+impl ApiState {
+    /// The host in advertised URLs: the saved advertised host, else the
+    /// deployment's default, else the address the client reached the API by.
+    fn url_host(&self, advertised_host: Option<&str>, headers: &HeaderMap) -> String {
+        let advertised = advertised_host
+            .filter(|host| !host.is_empty())
+            .or(self.default_host.as_deref());
+        self.url_facts.host_for(advertised, host_header(headers))
+    }
 }
 
 pub fn router(state: Arc<ApiState>) -> Router {
@@ -315,7 +326,12 @@ fn font_response() -> Response {
     bytes_response("font/woff2", "public, max-age=86400", FONT_WOFF2.to_vec())
 }
 
-async fn dispatch_play(State(state): State<Arc<ApiState>>, method: Method, uri: Uri) -> Response {
+async fn dispatch_play(
+    State(state): State<Arc<ApiState>>,
+    method: Method,
+    uri: Uri,
+    headers: HeaderMap,
+) -> Response {
     let query = QueryForm::parse(uri.query().unwrap_or(""));
     let play_command = |command: fn(String) -> Command| match query
         .first("file")
@@ -329,11 +345,9 @@ async fn dispatch_play(State(state): State<Arc<ApiState>>, method: Method, uri: 
         (&Method::GET, "/" | "/index.html") => return html_response(PLAY_HTML),
         (&Method::GET, "/jost.woff2") => return font_response(),
         (&Method::GET, "/api/play") => {
-            let rows = describe_play_rows(
-                &read_snapshot(&state.snapshot),
-                &state.network_host,
-                &state.url_facts,
-            );
+            let snapshot = read_snapshot(&state.snapshot);
+            let host = state.url_host(snapshot.settings.advertised_host.as_deref(), &headers);
+            let rows = describe_play_rows(&snapshot, &host, &state.url_facts);
             return json_response(200, &serde_json::to_value(rows).unwrap_or(Value::Null));
         }
         (&Method::POST, "/api/play/start") => play_command(Command::Play),
@@ -352,10 +366,7 @@ fn get(state: &ApiState, path: &str, headers: &HeaderMap) -> Response {
         "/" | "/index.html" => html_response(INDEX_HTML),
         "/api/streams" => {
             let snapshot = read_snapshot(&state.snapshot);
-            let host = state.url_facts.host_for(
-                snapshot.settings.advertised_host.as_deref(),
-                host_header(headers),
-            );
+            let host = state.url_host(snapshot.settings.advertised_host.as_deref(), headers);
             let rows = describe_streams(
                 &snapshot.statuses,
                 &snapshot.settings,
@@ -381,7 +392,7 @@ fn get(state: &ApiState, path: &str, headers: &HeaderMap) -> Response {
             let report = HostReport {
                 hostname: &addresses.hostname,
                 lan_ip: &addresses.lan_ip,
-                client_host: state.url_facts.host_for(None, host_header(headers)),
+                client_host: state.url_host(None, headers),
             };
             json_response(200, &serde_json::to_value(report).unwrap_or(Value::Null))
         }
@@ -536,13 +547,14 @@ mod tests {
 
     impl ApiHarness {
         fn start(harness: Harness, queue_capacity: usize) -> Self {
-            Self::serve(harness, queue_capacity, router)
+            Self::serve(harness, queue_capacity, router, None)
         }
 
         fn serve(
             harness: Harness,
             queue_capacity: usize,
             make_router: fn(Arc<ApiState>) -> Router,
+            default_host: Option<&str>,
         ) -> Self {
             let Harness {
                 mut registry,
@@ -580,7 +592,7 @@ mod tests {
                     hostname: "publisher".into(),
                     lan_ip: "192.168.1.20".into(),
                 })),
-                network_host: "autostream".into(),
+                default_host: default_host.map(str::to_string),
             });
             let runtime = tokio::runtime::Builder::new_multi_thread()
                 .worker_threads(2)
@@ -698,7 +710,7 @@ mod tests {
 
     #[test]
     fn the_play_port_plays_and_stops_videos_and_offers_nothing_else() {
-        let api = ApiHarness::serve(Harness::new(), 8, play_router);
+        let api = ApiHarness::serve(Harness::new(), 8, play_router, Some("autostream"));
         let page = api.fetch("GET", "/", None);
         assert_eq!(page.status, 200);
         assert_eq!(
@@ -726,7 +738,7 @@ mod tests {
         );
         let row = &api.request("GET", "/api/play").1[0];
         assert_eq!(row["playing"], true);
-        // The test settings advertise no host, so the address names the container.
+        // The test settings advertise no host, so the deployment's default names it.
         assert_eq!(row["url"], "rtsp://autostream:8554/source");
         assert_eq!(
             api.request("POST", "/api/play/stop?file=source.mp4"),
@@ -734,6 +746,28 @@ mod tests {
         );
         assert_eq!(api.request("GET", "/api/play").1[0]["playing"], false);
         assert_eq!(api.request("POST", "/api/play/start?file=other.mp4").0, 400);
+    }
+
+    #[test]
+    fn a_default_host_replaces_the_client_address_until_an_advertised_host_is_set() {
+        let mut harness = Harness::new();
+        let source = harness.source_name();
+        harness.create("boats", &source, "rtsp");
+        let api = ApiHarness::serve(harness, 8, router, Some("autostream"));
+        let register = |api: &ApiHarness| {
+            api.stream("boats", Some("operator-console:9180"))["register"][0][1].clone()
+        };
+        assert_eq!(register(&api), "rtsp://autostream:8554/boats");
+        assert_eq!(
+            api.fetch("GET", "/api/host", Some("operator-console:9180"))
+                .json()["client_host"],
+            "autostream"
+        );
+        assert_eq!(
+            api.request("POST", "/api/settings?advertised_host=media.example"),
+            (200, json!({"success": true}))
+        );
+        assert_eq!(register(&api), "rtsp://media.example:8554/boats");
     }
 
     #[test]

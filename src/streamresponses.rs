@@ -165,19 +165,12 @@ pub struct PlayRow {
     pub url: Option<String>,
 }
 
-/// Every offered video with its play stream. Addresses use the advertised host when one
-/// is set, and otherwise the container's name on the consumer network.
+/// Every offered video with its play stream and its address on `host`.
 pub fn describe_play_rows(
     snapshot: &StatusSnapshot,
-    network_host: &str,
+    host: &str,
     url_facts: &UrlFacts,
 ) -> Vec<PlayRow> {
-    let host = snapshot
-        .settings
-        .advertised_host
-        .as_deref()
-        .filter(|host| !host.is_empty())
-        .unwrap_or(network_host);
     snapshot
         .videos
         .iter()

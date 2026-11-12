@@ -79,7 +79,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             hostname: config.host_name.clone(),
             lan_ip: config.host_lan_ip.clone(),
         })),
-        network_host: config.container_name.clone(),
+        default_host: config.default_host.clone(),
     });
 
     let mut watcher = None;
