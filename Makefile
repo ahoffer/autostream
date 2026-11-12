@@ -1,7 +1,7 @@
 # Typical flow: build -> test -> up. Set COMPOSE_FILE in .env to select
 # the networking mode. The image version comes from Cargo.toml.
 
-.PHONY: help build test up run push
+.PHONY: help build test up run pull run-local push
 
 .DEFAULT_GOAL := help
 
@@ -38,10 +38,14 @@ up:  ## Start the stack using COMPOSE_FILE in .env
 # composeup helper, the LAN IP shortcut in Stream Control stays disabled.
 OCTO_CX_COMPOSE_FILE := docker-compose.yml:docker-compose.octo-cx.yml
 
-run:  ## Pull the image from the octo-cx registry and start it on octo-cx-network
-	mkdir -p mounted
+run: pull run-local  ## Pull the image from the octo-cx registry and start it on octo-cx-network
+
+pull:  ## Pull the image from the octo-cx registry and tag it with its local name
 	docker pull $(REGISTRY_IMAGE):$(VERSION)
 	set -a && . ./.env && docker tag $(REGISTRY_IMAGE):$(VERSION) $$CONTAINER_NAME:$(VERSION)
+
+run-local:  ## Start the local image on octo-cx-network, as make run does, to test before make push
+	mkdir -p mounted
 	COMPOSE_FILE=$(OCTO_CX_COMPOSE_FILE) VERSION=$(VERSION) docker compose up -d
 	$(SHOW_PAGES)
 

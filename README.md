@@ -63,9 +63,12 @@ setting.
 6. **Create other streams**: press New stream, choose the file and the
    transport, name it, and press Create and start.
 
-7. **Publish for evaluators**: `make push` sends the built image to the
-   octo-cx registry, where `make run` finds it. The registry path is
-   `REGISTRY_IMAGE` in the Makefile, and a GitLab project must exist there.
+7. **Publish for evaluators**: `make run-local` starts the built image on
+   `octo-cx-network` exactly as evaluators will, so you can test it first.
+   `make push` then sends the image to the octo-cx registry, where `make run`
+   finds it. The registry path is `REGISTRY_IMAGE` in the Makefile, and a
+   GitLab project must exist there. `make up` returns to the networking mode
+   in `.env`.
 
 ## How It Works
 
