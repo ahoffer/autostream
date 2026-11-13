@@ -9,7 +9,7 @@
 VERSION := $(shell sed -n 's/^version = "\(.*\)"$$/\1/p' Cargo.toml | head -n 1)
 
 # Where `make push` publishes the image and the package pulls it. Override it on the command line.
-REGISTRY_IMAGE ?= registry.octo-cx-prod.runshiftup.com/octo-cx/common/autostream
+REGISTRY_IMAGE ?= registry.octo-cx-prod.runshiftup.com/octo-cx/marsoc/marrs-vnv/autostream
 
 HOST_COMPOSE_FILE := docker-compose.yml:docker-compose.host.yml
 # Docker mode has one definition, the compose file testers receive.
