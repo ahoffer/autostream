@@ -73,6 +73,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             hls_port: config.hls_port,
             rtmp_port: config.rtmp_port,
             api_port: config.api_port,
+            play_port: config.play_port,
         },
         hls_dir: config.hls_dir.clone(),
         host_addresses: Arc::new(Mutex::new(HostAddresses {

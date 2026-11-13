@@ -74,6 +74,7 @@ pub struct UrlFacts {
     pub hls_port: u16,
     pub rtmp_port: u16,
     pub api_port: u16,
+    pub play_port: u16,
 }
 
 impl UrlFacts {
@@ -285,6 +286,7 @@ mod tests {
             hls_port: 8888,
             rtmp_port: 1935,
             api_port: 8080,
+            play_port: 9080,
         };
         for case in fixture["host_for"].as_array().unwrap() {
             let host = facts.host_for(

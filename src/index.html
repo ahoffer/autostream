@@ -88,6 +88,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
   border-bottom: 3px solid var(--ink);
 }
 .head h1 { font-size: 32px; line-height: 40px; font-weight: 500; letter-spacing: -0.01em; }
+.otherpage { margin-right: auto; font-size: 18px; line-height: 24px; color: var(--blue); }
 .counts { font-size: 18px; line-height: 24px; }
 .counts b { font-weight: 700; }
 .counts .live { color: var(--blue); }
@@ -351,6 +352,7 @@ details.advanced .form { padding-top: 8px; }
 <div class="page">
   <header class="head">
     <h1>Stream Control</h1>
+    <a class="otherpage" id="otherPage" hidden>Videos</a>
     <p class="counts" id="counts" aria-live="polite"></p>
   </header>
 
@@ -1282,6 +1284,18 @@ panelNode.addEventListener("submit", (event) => {
     callServer("settings", `/api/settings?${queryString(values)}`, submitter, () => { state.settingsDraft = null; });
   }
 });
+
+/* ---------- link to the play page ---------- */
+async function linkOtherPage() {
+  const response = await fetch("/api/ports");
+  if (!response.ok) return;
+  const ports = await response.json();
+  const link = document.getElementById("otherPage");
+  link.href = `${location.protocol}//${location.hostname}:${ports.play_port}/`;
+  link.hidden = false;
+}
+
+linkOtherPage();
 
 /* ---------- polling and freshness ---------- */
 poll();

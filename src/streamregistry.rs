@@ -1082,6 +1082,7 @@ mod tests {
                 hls_port: 8888,
                 rtmp_port: 1935,
                 api_port: 8080,
+                play_port: 9080,
             };
             describe_play_rows(&snapshot, "publisher", &url_facts).remove(0)
         };
@@ -1309,6 +1310,7 @@ mod tests {
             hls_port: 8888,
             rtmp_port: 1935,
             api_port: 8080,
+            play_port: 9080,
         };
 
         let mut registry = build_registry(

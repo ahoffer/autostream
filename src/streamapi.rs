@@ -321,6 +321,14 @@ fn html_response(page: &'static str) -> Response {
     response
 }
 
+/// The ports of the two pages, so each page can link to the other.
+fn page_ports(url_facts: &UrlFacts) -> Response {
+    json_response(
+        200,
+        &json!({"play_port": url_facts.play_port, "api_port": url_facts.api_port}),
+    )
+}
+
 fn font_response() -> Response {
     bytes_response("font/woff2", "public, max-age=86400", FONT_WOFF2.to_vec())
 }
@@ -343,6 +351,7 @@ async fn dispatch_play(
     let command = match (&method, uri.path()) {
         (&Method::GET, "/" | "/index.html") => return html_response(PLAY_HTML),
         (&Method::GET, "/jost.woff2") => return font_response(),
+        (&Method::GET, "/api/ports") => return page_ports(&state.url_facts),
         (&Method::GET, "/api/play") => {
             let snapshot = read_snapshot(&state.snapshot);
             let host = state.url_host(snapshot.settings.advertised_host.as_deref(), &headers);
@@ -385,6 +394,7 @@ fn get(state: &ApiState, path: &str, headers: &HeaderMap) -> Response {
             );
             json_response(200, &serde_json::to_value(rows).unwrap_or(Value::Null))
         }
+        "/api/ports" => page_ports(&state.url_facts),
         "/api/videos" => json_response(200, &json!(read_snapshot(&state.snapshot).videos)),
         "/api/transports" => json_response(
             200,
@@ -597,6 +607,7 @@ mod tests {
                     hls_port: 8888,
                     rtmp_port: 1935,
                     api_port: 8080,
+                    play_port: 9080,
                 },
                 hls_dir: config.hls_dir.clone(),
                 host_addresses: Arc::new(Mutex::new(HostAddresses {
@@ -727,6 +738,10 @@ mod tests {
         assert_eq!(
             page.content_type.as_deref(),
             Some("text/html; charset=utf-8")
+        );
+        assert_eq!(
+            api.request("GET", "/api/ports"),
+            (200, json!({"play_port": 9080, "api_port": 8080}))
         );
         assert_eq!(api.fetch("GET", "/api/streams", None).status, 404);
         assert_eq!(
@@ -965,6 +980,10 @@ mod tests {
         let api = setup();
         let source = source_name(&api);
         assert_eq!(api.request("GET", "/api/videos").1, json!([source]));
+        assert_eq!(
+            api.request("GET", "/api/ports").1,
+            json!({"play_port": 9080, "api_port": 8080})
+        );
         let transports = api.request("GET", "/api/transports").1;
         let ids: Vec<&str> = transports
             .as_array()
