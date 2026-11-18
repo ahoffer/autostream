@@ -9,15 +9,15 @@ reaches every stream by the name `autostream`.
 - Docker with Compose (`docker compose version` prints a version).
 - cxedge installed with Docker Compose and running. Its stack creates the
   `octo-cx-network` network that autostream joins.
-- Credentials for `registry.octo-cx-prod.runshiftup.com`, from the person who
-  gave you this folder.
+- `GITLAB_OLABS_HOST`, `GITLAB_OLABS_USER`, and `GITLAB_OLABS_TOKEN` set in
+  your environment, from the person who gave you this folder.
 
 ## Start
 
 Run these commands in this folder:
 
 ```bash
-docker login registry.octo-cx-prod.runshiftup.com   # Only needed once
+printf '%s' "$GITLAB_OLABS_TOKEN" | docker login "$GITLAB_OLABS_HOST" -u "$GITLAB_OLABS_USER" --password-stdin   # Only needed once
 docker compose up -d
 ```
 

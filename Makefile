@@ -8,8 +8,10 @@
 
 VERSION := $(shell sed -n 's/^version = "\(.*\)"$$/\1/p' Cargo.toml | head -n 1)
 
-# Where `make push` publishes the image and the package pulls it. Override it on the command line.
-REGISTRY_IMAGE ?= registry.octo-cx-prod.runshiftup.com/octo-cx/marsoc/marrs-vnv/autostream
+# Where `make push` publishes the image and the package pulls it, under
+# GITLAB_OLABS_HOST. The package names the host only by that variable.
+REGISTRY_PATH := octo-cx/marsoc/marrs-vnv/autostream
+REGISTRY_IMAGE := $(GITLAB_OLABS_HOST)/$(REGISTRY_PATH)
 
 HOST_COMPOSE_FILE := docker-compose.yml:docker-compose.host.yml
 # Docker mode has one definition, the compose file testers receive.
@@ -49,20 +51,25 @@ run-local-docker:  ## Start the local image on octo-cx-network, as testers will
 		docker compose -f $(DOCKER_MODE_COMPOSE) --project-directory . up -d
 	$(SHOW_PAGES)
 
-# Requires `docker login registry.octo-cx-prod.runshiftup.com` and a GitLab
-# project at the REGISTRY_IMAGE path with its container registry enabled.
-push:  ## Tag the built image and push it to the octo-cx registry
+# Logs in with GITLAB_OLABS_HOST, GITLAB_OLABS_USER, and GITLAB_OLABS_TOKEN
+# from the environment.
+# Requires a GitLab project at the REGISTRY_IMAGE path with its container
+# registry enabled.
+push:  ## Tag the built image and push it to the olabs registry
+	@: "$${GITLAB_OLABS_HOST:?must be set}" "$${GITLAB_OLABS_USER:?must be set}" "$${GITLAB_OLABS_TOKEN:?must be set}"
+	printf '%s' "$$GITLAB_OLABS_TOKEN" | docker login "$$GITLAB_OLABS_HOST" -u "$$GITLAB_OLABS_USER" --password-stdin
 	set -a && . ./.env && docker tag $$CONTAINER_NAME:$(VERSION) $(REGISTRY_IMAGE):$(VERSION)
 	docker push $(REGISTRY_IMAGE):$(VERSION)
 
 # Stage the folder in a temporary directory, then zip it into .generated/.
 # Its .env is this one plus the registry image the tester's Compose pulls.
+# Compose fills in GITLAB_OLABS_HOST from the tester's environment.
 package-docker-mode:  ## Zip the docker mode folder for testers into .generated/
 	staging=$$(mktemp -d) && folder=$$staging/$(PACKAGE_NAME) && \
 	mkdir -p $$folder/videos .generated && \
 	cp $(DOCKER_MODE_COMPOSE) package/README.md $$folder/ && \
 	cp .env $$folder/.env && \
-	printf 'AUTOSTREAM_IMAGE=%s:%s\n' '$(REGISTRY_IMAGE)' '$(VERSION)' >> $$folder/.env && \
+	printf 'AUTOSTREAM_IMAGE=%s/%s:%s\n' '$${GITLAB_OLABS_HOST:?set GITLAB_OLABS_HOST}' '$(REGISTRY_PATH)' '$(VERSION)' >> $$folder/.env && \
 	$(if $(PACKAGE_VIDEOS),cp $(PACKAGE_VIDEOS) $$folder/videos/ &&) \
 	rm -f .generated/$(PACKAGE_NAME).zip && \
 	(cd $$staging && zip -qr $(CURDIR)/.generated/$(PACKAGE_NAME).zip $(PACKAGE_NAME)) && \
