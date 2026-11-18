@@ -60,6 +60,7 @@ pub fn delivery_from_fixture(document: &Value) -> Delivery {
         "rtsp" => Muxer::Rtsp,
         "rtp_mpegts" => Muxer::RtpMpegts,
         "hls" => Muxer::Hls,
+        "rtsp_relay" => Muxer::RtspRelay,
         _ => Muxer::Mpegts,
     };
     Delivery {
@@ -90,7 +91,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use crate::appconfig::Config;
-use crate::ffmpegprocess::{ProcessObservation, StreamProcess};
+use crate::ffmpegprocess::{ProcessObservation, StreamCommand, StreamProcess};
 use crate::filewatch::Inventory;
 use crate::mediastream::{FfmpegBoundary, StreamChanges, StreamServices};
 use crate::runtimesettings::RuntimeSettings;
@@ -125,7 +126,7 @@ pub fn test_profile() -> MediaProbeResult {
 /// One fake child: what the stream told it, and what the test makes it report.
 #[derive(Debug, Default)]
 pub struct FakeRun {
-    pub argv: Vec<String>,
+    pub command: StreamCommand,
     pub code: Option<i32>,
     pub age: Duration,
     pub stuck: bool,
@@ -143,8 +144,8 @@ pub type RunHandle = Arc<Mutex<FakeRun>>;
 struct FakeProcess(RunHandle);
 
 impl StreamProcess for FakeProcess {
-    fn start(&mut self, argv: &[String]) -> io::Result<()> {
-        self.0.lock().unwrap().argv = argv.to_vec();
+    fn start(&mut self, command: &StreamCommand) -> io::Result<()> {
+        self.0.lock().unwrap().command = command.clone();
         Ok(())
     }
 
@@ -152,7 +153,7 @@ impl StreamProcess for FakeProcess {
         let run = self.0.lock().unwrap();
         ProcessObservation {
             returncode: run.code,
-            argv: run.argv.clone(),
+            command: run.command.clone(),
             running_for: run.age,
             diagnostics: run.tail.clone(),
         }
@@ -259,7 +260,7 @@ impl HostResolver for FakeResolver {
 }
 
 pub fn make_config(videos_dir: &Path, state_path: &Path, hls_dir: &Path) -> Config {
-    let mut config = Config::new(8554, 8888, 1935, 8080, "debug").unwrap();
+    let mut config = Config::new(8554, 8080, "debug").unwrap();
     config.videos_dir = videos_dir.to_path_buf();
     config.state_path = state_path.to_path_buf();
     config.hls_dir = hls_dir.to_path_buf();

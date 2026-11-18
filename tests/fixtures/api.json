@@ -7,7 +7,7 @@
    "status": 200,
    "content_type": "text/html; charset=utf-8",
    "cache_control": null,
-   "body_length": 56820,
+   "body_length": 56893,
    "body_prefix": "<!doctyp"
   },
   {
@@ -17,7 +17,7 @@
    "status": 200,
    "content_type": "text/html; charset=utf-8",
    "cache_control": null,
-   "body_length": 56820,
+   "body_length": 56893,
    "body_prefix": "<!doctyp"
   },
   {
@@ -71,9 +71,9 @@
      "reason": null,
      "running": true,
      "stopping": false,
-     "command": "ffmpeg -hide_banner -nostats -re -stream_loop -1 -i {videos_dir}/boats.mp4 -map 0 -copy_unknown -c:v copy -c:a copy -c:d copy -max_interleave_delta 1000 -fflags +genpts -avoid_negative_ts make_zero -max_muxing_queue_size 1024 -f mpegts 'srt://127.0.0.1:8890?streamid=publish:boats'",
-     "delivery": "srt://127.0.0.1:8890?streamid=publish:boats",
-     "transport_label": "RTSP / HLS / RTMP via MediaMTX",
+     "command": "ffmpeg -hide_banner -nostats -re -stream_loop -1 -i {videos_dir}/boats.mp4 -map 0 -copy_unknown -c:v copy -c:a copy -c:d copy -max_interleave_delta 1000 -fflags +genpts -avoid_negative_ts make_zero -max_muxing_queue_size 1024 -f mpegts pipe:1 | gst-launch-1.0 -q fdsrc fd=0 do-timestamp=true '!' typefind force-caps=video/mpegts,systemstream=true,packetsize=188 '!' rtspclientsink location=rtsp://127.0.0.1:8554/boats protocols=tcp",
+     "delivery": "rtsp://127.0.0.1:8554/boats",
+     "transport_label": "RTSP via MediaMTX",
      "direction": "serve",
      "carries_klv": true,
      "delivery_label": "publishes to",
@@ -81,14 +81,6 @@
       [
        "rtsp",
        "rtsp://operator-console:8554/boats"
-      ],
-      [
-       "hls",
-       "http://operator-console:8888/boats/index.m3u8"
-      ],
-      [
-       "rtmp",
-       "rtmp://operator-console:1935/boats"
       ]
      ]
     },
@@ -179,9 +171,9 @@
      "reason": null,
      "running": true,
      "stopping": false,
-     "command": "ffmpeg -hide_banner -nostats -re -stream_loop -1 -i {videos_dir}/boats.mp4 -map 0 -copy_unknown -c:v copy -c:a copy -c:d copy -max_interleave_delta 1000 -fflags +genpts -avoid_negative_ts make_zero -max_muxing_queue_size 1024 -f mpegts 'srt://127.0.0.1:8890?streamid=publish:boats'",
-     "delivery": "srt://127.0.0.1:8890?streamid=publish:boats",
-     "transport_label": "RTSP / HLS / RTMP via MediaMTX",
+     "command": "ffmpeg -hide_banner -nostats -re -stream_loop -1 -i {videos_dir}/boats.mp4 -map 0 -copy_unknown -c:v copy -c:a copy -c:d copy -max_interleave_delta 1000 -fflags +genpts -avoid_negative_ts make_zero -max_muxing_queue_size 1024 -f mpegts pipe:1 | gst-launch-1.0 -q fdsrc fd=0 do-timestamp=true '!' typefind force-caps=video/mpegts,systemstream=true,packetsize=188 '!' rtspclientsink location=rtsp://127.0.0.1:8554/boats protocols=tcp",
+     "delivery": "rtsp://127.0.0.1:8554/boats",
+     "transport_label": "RTSP via MediaMTX",
      "direction": "serve",
      "carries_klv": true,
      "delivery_label": "publishes to",
@@ -189,14 +181,6 @@
       [
        "rtsp",
        "rtsp://[::1]:8554/boats"
-      ],
-      [
-       "hls",
-       "http://[::1]:8888/boats/index.m3u8"
-      ],
-      [
-       "rtmp",
-       "rtmp://[::1]:1935/boats"
       ]
      ]
     },
@@ -287,9 +271,9 @@
      "reason": null,
      "running": true,
      "stopping": false,
-     "command": "ffmpeg -hide_banner -nostats -re -stream_loop -1 -i {videos_dir}/boats.mp4 -map 0 -copy_unknown -c:v copy -c:a copy -c:d copy -max_interleave_delta 1000 -fflags +genpts -avoid_negative_ts make_zero -max_muxing_queue_size 1024 -f mpegts 'srt://127.0.0.1:8890?streamid=publish:boats'",
-     "delivery": "srt://127.0.0.1:8890?streamid=publish:boats",
-     "transport_label": "RTSP / HLS / RTMP via MediaMTX",
+     "command": "ffmpeg -hide_banner -nostats -re -stream_loop -1 -i {videos_dir}/boats.mp4 -map 0 -copy_unknown -c:v copy -c:a copy -c:d copy -max_interleave_delta 1000 -fflags +genpts -avoid_negative_ts make_zero -max_muxing_queue_size 1024 -f mpegts pipe:1 | gst-launch-1.0 -q fdsrc fd=0 do-timestamp=true '!' typefind force-caps=video/mpegts,systemstream=true,packetsize=188 '!' rtspclientsink location=rtsp://127.0.0.1:8554/boats protocols=tcp",
+     "delivery": "rtsp://127.0.0.1:8554/boats",
+     "transport_label": "RTSP via MediaMTX",
      "direction": "serve",
      "carries_klv": true,
      "delivery_label": "publishes to",
@@ -297,14 +281,6 @@
       [
        "rtsp",
        "rtsp://operator-console:8554/boats"
-      ],
-      [
-       "hls",
-       "http://operator-console:8888/boats/index.m3u8"
-      ],
-      [
-       "rtmp",
-       "rtmp://operator-console:1935/boats"
       ]
      ]
     },
@@ -386,7 +362,7 @@
    "json": [
     {
      "id": "rtsp",
-     "label": "RTSP / HLS / RTMP via MediaMTX",
+     "label": "RTSP via MediaMTX",
      "direction": "serve",
      "carries_klv": true,
      "first_port_setting": null,
@@ -891,9 +867,9 @@
      "reason": null,
      "running": true,
      "stopping": false,
-     "command": "ffmpeg -hide_banner -nostats -re -stream_loop 1 -i {videos_dir}/boats.mp4 -map 0 -copy_unknown -c:v copy -c:a copy -c:d copy -max_interleave_delta 1000 -fflags +genpts -avoid_negative_ts make_zero -max_muxing_queue_size 1024 -f mpegts 'srt://127.0.0.1:8890?streamid=publish:boats'",
-     "delivery": "srt://127.0.0.1:8890?streamid=publish:boats",
-     "transport_label": "RTSP / HLS / RTMP via MediaMTX",
+     "command": "ffmpeg -hide_banner -nostats -re -stream_loop 1 -i {videos_dir}/boats.mp4 -map 0 -copy_unknown -c:v copy -c:a copy -c:d copy -max_interleave_delta 1000 -fflags +genpts -avoid_negative_ts make_zero -max_muxing_queue_size 1024 -f mpegts pipe:1 | gst-launch-1.0 -q fdsrc fd=0 do-timestamp=true '!' typefind force-caps=video/mpegts,systemstream=true,packetsize=188 '!' rtspclientsink location=rtsp://127.0.0.1:8554/boats protocols=tcp",
+     "delivery": "rtsp://127.0.0.1:8554/boats",
+     "transport_label": "RTSP via MediaMTX",
      "direction": "serve",
      "carries_klv": true,
      "delivery_label": "publishes to",
@@ -901,14 +877,6 @@
       [
        "rtsp",
        "rtsp://operator-console:8554/boats"
-      ],
-      [
-       "hls",
-       "http://operator-console:8888/boats/index.m3u8"
-      ],
-      [
-       "rtmp",
-       "rtmp://operator-console:1935/boats"
       ]
      ]
     },
@@ -1076,9 +1044,9 @@
      "reason": null,
      "running": true,
      "stopping": false,
-     "command": "ffmpeg -hide_banner -nostats -re -stream_loop 1 -i {videos_dir}/boats.mp4 -map 0 -copy_unknown -c:v copy -c:a copy -c:d copy -max_interleave_delta 1000 -fflags +genpts -avoid_negative_ts make_zero -max_muxing_queue_size 1024 -f mpegts 'srt://127.0.0.1:8890?streamid=publish:boats'",
-     "delivery": "srt://127.0.0.1:8890?streamid=publish:boats",
-     "transport_label": "RTSP / HLS / RTMP via MediaMTX",
+     "command": "ffmpeg -hide_banner -nostats -re -stream_loop 1 -i {videos_dir}/boats.mp4 -map 0 -copy_unknown -c:v copy -c:a copy -c:d copy -max_interleave_delta 1000 -fflags +genpts -avoid_negative_ts make_zero -max_muxing_queue_size 1024 -f mpegts pipe:1 | gst-launch-1.0 -q fdsrc fd=0 do-timestamp=true '!' typefind force-caps=video/mpegts,systemstream=true,packetsize=188 '!' rtspclientsink location=rtsp://127.0.0.1:8554/boats protocols=tcp",
+     "delivery": "rtsp://127.0.0.1:8554/boats",
+     "transport_label": "RTSP via MediaMTX",
      "direction": "serve",
      "carries_klv": true,
      "delivery_label": "publishes to",
@@ -1086,14 +1054,6 @@
       [
        "rtsp",
        "rtsp://publisher-host:8554/boats"
-      ],
-      [
-       "hls",
-       "http://publisher-host:8888/boats/index.m3u8"
-      ],
-      [
-       "rtmp",
-       "rtmp://publisher-host:1935/boats"
       ]
      ]
     },
@@ -1294,9 +1254,9 @@
      "reason": "stopped",
      "running": false,
      "stopping": false,
-     "command": "ffmpeg -hide_banner -nostats -re -stream_loop 1 -i {videos_dir}/boats.mp4 -map 0 -copy_unknown -c:v copy -c:a copy -c:d copy -max_interleave_delta 1000 -fflags +genpts -avoid_negative_ts make_zero -max_muxing_queue_size 1024 -f mpegts 'srt://127.0.0.1:8890?streamid=publish:boats'",
-     "delivery": "srt://127.0.0.1:8890?streamid=publish:boats",
-     "transport_label": "RTSP / HLS / RTMP via MediaMTX",
+     "command": "ffmpeg -hide_banner -nostats -re -stream_loop 1 -i {videos_dir}/boats.mp4 -map 0 -copy_unknown -c:v copy -c:a copy -c:d copy -max_interleave_delta 1000 -fflags +genpts -avoid_negative_ts make_zero -max_muxing_queue_size 1024 -f mpegts pipe:1 | gst-launch-1.0 -q fdsrc fd=0 do-timestamp=true '!' typefind force-caps=video/mpegts,systemstream=true,packetsize=188 '!' rtspclientsink location=rtsp://127.0.0.1:8554/boats protocols=tcp",
+     "delivery": "rtsp://127.0.0.1:8554/boats",
+     "transport_label": "RTSP via MediaMTX",
      "direction": "serve",
      "carries_klv": true,
      "delivery_label": "publishes to",
@@ -1304,14 +1264,6 @@
       [
        "rtsp",
        "rtsp://operator-console:8554/boats"
-      ],
-      [
-       "hls",
-       "http://operator-console:8888/boats/index.m3u8"
-      ],
-      [
-       "rtmp",
-       "rtmp://operator-console:1935/boats"
       ]
      ]
     },
@@ -1490,9 +1442,9 @@
      "reason": null,
      "running": true,
      "stopping": false,
-     "command": "ffmpeg -hide_banner -nostats -re -stream_loop 1 -i {videos_dir}/boats.mp4 -map 0 -copy_unknown -c:v copy -c:a copy -c:d copy -max_interleave_delta 1000 -fflags +genpts -avoid_negative_ts make_zero -max_muxing_queue_size 1024 -f mpegts 'srt://127.0.0.1:8890?streamid=publish:boats'",
-     "delivery": "srt://127.0.0.1:8890?streamid=publish:boats",
-     "transport_label": "RTSP / HLS / RTMP via MediaMTX",
+     "command": "ffmpeg -hide_banner -nostats -re -stream_loop 1 -i {videos_dir}/boats.mp4 -map 0 -copy_unknown -c:v copy -c:a copy -c:d copy -max_interleave_delta 1000 -fflags +genpts -avoid_negative_ts make_zero -max_muxing_queue_size 1024 -f mpegts pipe:1 | gst-launch-1.0 -q fdsrc fd=0 do-timestamp=true '!' typefind force-caps=video/mpegts,systemstream=true,packetsize=188 '!' rtspclientsink location=rtsp://127.0.0.1:8554/boats protocols=tcp",
+     "delivery": "rtsp://127.0.0.1:8554/boats",
+     "transport_label": "RTSP via MediaMTX",
      "direction": "serve",
      "carries_klv": true,
      "delivery_label": "publishes to",
@@ -1500,14 +1452,6 @@
       [
        "rtsp",
        "rtsp://operator-console:8554/boats"
-      ],
-      [
-       "hls",
-       "http://operator-console:8888/boats/index.m3u8"
-      ],
-      [
-       "rtmp",
-       "rtmp://operator-console:1935/boats"
       ]
      ]
     },

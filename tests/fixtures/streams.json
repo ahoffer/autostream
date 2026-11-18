@@ -50,8 +50,8 @@
    "reason": "died 1x; relaunched, watching",
    "running": true,
    "stopping": false,
-   "command": "ffmpeg -hide_banner -nostats -re -stream_loop -1 -i {videos_dir}/boats.mp4 -map 0 -copy_unknown -c:v copy -c:a copy -c:d copy -max_interleave_delta 1000 -fflags +genpts -avoid_negative_ts make_zero -max_muxing_queue_size 1024 -f mpegts 'srt://127.0.0.1:8890?streamid=publish:rtsp'",
-   "delivery": "srt://127.0.0.1:8890?streamid=publish:rtsp"
+   "command": "ffmpeg -hide_banner -nostats -re -stream_loop -1 -i {videos_dir}/boats.mp4 -map 0 -copy_unknown -c:v copy -c:a copy -c:d copy -max_interleave_delta 1000 -fflags +genpts -avoid_negative_ts make_zero -max_muxing_queue_size 1024 -f mpegts pipe:1 | gst-launch-1.0 -q fdsrc fd=0 do-timestamp=true '!' typefind force-caps=video/mpegts,systemstream=true,packetsize=188 '!' rtspclientsink location=rtsp://127.0.0.1:8554/rtsp protocols=tcp",
+   "delivery": "rtsp://127.0.0.1:8554/rtsp"
   },
   {
    "error": null,
@@ -84,8 +84,8 @@
    "reason": null,
    "running": true,
    "stopping": false,
-   "command": "ffmpeg -hide_banner -nostats -re -stream_loop 2 -i {videos_dir}/truck_klv_30s.ts -map 0 -copy_unknown -c:v libx264 -preset ultrafast -tune zerolatency -g 20 -keyint_min 20 -sc_threshold 0 -bf 0 -x264-params ref=1 -r 15 -b:v 2000000 -maxrate 2000000 -bufsize 2000000 -c:a copy -c:d copy -max_interleave_delta 1000 -fflags +genpts+igndts -avoid_negative_ts make_zero -max_muxing_queue_size 1024 -f mpegts 'srt://127.0.0.1:8890?streamid=publish:rtsp-t'",
-   "delivery": "srt://127.0.0.1:8890?streamid=publish:rtsp-t"
+   "command": "ffmpeg -hide_banner -nostats -re -stream_loop 2 -i {videos_dir}/truck_klv_30s.ts -map 0 -copy_unknown -c:v libx264 -preset ultrafast -tune zerolatency -g 20 -keyint_min 20 -sc_threshold 0 -bf 0 -x264-params ref=1 -r 15 -b:v 2000000 -maxrate 2000000 -bufsize 2000000 -c:a copy -c:d copy -max_interleave_delta 1000 -fflags +genpts+igndts -avoid_negative_ts make_zero -max_muxing_queue_size 1024 -f mpegts pipe:1 | gst-launch-1.0 -q fdsrc fd=0 do-timestamp=true '!' typefind force-caps=video/mpegts,systemstream=true,packetsize=188 '!' rtspclientsink location=rtsp://127.0.0.1:8554/rtsp-t protocols=tcp",
+   "delivery": "rtsp://127.0.0.1:8554/rtsp-t"
   },
   {
    "error": null,
@@ -784,8 +784,8 @@
    "reason": null,
    "running": true,
    "stopping": false,
-   "command": "ffmpeg -hide_banner -nostats -re -stream_loop 0 -i {videos_dir}/boats.mp4 -map 0 -copy_unknown -c:v copy -c:a copy -c:d copy -max_interleave_delta 1000 -fflags +genpts -avoid_negative_ts make_zero -max_muxing_queue_size 1024 -f mpegts 'srt://127.0.0.1:8890?streamid=publish:once'",
-   "delivery": "srt://127.0.0.1:8890?streamid=publish:once"
+   "command": "ffmpeg -hide_banner -nostats -re -stream_loop 0 -i {videos_dir}/boats.mp4 -map 0 -copy_unknown -c:v copy -c:a copy -c:d copy -max_interleave_delta 1000 -fflags +genpts -avoid_negative_ts make_zero -max_muxing_queue_size 1024 -f mpegts pipe:1 | gst-launch-1.0 -q fdsrc fd=0 do-timestamp=true '!' typefind force-caps=video/mpegts,systemstream=true,packetsize=188 '!' rtspclientsink location=rtsp://127.0.0.1:8554/once protocols=tcp",
+   "delivery": "rtsp://127.0.0.1:8554/once"
   }
  ],
  "described": [
@@ -820,9 +820,9 @@
    "reason": "died 1x; relaunched, watching",
    "running": true,
    "stopping": false,
-   "command": "ffmpeg -hide_banner -nostats -re -stream_loop -1 -i {videos_dir}/boats.mp4 -map 0 -copy_unknown -c:v copy -c:a copy -c:d copy -max_interleave_delta 1000 -fflags +genpts -avoid_negative_ts make_zero -max_muxing_queue_size 1024 -f mpegts 'srt://127.0.0.1:8890?streamid=publish:rtsp'",
-   "delivery": "srt://127.0.0.1:8890?streamid=publish:rtsp",
-   "transport_label": "RTSP / HLS / RTMP via MediaMTX",
+   "command": "ffmpeg -hide_banner -nostats -re -stream_loop -1 -i {videos_dir}/boats.mp4 -map 0 -copy_unknown -c:v copy -c:a copy -c:d copy -max_interleave_delta 1000 -fflags +genpts -avoid_negative_ts make_zero -max_muxing_queue_size 1024 -f mpegts pipe:1 | gst-launch-1.0 -q fdsrc fd=0 do-timestamp=true '!' typefind force-caps=video/mpegts,systemstream=true,packetsize=188 '!' rtspclientsink location=rtsp://127.0.0.1:8554/rtsp protocols=tcp",
+   "delivery": "rtsp://127.0.0.1:8554/rtsp",
+   "transport_label": "RTSP via MediaMTX",
    "direction": "serve",
    "carries_klv": true,
    "delivery_label": "publishes to",
@@ -830,14 +830,6 @@
     [
      "rtsp",
      "rtsp://publisher:8554/rtsp"
-    ],
-    [
-     "hls",
-     "http://publisher:8888/rtsp/index.m3u8"
-    ],
-    [
-     "rtmp",
-     "rtmp://publisher:1935/rtsp"
     ]
    ]
   },
@@ -872,9 +864,9 @@
    "reason": null,
    "running": true,
    "stopping": false,
-   "command": "ffmpeg -hide_banner -nostats -re -stream_loop 2 -i {videos_dir}/truck_klv_30s.ts -map 0 -copy_unknown -c:v libx264 -preset ultrafast -tune zerolatency -g 20 -keyint_min 20 -sc_threshold 0 -bf 0 -x264-params ref=1 -r 15 -b:v 2000000 -maxrate 2000000 -bufsize 2000000 -c:a copy -c:d copy -max_interleave_delta 1000 -fflags +genpts+igndts -avoid_negative_ts make_zero -max_muxing_queue_size 1024 -f mpegts 'srt://127.0.0.1:8890?streamid=publish:rtsp-t'",
-   "delivery": "srt://127.0.0.1:8890?streamid=publish:rtsp-t",
-   "transport_label": "RTSP / HLS / RTMP via MediaMTX",
+   "command": "ffmpeg -hide_banner -nostats -re -stream_loop 2 -i {videos_dir}/truck_klv_30s.ts -map 0 -copy_unknown -c:v libx264 -preset ultrafast -tune zerolatency -g 20 -keyint_min 20 -sc_threshold 0 -bf 0 -x264-params ref=1 -r 15 -b:v 2000000 -maxrate 2000000 -bufsize 2000000 -c:a copy -c:d copy -max_interleave_delta 1000 -fflags +genpts+igndts -avoid_negative_ts make_zero -max_muxing_queue_size 1024 -f mpegts pipe:1 | gst-launch-1.0 -q fdsrc fd=0 do-timestamp=true '!' typefind force-caps=video/mpegts,systemstream=true,packetsize=188 '!' rtspclientsink location=rtsp://127.0.0.1:8554/rtsp-t protocols=tcp",
+   "delivery": "rtsp://127.0.0.1:8554/rtsp-t",
+   "transport_label": "RTSP via MediaMTX",
    "direction": "serve",
    "carries_klv": true,
    "delivery_label": "publishes to",
@@ -882,14 +874,6 @@
     [
      "rtsp",
      "rtsp://publisher:8554/rtsp-t"
-    ],
-    [
-     "hls",
-     "http://publisher:8888/rtsp-t/index.m3u8"
-    ],
-    [
-     "rtmp",
-     "rtmp://publisher:1935/rtsp-t"
     ]
    ]
   },
@@ -1790,9 +1774,9 @@
    "reason": null,
    "running": true,
    "stopping": false,
-   "command": "ffmpeg -hide_banner -nostats -re -stream_loop 0 -i {videos_dir}/boats.mp4 -map 0 -copy_unknown -c:v copy -c:a copy -c:d copy -max_interleave_delta 1000 -fflags +genpts -avoid_negative_ts make_zero -max_muxing_queue_size 1024 -f mpegts 'srt://127.0.0.1:8890?streamid=publish:once'",
-   "delivery": "srt://127.0.0.1:8890?streamid=publish:once",
-   "transport_label": "RTSP / HLS / RTMP via MediaMTX",
+   "command": "ffmpeg -hide_banner -nostats -re -stream_loop 0 -i {videos_dir}/boats.mp4 -map 0 -copy_unknown -c:v copy -c:a copy -c:d copy -max_interleave_delta 1000 -fflags +genpts -avoid_negative_ts make_zero -max_muxing_queue_size 1024 -f mpegts pipe:1 | gst-launch-1.0 -q fdsrc fd=0 do-timestamp=true '!' typefind force-caps=video/mpegts,systemstream=true,packetsize=188 '!' rtspclientsink location=rtsp://127.0.0.1:8554/once protocols=tcp",
+   "delivery": "rtsp://127.0.0.1:8554/once",
+   "transport_label": "RTSP via MediaMTX",
    "direction": "serve",
    "carries_klv": true,
    "delivery_label": "publishes to",
@@ -1800,14 +1784,6 @@
     [
      "rtsp",
      "rtsp://publisher:8554/once"
-    ],
-    [
-     "hls",
-     "http://publisher:8888/once/index.m3u8"
-    ],
-    [
-     "rtmp",
-     "rtmp://publisher:1935/once"
     ]
    ]
   }
@@ -2062,7 +2038,7 @@
  },
  "state_text": "{\n  \"streams\": {\n    \"rtsp\": {\n      \"filename\": \"boats.mp4\",\n      \"transport\": \"rtsp\",\n      \"port\": null,\n      \"enabled\": true,\n      \"mode\": null,\n      \"loop_count\": -1,\n      \"frame_rate\": null,\n      \"gop_frames\": null\n    },\n    \"rtsp-t\": {\n      \"filename\": \"truck_klv_30s.ts\",\n      \"transport\": \"rtsp\",\n      \"port\": null,\n      \"enabled\": true,\n      \"mode\": \"transcode\",\n      \"loop_count\": 2,\n      \"frame_rate\": 15.0,\n      \"gop_frames\": 20\n    },\n    \"udp\": {\n      \"filename\": \"boats.mp4\",\n      \"transport\": \"udp\",\n      \"port\": 40000,\n      \"enabled\": true,\n      \"mode\": null,\n      \"loop_count\": -1,\n      \"frame_rate\": null,\n      \"gop_frames\": null\n    },\n    \"udp-renamed\": {\n      \"filename\": \"truck_klv_30s.ts\",\n      \"transport\": \"udp\",\n      \"port\": 40001,\n      \"enabled\": true,\n      \"mode\": \"transcode\",\n      \"loop_count\": 3,\n      \"frame_rate\": 15.0,\n      \"gop_frames\": 20\n    },\n    \"multicast\": {\n      \"filename\": \"boats.mp4\",\n      \"transport\": \"multicast\",\n      \"port\": 50000,\n      \"enabled\": true,\n      \"mode\": null,\n      \"loop_count\": -1,\n      \"frame_rate\": null,\n      \"gop_frames\": null\n    },\n    \"multicast-t\": {\n      \"filename\": \"truck_klv_30s.ts\",\n      \"transport\": \"multicast\",\n      \"port\": 50001,\n      \"enabled\": true,\n      \"mode\": \"transcode\",\n      \"loop_count\": 2,\n      \"frame_rate\": 15.0,\n      \"gop_frames\": 20\n    },\n    \"rtp\": {\n      \"filename\": \"boats.mp4\",\n      \"transport\": \"rtp\",\n      \"port\": 40020,\n      \"enabled\": true,\n      \"mode\": null,\n      \"loop_count\": -1,\n      \"frame_rate\": null,\n      \"gop_frames\": null\n    },\n    \"rtp-t\": {\n      \"filename\": \"truck_klv_30s.ts\",\n      \"transport\": \"rtp\",\n      \"port\": 40021,\n      \"enabled\": true,\n      \"mode\": \"transcode\",\n      \"loop_count\": 2,\n      \"frame_rate\": 15.0,\n      \"gop_frames\": 20\n    },\n    \"srt_listen\": {\n      \"filename\": \"boats.mp4\",\n      \"transport\": \"srt_listen\",\n      \"port\": 41000,\n      \"enabled\": true,\n      \"mode\": null,\n      \"loop_count\": -1,\n      \"frame_rate\": null,\n      \"gop_frames\": null\n    },\n    \"srt_listen-t\": {\n      \"filename\": \"truck_klv_30s.ts\",\n      \"transport\": \"srt_listen\",\n      \"port\": 41001,\n      \"enabled\": true,\n      \"mode\": \"transcode\",\n      \"loop_count\": 2,\n      \"frame_rate\": 15.0,\n      \"gop_frames\": 20\n    },\n    \"srt_call\": {\n      \"filename\": \"boats.mp4\",\n      \"transport\": \"srt_call\",\n      \"port\": 40040,\n      \"enabled\": true,\n      \"mode\": null,\n      \"loop_count\": -1,\n      \"frame_rate\": null,\n      \"gop_frames\": null\n    },\n    \"srt_call-t\": {\n      \"filename\": \"truck_klv_30s.ts\",\n      \"transport\": \"srt_call\",\n      \"port\": 40041,\n      \"enabled\": true,\n      \"mode\": \"transcode\",\n      \"loop_count\": 2,\n      \"frame_rate\": 15.0,\n      \"gop_frames\": 20\n    },\n    \"tcp_listen\": {\n      \"filename\": \"boats.mp4\",\n      \"transport\": \"tcp_listen\",\n      \"port\": 42000,\n      \"enabled\": true,\n      \"mode\": null,\n      \"loop_count\": -1,\n      \"frame_rate\": null,\n      \"gop_frames\": null\n    },\n    \"tcp_listen-t\": {\n      \"filename\": \"truck_klv_30s.ts\",\n      \"transport\": \"tcp_listen\",\n      \"port\": 42001,\n      \"enabled\": true,\n      \"mode\": \"transcode\",\n      \"loop_count\": 2,\n      \"frame_rate\": 15.0,\n      \"gop_frames\": 20\n    },\n    \"http\": {\n      \"filename\": \"boats.mp4\",\n      \"transport\": \"http\",\n      \"port\": 43000,\n      \"enabled\": true,\n      \"mode\": null,\n      \"loop_count\": -1,\n      \"frame_rate\": null,\n      \"gop_frames\": null\n    },\n    \"http-t\": {\n      \"filename\": \"truck_klv_30s.ts\",\n      \"transport\": \"http\",\n      \"port\": 43001,\n      \"enabled\": true,\n      \"mode\": \"transcode\",\n      \"loop_count\": 2,\n      \"frame_rate\": 15.0,\n      \"gop_frames\": 20\n    },\n    \"hls\": {\n      \"filename\": \"boats.mp4\",\n      \"transport\": \"hls\",\n      \"port\": null,\n      \"enabled\": true,\n      \"mode\": null,\n      \"loop_count\": -1,\n      \"frame_rate\": null,\n      \"gop_frames\": null\n    },\n    \"hls-t\": {\n      \"filename\": \"truck_klv_30s.ts\",\n      \"transport\": \"hls\",\n      \"port\": null,\n      \"enabled\": true,\n      \"mode\": \"transcode\",\n      \"loop_count\": 2,\n      \"frame_rate\": 15.0,\n      \"gop_frames\": 20\n    },\n    \"srtp\": {\n      \"filename\": \"boats.mp4\",\n      \"transport\": \"srtp\",\n      \"port\": 40060,\n      \"enabled\": true,\n      \"mode\": null,\n      \"loop_count\": -1,\n      \"frame_rate\": null,\n      \"gop_frames\": null\n    },\n    \"srtp-t\": {\n      \"filename\": \"truck_klv_30s.ts\",\n      \"transport\": \"srtp\",\n      \"port\": 40061,\n      \"enabled\": true,\n      \"mode\": \"transcode\",\n      \"loop_count\": 2,\n      \"frame_rate\": 15.0,\n      \"gop_frames\": 20\n    },\n    \"stopped-udp\": {\n      \"filename\": \"cargo ship.v2.avi\",\n      \"transport\": \"udp\",\n      \"port\": 40002,\n      \"enabled\": false,\n      \"mode\": \"transcode\",\n      \"loop_count\": -1,\n      \"frame_rate\": null,\n      \"gop_frames\": null\n    },\n    \"ghost\": {\n      \"filename\": \"later.mp4\",\n      \"transport\": \"udp\",\n      \"port\": 40003,\n      \"enabled\": true,\n      \"mode\": null,\n      \"loop_count\": -1,\n      \"frame_rate\": null,\n      \"gop_frames\": null\n    },\n    \"once\": {\n      \"filename\": \"boats.mp4\",\n      \"transport\": \"rtsp\",\n      \"port\": null,\n      \"enabled\": true,\n      \"mode\": null,\n      \"loop_count\": 0,\n      \"frame_rate\": null,\n      \"gop_frames\": null\n    }\n  },\n  \"settings\": {\n    \"destination_host\": \"receiver\",\n    \"multicast_group\": \"239.1.1.2\",\n    \"advertised_host\": null,\n    \"max_video_bitrate\": \"2M\",\n    \"srtp_key\": \"c2VjcmV0a2V5\",\n    \"udp_first_port\": 40000,\n    \"rtp_first_port\": 40020,\n    \"srt_call_first_port\": 40040,\n    \"srtp_first_port\": 40060,\n    \"srt_listen_first_port\": 41000,\n    \"tcp_first_port\": 42000,\n    \"http_first_port\": 43000\n  }\n}\n",
  "commands": {
-  "srt://127.0.0.1:8890?streamid=publish:rtsp": [
+  "rtsp://127.0.0.1:8554/rtsp": [
    "ffmpeg",
    "-hide_banner",
    "-nostats",
@@ -2090,9 +2066,9 @@
    "1024",
    "-f",
    "mpegts",
-   "srt://127.0.0.1:8890?streamid=publish:rtsp"
+   "pipe:1"
   ],
-  "srt://127.0.0.1:8890?streamid=publish:rtsp-t": [
+  "rtsp://127.0.0.1:8554/rtsp-t": [
    "ffmpeg",
    "-hide_banner",
    "-nostats",
@@ -2142,7 +2118,7 @@
    "1024",
    "-f",
    "mpegts",
-   "srt://127.0.0.1:8890?streamid=publish:rtsp-t"
+   "pipe:1"
   ],
   "udp://receiver:40000?pkt_size=1316": [
    "ffmpeg",
@@ -2876,7 +2852,7 @@
    "rtp_mpegts",
    "srtp://receiver:40061"
   ],
-  "srt://127.0.0.1:8890?streamid=publish:once": [
+  "rtsp://127.0.0.1:8554/once": [
    "ffmpeg",
    "-hide_banner",
    "-nostats",
@@ -2904,7 +2880,7 @@
    "1024",
    "-f",
    "mpegts",
-   "srt://127.0.0.1:8890?streamid=publish:once"
+   "pipe:1"
   ],
   "udp://239.255.0.1:50000?pkt_size=1316&ttl=1": [
    "ffmpeg",

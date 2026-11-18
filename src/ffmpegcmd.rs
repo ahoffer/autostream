@@ -8,8 +8,9 @@
 //! - rtsp muxer: direct FFmpeg RTSP output maps video/audio only because
 //!   FFmpeg's RTP publisher does not support KLV.
 //! - other muxers: MPEG-TS, plain or inside RTP, or as HLS segments, with EVERY
-//!   stream mapped and data/KLV copied through untouched. These include local
-//!   SRT ingest into MediaMTX for RTSP KLV output.
+//!   stream mapped and data/KLV copied through untouched. These include the
+//!   RTSP relay: ffmpeg writes MPEG-TS to its standard output and a GStreamer
+//!   relay publishes it to MediaMTX as one RTSP track, KLV included.
 //!
 //! In transcode mode video is re-encoded to a clean GOP structure to fix looping
 //! artifacts and to honor the bitrate cap, using libx264 in software. In
@@ -26,6 +27,7 @@ use serde::Serialize;
 use serde_json::Value;
 
 use crate::boundedcommand::run_bounded;
+use crate::ffmpegprocess::StreamCommand;
 use crate::streamrecord::{StreamChoices, VideoMode};
 use crate::transports::Muxer;
 
@@ -417,6 +419,9 @@ pub fn build_argv(
             argv.extend(strings(&["-f", "rtsp", "-rtsp_transport", "tcp"]));
             argv.push(url);
         }
+        Muxer::RtspRelay => {
+            argv.extend(strings(&["-f", "mpegts", "pipe:1"]));
+        }
         Muxer::Hls => {
             let segments = Path::new(&url)
                 .with_file_name("seg%05d.ts")
@@ -446,12 +451,31 @@ pub fn build_argv(
     argv
 }
 
+/// The GStreamer relay that publishes ffmpeg's MPEG-TS to the RTSP URL as one track.
+pub fn relay_argv(rtsp_url: &str) -> Vec<String> {
+    strings(&[
+        "gst-launch-1.0",
+        "-q",
+        "fdsrc",
+        "fd=0",
+        "do-timestamp=true",
+        "!",
+        "typefind",
+        "force-caps=video/mpegts,systemstream=true,packetsize=188",
+        "!",
+        "rtspclientsink",
+        &format!("location={rtsp_url}"),
+        "protocols=tcp",
+    ])
+}
+
 const PASSTHROUGH_CODECS: [&str; 5] = ["h264", "hevc", "mpeg2video", "mpeg4", "mjpeg"];
 
 /// Everything a preparation decided, for the command and the status row.
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct PreparedCommand {
-    pub argv: Vec<String>,
+    #[serde(flatten)]
+    pub command: StreamCommand,
     pub error: Option<String>,
     pub video_codecs: Vec<String>,
     pub audio_codecs: Vec<String>,
@@ -515,10 +539,12 @@ pub fn command_for_profile(
         .into_iter()
         .collect();
     PreparedCommand {
-        argv: if delivery.url.is_some() {
-            build_argv(source_path, &spec, delivery)
-        } else {
-            Vec::new()
+        command: match &delivery.url {
+            Some(url) => StreamCommand {
+                argv: build_argv(source_path, &spec, delivery),
+                relay: (delivery.muxer == Muxer::RtspRelay).then(|| relay_argv(url)),
+            },
+            None => StreamCommand::default(),
         },
         error: (!has_video)
             .then(|| "No video track found; waiting for the file to change".to_string()),
@@ -647,6 +673,8 @@ fn shell_quote(argument: &str) -> String {
 //
 // OUTPUTS (one per transport kind; see transports.rs for the URL of each):
 // -f rtsp rtsp://localhost:<rtsp-port>/<stream-name>   Publish to MediaMTX (serves RTSP, HLS, RTMP)
+// -f mpegts pipe:1               (RTSP relay) The KLV-preserving transport stream on standard
+//                                output, read by the GStreamer relay below
 // -rtsp_transport tcp            (RTSP output) Send RTP over the RTSP TCP connection. Over
 //                                the default UDP, ffmpeg keeps streaming into the void if
 //                                MediaMTX drops the session; over TCP the write fails,
@@ -661,6 +689,19 @@ fn shell_quote(argument: &str) -> String {
 //                                and the shared key)
 // -f hls ...                     The transport stream cut into 2-second segments, 6 kept,
 //                                old ones deleted; the API server serves the directory
+//
+// GSTREAMER RELAY (RTSP via MediaMTX, `relay_argv`):
+// gst-launch-1.0 -q              Run the pipeline without progress messages; errors still print
+// fdsrc fd=0 do-timestamp=true   Read ffmpeg's output from standard input and stamp each
+//                                buffer on arrival; ffmpeg's -re already paces it
+// typefind force-caps=video/mpegts,systemstream=true,packetsize=188
+//                                Declare the input an MPEG-TS stream without probing;
+//                                rtspclientsink needs the format announced to choose
+//                                its payloader
+// rtspclientsink location=<url> protocols=tcp
+//                                Publish to MediaMTX as one MP2T RTP track (RFC 2250)
+//                                over the RTSP TCP connection, so FFmpeg readers demux
+//                                KLV as 'klv'
 
 #[cfg(test)]
 mod tests {

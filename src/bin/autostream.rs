@@ -70,8 +70,6 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         snapshot: snapshot.clone(),
         url_facts: UrlFacts {
             rtsp_port: config.rtsp_port,
-            hls_port: config.hls_port,
-            rtmp_port: config.rtmp_port,
             api_port: config.api_port,
             play_port: config.play_port,
         },

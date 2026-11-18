@@ -392,7 +392,6 @@ impl StreamRegistry {
             port: binding.port,
             name,
             rtsp_port: self.config.rtsp_port,
-            srt_port: self.config.srt_port,
             hls_dir: &hls_dir,
             ..TemplateFields::default()
         };
@@ -616,7 +615,7 @@ mod tests {
     }
 
     fn argv_of(run: &crate::testsupport::RunHandle) -> Vec<String> {
-        run.lock().unwrap().argv.clone()
+        run.lock().unwrap().command.argv.clone()
     }
 
     fn code_of(run: &crate::testsupport::RunHandle) -> Option<i32> {
@@ -665,7 +664,7 @@ mod tests {
         assert_eq!(harness.status("boats-hls").port, None);
         assert_eq!(
             harness.status("boats").delivery.as_deref(),
-            Some("srt://127.0.0.1:8890?streamid=publish:boats")
+            Some("rtsp://127.0.0.1:8554/boats")
         );
         assert!(!argv_of(&harness.ffmpeg.run(0)).contains(&"-bsf:d".to_string()));
         let playlist = harness.config.hls_dir.join("boats-hls").join("index.m3u8");
@@ -879,13 +878,16 @@ mod tests {
         };
         assert!(harness.registry.update_stream("r", &changes).unwrap());
         assert_eq!(code_of(&harness.ffmpeg.run(1)), Some(-15));
+        let restarted = harness.ffmpeg.run(2).lock().unwrap().command.clone();
         assert!(
-            argv_of(&harness.ffmpeg.run(2))
-                .contains(&"srt://127.0.0.1:8890?streamid=publish:r2".to_string())
+            restarted
+                .relay
+                .unwrap()
+                .contains(&"location=rtsp://127.0.0.1:8554/r2".to_string())
         );
         assert_eq!(
             harness.status("r2").delivery.as_deref(),
-            Some("srt://127.0.0.1:8890?streamid=publish:r2")
+            Some("rtsp://127.0.0.1:8554/r2")
         );
     }
 
@@ -1017,7 +1019,7 @@ mod tests {
         );
         assert_eq!(
             rows[0].delivery.as_deref(),
-            Some("srt://127.0.0.1:8890?streamid=publish:cargoship")
+            Some("rtsp://127.0.0.1:8554/cargoship")
         );
         let saved: Vec<String> = harness
             .saved_streams()
@@ -1094,8 +1096,6 @@ mod tests {
             };
             let url_facts = UrlFacts {
                 rtsp_port: 8554,
-                hls_port: 8888,
-                rtmp_port: 1935,
                 api_port: 8080,
                 play_port: 9080,
             };
@@ -1133,8 +1133,6 @@ mod tests {
         };
         let url_facts = UrlFacts {
             rtsp_port: 8554,
-            hls_port: 8888,
-            rtmp_port: 1935,
             api_port: 8080,
             play_port: 9080,
         };
@@ -1351,8 +1349,6 @@ mod tests {
         let fixture: Value = serde_json::from_str(&text).unwrap();
         let url_facts = UrlFacts {
             rtsp_port: 8554,
-            hls_port: 8888,
-            rtmp_port: 1935,
             api_port: 8080,
             play_port: 9080,
         };
@@ -1530,13 +1526,17 @@ mod tests {
             .map(|row| serde_json::json!([row.name, row.transport, row.port]))
             .collect();
         assert_eq!(Value::Array(rows), fixture["port_allocation"]);
-        // Commands keyed by their delivery URL, recorded across all three registries
-        // because the generator shared one fake process list.
+        // ffmpeg commands keyed by their delivery URL, recorded across all three
+        // registries because the generator shared one fake process list. A relayed
+        // command delivers to the relay's location; the others end with the URL.
         let mut commands = serde_json::Map::new();
         for run in harness.ffmpeg.runs() {
-            let argv = argv_of(&run);
-            if let Some(url) = argv.last() {
-                commands.insert(url.clone(), serde_json::to_value(&argv).unwrap());
+            let command = run.lock().unwrap().command.clone();
+            let relay_location = command.relay.iter().flatten().find_map(|argument| {
+                argument.strip_prefix("location=").map(str::to_string)
+            });
+            if let Some(url) = relay_location.or_else(|| command.argv.last().cloned()) {
+                commands.insert(url, serde_json::to_value(&command.argv).unwrap());
             }
         }
         assert_eq!(Value::Object(commands), fixture["commands"]);

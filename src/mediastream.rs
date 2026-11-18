@@ -269,7 +269,7 @@ impl MediaStream {
         let prepared = self.prepare(services);
         let running_same_command = self.run.as_mut().is_some_and(|run| {
             let observation = run.observe();
-            observation.returncode.is_none() && observation.argv == prepared.argv
+            observation.returncode.is_none() && observation.command == prepared.command
         });
         if !self.choices.enabled || running_same_command {
             self.prepared = Some(prepared);
@@ -367,7 +367,7 @@ impl MediaStream {
         if !self.stop_run() {
             return false;
         }
-        let argv = prepared.argv.clone();
+        let command = prepared.command.clone();
         self.prepared = Some(prepared);
         let launched = (|| -> io::Result<()> {
             if self.delivery.muxer == Muxer::Hls
@@ -380,7 +380,7 @@ impl MediaStream {
                 std::fs::create_dir_all(parent)?;
             }
             let mut run = services.ffmpeg.spawn(self.logger.clone());
-            run.start(&argv)?;
+            run.start(&command)?;
             self.run = Some(run);
             Ok(())
         })();
@@ -411,11 +411,11 @@ impl MediaStream {
                 return;
             }
             self.run = None;
-            let loops: i64 = observation
-                .argv
+            let ffmpeg_argv = &observation.command.argv;
+            let loops: i64 = ffmpeg_argv
                 .iter()
                 .position(|argument| argument == "-stream_loop")
-                .and_then(|index| observation.argv.get(index + 1))
+                .and_then(|index| ffmpeg_argv.get(index + 1))
                 .and_then(|count| count.parse().ok())
                 .unwrap_or(-1);
             if observation.returncode == Some(0) && loops >= 0 {
@@ -447,9 +447,13 @@ impl MediaStream {
             .as_ref()
             .is_some_and(|observation| observation.returncode.is_none());
         let (state, reason) = self.state(running, services);
-        let argv = observation
-            .map(|observation| observation.argv)
-            .or_else(|| self.prepared.as_ref().map(|prepared| prepared.argv.clone()))
+        let command = observation
+            .map(|observation| observation.command)
+            .or_else(|| {
+                self.prepared
+                    .as_ref()
+                    .map(|prepared| prepared.command.clone())
+            })
             .unwrap_or_default();
         // Controls describe requested values, even if an old command still runs.
         let source_rate = self
@@ -495,7 +499,7 @@ impl MediaStream {
             reason,
             running,
             stopping: running && !self.choices.enabled,
-            command: (!argv.is_empty()).then(|| ffmpegcmd::shell_join(&argv)),
+            command: (!command.is_empty()).then(|| command.shell_text()),
             error: self.error.clone(),
             delivery: self.delivery.url.clone(),
         }

@@ -52,7 +52,7 @@ file.
 
 | id | Label | Direction | KLV | Port | Needs a setting |
 |---|---|---|---|---|---|
-| rtsp | RTSP / HLS / RTMP via MediaMTX | serve | RTSP only | none | |
+| rtsp | RTSP via MediaMTX | serve | yes | none | |
 | udp | UDP | push | yes | from UDP first port | destination host |
 | multicast | Multicast | push | yes | random, 50000 to 59999 | multicast group |
 | rtp | RTP / TS | push | yes | from RTP first port | destination host |

@@ -1,7 +1,7 @@
 [
  {
   "id": "rtsp",
-  "label": "RTSP / HLS / RTMP via MediaMTX",
+  "label": "RTSP via MediaMTX",
   "direction": "serve",
   "carries_klv": true,
   "first_port_setting": null,

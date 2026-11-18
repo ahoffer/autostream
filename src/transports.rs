@@ -1,8 +1,8 @@
 //! The transport kinds a stream can be delivered over: one row per kind, and one rule per row.
 //!
 //! Templates take these fields: destination_host, multicast_group, srtp_key,
-//! port, name, rtsp_port, srt_port, hls_port, rtmp_port, api_port, hls_dir,
-//! and host (the advertised host, chosen per request).
+//! port, name, rtsp_port, api_port, hls_dir, and host (the advertised host,
+//! chosen per request).
 
 use serde::Serialize;
 
@@ -24,13 +24,15 @@ pub enum Muxer {
     Mpegts,
     RtpMpegts,
     Hls,
+    /// MPEG-TS on ffmpeg's standard output, which the GStreamer relay publishes over RTSP.
+    RtspRelay,
 }
 
 impl Muxer {
     pub fn as_str(self) -> &'static str {
         match self {
             Muxer::Rtsp => "rtsp",
-            Muxer::Mpegts => "mpegts",
+            Muxer::Mpegts | Muxer::RtspRelay => "mpegts",
             Muxer::RtpMpegts => "rtp_mpegts",
             Muxer::Hls => "hls",
         }
@@ -56,7 +58,7 @@ pub struct TransportKind {
     pub extra_output_args: &'static [&'static str],
     /// Takes a random high port instead of one from a first port.
     pub random_port: bool,
-    /// The timestamp filter buffers sparse packets; local SRT does not need it.
+    /// The timestamp filter buffers sparse packets; the RTSP relay does not need it.
     pub clamp_data_dts: bool,
 }
 
@@ -109,23 +111,21 @@ const fn kind(
 }
 
 pub const KINDS: [TransportKind; 10] = [
-    // FFmpeg cannot publish KLV over RTSP. MPEG-TS over local SRT preserves it
-    // for MediaMTX's RTSP output; its HLS and RTMP outputs remain video/audio.
+    // FFmpeg cannot publish KLV over RTSP, and FFmpeg readers do not name
+    // KLV sent as its own RTP track. The GStreamer relay publishes the whole
+    // MPEG-TS as one RTSP track, so readers demux KLV as 'klv'. MediaMTX
+    // cannot repackage that track for HLS or RTMP, so only RTSP is offered.
     TransportKind {
         clamp_data_dts: false,
         ..kind(
             "rtsp",
-            "RTSP / HLS / RTMP via MediaMTX",
+            "RTSP via MediaMTX",
             Direction::Serve,
-            Muxer::Mpegts,
+            Muxer::RtspRelay,
             None,
             &[],
-            "srt://127.0.0.1:{srt_port}?streamid=publish:{name}",
-            &[
-                ("rtsp", "rtsp://{host}:{rtsp_port}/{name}"),
-                ("hls", "http://{host}:{hls_port}/{name}/index.m3u8"),
-                ("rtmp", "rtmp://{host}:{rtmp_port}/{name}"),
-            ],
+            "rtsp://127.0.0.1:{rtsp_port}/{name}",
+            &[("rtsp", "rtsp://{host}:{rtsp_port}/{name}")],
         )
     },
     kind(
@@ -251,9 +251,6 @@ pub struct TemplateFields<'a> {
     pub port: Option<u16>,
     pub name: &'a str,
     pub rtsp_port: u16,
-    pub srt_port: u16,
-    pub hls_port: u16,
-    pub rtmp_port: u16,
     pub api_port: u16,
     pub hls_dir: &'a str,
     pub host: &'a str,
@@ -270,9 +267,6 @@ impl TemplateFields<'_> {
                 .map_or_else(|| "None".to_string(), |port| port.to_string()),
             "name" => self.name.to_string(),
             "rtsp_port" => self.rtsp_port.to_string(),
-            "srt_port" => self.srt_port.to_string(),
-            "hls_port" => self.hls_port.to_string(),
-            "rtmp_port" => self.rtmp_port.to_string(),
             "api_port" => self.api_port.to_string(),
             "hls_dir" => self.hls_dir.to_string(),
             "host" => self.host.to_string(),
@@ -323,9 +317,6 @@ mod tests {
             port: Some(40001),
             name: "boats",
             rtsp_port: 8554,
-            srt_port: 8890,
-            hls_port: 8888,
-            rtmp_port: 1935,
             api_port: 8080,
             hls_dir: "/app/hls",
             host: "publisher",

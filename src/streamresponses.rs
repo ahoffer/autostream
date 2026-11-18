@@ -72,8 +72,6 @@ pub struct StatusSnapshot {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct UrlFacts {
     pub rtsp_port: u16,
-    pub hls_port: u16,
-    pub rtmp_port: u16,
     pub api_port: u16,
     pub play_port: u16,
 }
@@ -132,8 +130,6 @@ pub fn describe_streams(
             });
             let fields = TemplateFields {
                 rtsp_port: url_facts.rtsp_port,
-                hls_port: url_facts.hls_port,
-                rtmp_port: url_facts.rtmp_port,
                 api_port: url_facts.api_port,
                 host,
                 port: status.port,
@@ -292,8 +288,6 @@ mod tests {
         }
         let facts = UrlFacts {
             rtsp_port: 8554,
-            hls_port: 8888,
-            rtmp_port: 1935,
             api_port: 8080,
             play_port: 9080,
         };

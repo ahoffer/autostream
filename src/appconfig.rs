@@ -45,8 +45,6 @@ fn require_port(name: &str, environ: &Environment) -> Result<u16, ConfigError> {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Config {
     pub rtsp_port: u16,
-    pub hls_port: u16,
-    pub rtmp_port: u16,
     pub api_port: u16,
     /// The evaluator page's port; the developer page and full API stay on `api_port`.
     pub play_port: u16,
@@ -63,20 +61,13 @@ pub struct Config {
     pub host_name: String,
     pub host_lan_ip: String,
     pub refresh_lan_ip: bool,
-    pub srt_port: u16,
     pub rtp_port: u16,
     pub rtcp_port: u16,
 }
 
 impl Config {
-    /// Fixed container paths and the default SRT port; the ports and log level come from the caller.
-    pub fn new(
-        rtsp_port: u16,
-        hls_port: u16,
-        rtmp_port: u16,
-        api_port: u16,
-        log_level: &str,
-    ) -> Result<Self, ConfigError> {
+    /// Fixed container paths and default RTP ports; the other ports and log level come from the caller.
+    pub fn new(rtsp_port: u16, api_port: u16, log_level: &str) -> Result<Self, ConfigError> {
         if !LOG_LEVEL_NAMES.contains(&log_level) {
             return Err(ConfigError(format!(
                 "LOG_LEVEL must be one of {}, not {log_level:?}",
@@ -85,8 +76,6 @@ impl Config {
         }
         Ok(Self {
             rtsp_port,
-            hls_port,
-            rtmp_port,
             api_port,
             play_port: 9080,
             network_host: None,
@@ -99,7 +88,6 @@ impl Config {
             host_name: String::new(),
             host_lan_ip: String::new(),
             refresh_lan_ip: false,
-            srt_port: 8890,
             rtp_port: 8000,
             rtcp_port: 8001,
         })
@@ -113,8 +101,6 @@ impl Config {
     pub fn from_env(environ: &Environment) -> Result<Self, ConfigError> {
         let mut config = Self::new(
             require_port("MEDIAMTX_RTSP_PORT", environ)?,
-            require_port("MEDIAMTX_HLS_PORT", environ)?,
-            require_port("MEDIAMTX_RTMP_PORT", environ)?,
             require_port("STREAM_API_PORT", environ)?,
             &require_env("LOG_LEVEL", environ)?.to_lowercase(),
         )?;
@@ -131,7 +117,6 @@ impl Config {
             }
             config.play_transport = transport.clone();
         }
-        config.srt_port = require_port("MEDIAMTX_SRT_PORT", environ)?;
         config.rtp_port = require_port("MEDIAMTX_RTP_PORT", environ)?;
         config.rtcp_port = require_port("MEDIAMTX_RTCP_PORT", environ)?;
         config.host_name = environ
@@ -162,9 +147,6 @@ mod tests {
     fn environ() -> Environment {
         [
             ("MEDIAMTX_RTSP_PORT", "8554"),
-            ("MEDIAMTX_HLS_PORT", "8888"),
-            ("MEDIAMTX_RTMP_PORT", "1935"),
-            ("MEDIAMTX_SRT_PORT", "18890"),
             ("MEDIAMTX_RTP_PORT", "18000"),
             ("MEDIAMTX_RTCP_PORT", "18001"),
             ("STREAM_API_PORT", "8080"),
@@ -180,7 +162,6 @@ mod tests {
     fn deployment_settings_load() {
         let config = Config::from_env(&environ()).unwrap();
         assert_eq!(config.rtsp_port, 8554);
-        assert_eq!(config.srt_port, 18890);
         assert_eq!(config.play_port, 8070);
         assert_eq!(config.network_host, None);
         assert_eq!(config.play_transport, "rtsp");

@@ -110,13 +110,11 @@ notices a dead process within one 2 s tick.
 
 From the consumer host, inside its `video-streaming` container (`docker exec
 video-streaming ffprobe -v error -show_streams <url>`): RTSP over TCP and
-UDP, RTMP, HLS from MediaMTX, HLS (TS segments) from port 9180, SRT listen,
-TCP listen and HTTP TS all open and list the tracks; the transport stream
-kinds list `klv` for the KLV file. MediaMTX RTSP carries the same metadata
-bytes as a data track (FFmpeg 8.1.2 leaves its codec name unset); MediaMTX
-HLS and RTMP omit that track. Compare data packet SHA-256 hashes against
-the source in both video modes across a loop boundary. Also check sparse,
-untimestamped KLV: the local SRT feed must not use the buffering `setts`
+UDP, HLS (TS segments) from port 9180, SRT listen, TCP listen and HTTP TS
+all open and list the tracks. Every kind lists `klv` for the KLV file,
+MediaMTX RTSP included. Compare data packet SHA-256 hashes against the
+source in both video modes across a loop boundary. Also check sparse,
+untimestamped KLV. The RTSP relay feed must not use the buffering `setts`
 filter. UDP and RTP pushes are heard on `udp://0.0.0.0:<port>` and `rtp://0.0.0.0:<port>`.
 
 ## UI
@@ -139,5 +137,4 @@ filter. UDP and RTP pushes are heard on `udp://0.0.0.0:<port>` and `rtp://0.0.0.
 
 ## Host playback
 
-- `ffplay rtsp://localhost:8554/<stream>` plays over UDP or TCP; the HLS URL
-  on port 8888 plays in VLC or a browser.
+- `ffplay rtsp://localhost:8554/<stream>` plays over UDP or TCP.

@@ -1,8 +1,8 @@
 # Autostream
 
 A test-rig video server with web-based stream control. A video can be served
-over RTSP, HLS and RTMP through MediaMTX, or as an MPEG-TS feed over UDP,
-multicast, RTP, SRT, TCP, HTTP, HLS segments or SRTP.
+over RTSP through MediaMTX, or as an MPEG-TS feed over UDP, multicast, RTP,
+SRT, TCP, HTTP, HLS segments or SRTP.
 
 ## Play videos into cxedge
 
@@ -17,7 +17,7 @@ Stop, and the HTTP TS address to register in cxedge, such as
 forever. Play once and Play forever start the file's first HTTP TS stream, or
 create one named after the file, and set its loop count. Docker mode chooses
 HTTP TS with `AUTOSTREAM_PLAY_TRANSPORT: http` in `package/compose.yaml`.
-Without it the play page uses RTSP / HLS / RTMP via MediaMTX. On a playing video they restart it with the new loop count. On
+Without it the play page uses RTSP via MediaMTX. On a playing video they restart it with the new loop count. On
 `octo-cx-network` every advertised URL uses the host name `autostream`.
 Only the play page and its calls answer on port 9080.
 
@@ -80,8 +80,9 @@ setting.
   seeds a running MediaMTX stream for every video already present, named
   after the file; seeding ends as soon as any stream exists, seeded or made by
   hand.
-- Each stream is **one ffmpeg process**. MediaMTX serves the RTSP kind as
-  RTSP, HLS and RTMP; every other kind is delivered by ffmpeg itself.
+- Each stream is **one ffmpeg process**. For the RTSP kind a GStreamer relay
+  reads its output and publishes it to MediaMTX. Every other kind is
+  delivered by ffmpeg itself.
 - The service starts MediaMTX as a child with the listener ports from `.env`
   and stops with it. If MediaMTX exits, the service exits non-zero and Compose
   restarts the container.
@@ -90,7 +91,7 @@ setting.
 
 | Transport | Direction | KLV | The consumer registers |
 |-----------|-----------|-----|------------------------|
-| RTSP / HLS / RTMP via MediaMTX | consumer pulls | RTSP only | `rtsp://<host>:8554/<name>`, `http://<host>:8888/<name>/index.m3u8`, `rtmp://<host>:1935/<name>` |
+| RTSP via MediaMTX | consumer pulls | yes | `rtsp://<host>:8554/<name>` |
 | UDP | we push | yes | `udp://0.0.0.0:<port>` |
 | Multicast | we push | yes | `udp://<group>:<port>` |
 | RTP / TS | we push | yes | `rtp://0.0.0.0:<port>` |
@@ -113,17 +114,18 @@ as SRT call, shows the crash and relaunch states with ffmpeg's error until the
 stream is registered there; UDP, RTP and SRTP pushes send regardless and are
 simply not heard until then.
 
-MediaMTX receives MPEG-TS over a loopback SRT connection and preserves KLV
-timed metadata on its RTSP output. Its HLS and RTMP outputs carry video/audio
-only. FFmpeg cannot publish KLV directly over RTSP, which is why the local
-feed uses SRT. The playback URLs and saved transport ids are unchanged.
+FFmpeg cannot publish KLV over RTSP. For RTSP via MediaMTX, ffmpeg writes
+MPEG-TS to its standard output and a GStreamer relay (`gst-launch-1.0`)
+publishes it to MediaMTX as one MPEG-TS track over RTSP (RFC 2250). Readers
+demux that track themselves, so ffprobe and video-streaming name the KLV
+track `klv`. KLV sent as its own RTP track (RFC 6597) would arrive with no
+codec name, because FFmpeg does not recognize that payload. MediaMTX cannot
+repackage an MPEG-TS track for HLS or RTMP, so this kind offers RTSP only.
 Every transport stream kind carries the whole MPEG-TS, KLV included.
 
-KLV routing requires MediaMTX 1.13.0 or later; the image pins 1.21.2. The
-SRT ingest listener binds only to `127.0.0.1` and needs no Docker port mapping.
-Set `MEDIAMTX_SRT_PORT=8890` in existing `.env` files before rebuilding.
-Clients must support the KLV RTP payload to interpret the metadata; FFmpeg
-8.1.2 receives the bytes as a data track but does not name its codec in ffprobe.
+The image carries only the parts of GStreamer the relay loads, about 10 MB.
+The packaged plugins would add about 280 MB of graphics libraries. The build
+fails if an element the relay uses cannot load.
 
 ## Passthrough and transcode
 
@@ -207,7 +209,7 @@ HLS (TS segments) streams write their playlists under `/app/hls` inside the
 container; the directory is not persisted.
 
 Stream names are yours: letters, digits, `-` and `_`, unique, and they double
-as the RTSP, HLS and RTMP path.
+as the RTSP path.
 
 ## Configuration
 
@@ -227,9 +229,6 @@ networking mode is not in `.env` either. Each make start target picks it.
 |----------|-------------|
 | `CONTAINER_NAME` | Image and container name |
 | `MEDIAMTX_RTSP_PORT` | RTSP listener port |
-| `MEDIAMTX_HLS_PORT` | HLS HTTP port |
-| `MEDIAMTX_RTMP_PORT` | RTMP listener port |
-| `MEDIAMTX_SRT_PORT` | Local SRT ingest port (loopback only) |
 | `MEDIAMTX_RTP_PORT` | RTP UDP port |
 | `MEDIAMTX_RTCP_PORT` | RTCP UDP port |
 | `PLAY_PORT` | Play page port (see "Play videos into cxedge") |
@@ -404,8 +403,6 @@ Each make start target picks its networking mode:
 
   ```bash
   sudo ufw allow from <lan subnet> to any port 8554 proto tcp
-  sudo ufw allow from <lan subnet> to any port 8888 proto tcp
-  sudo ufw allow from <lan subnet> to any port 1935 proto tcp
   sudo ufw allow from <lan subnet> to any port 9080 proto tcp
   sudo ufw allow from <lan subnet> to any port 9180 proto tcp
   sudo ufw allow from <lan subnet> to any port 8000:8001 proto udp

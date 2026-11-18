@@ -5,14 +5,12 @@ logLevel: error
 # Listener ports are deliberately absent: .env owns them, and entrypoint.sh
 # passes them to MediaMTX through its MTX_* config overrides.
 
-# Enable HLS
-hls: yes
-
-# RTSP, HLS and RTMP are served. SRT ingests MPEG-TS with KLV from FFmpeg;
-# entrypoint.sh binds it to loopback because both processes share a container.
-rtmp: yes
+# Only RTSP is served. The GStreamer relay publishes MPEG-TS with KLV over
+# RTSP, and MediaMTX cannot repackage that track for HLS or RTMP.
+hls: no
+rtmp: no
 webrtc: no
-srt: yes
+srt: no
 
 # Paths configuration
 # All videos in /app/videos are automatically discovered and streamed

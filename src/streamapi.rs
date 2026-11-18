@@ -604,8 +604,6 @@ mod tests {
                 snapshot,
                 url_facts: UrlFacts {
                     rtsp_port: 8554,
-                    hls_port: 8888,
-                    rtmp_port: 1935,
                     api_port: 8080,
                     play_port: 9080,
                 },
@@ -859,11 +857,7 @@ mod tests {
         let row = api.stream("boats", Some("operator-console:9080"));
         assert_eq!(
             row["register"],
-            json!([
-                ["rtsp", "rtsp://operator-console:8554/boats"],
-                ["hls", "http://operator-console:8888/boats/index.m3u8"],
-                ["rtmp", "rtmp://operator-console:1935/boats"]
-            ])
+            json!([["rtsp", "rtsp://operator-console:8554/boats"]])
         );
         assert_eq!(
             api.stream("boats", Some("[::1]:9080"))["register"][0][1],

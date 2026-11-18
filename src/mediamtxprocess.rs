@@ -34,10 +34,6 @@ pub fn mediamtx_environment(config: &Config) -> Vec<(String, String)> {
         ("MTX_RTSPADDRESS", format!(":{}", config.rtsp_port)),
         ("MTX_RTPADDRESS", format!(":{}", config.rtp_port)),
         ("MTX_RTCPADDRESS", format!(":{}", config.rtcp_port)),
-        ("MTX_HLSADDRESS", format!(":{}", config.hls_port)),
-        ("MTX_RTMPADDRESS", format!(":{}", config.rtmp_port)),
-        // The SRT listener only receives the local ffmpeg feeds.
-        ("MTX_SRTADDRESS", format!("127.0.0.1:{}", config.srt_port)),
     ]
     .into_iter()
     .map(|(name, value)| (name.to_string(), value))
@@ -106,19 +102,15 @@ mod tests {
 
     #[test]
     fn listener_addresses_come_from_the_ports() {
-        let mut config = Config::new(8554, 8888, 1935, 8080, "info").unwrap();
+        let mut config = Config::new(8554, 8080, "info").unwrap();
         config.rtp_port = 8000;
         config.rtcp_port = 8001;
-        config.srt_port = 8890;
         assert_eq!(
             mediamtx_environment(&config),
             [
                 ("MTX_RTSPADDRESS", ":8554"),
                 ("MTX_RTPADDRESS", ":8000"),
                 ("MTX_RTCPADDRESS", ":8001"),
-                ("MTX_HLSADDRESS", ":8888"),
-                ("MTX_RTMPADDRESS", ":1935"),
-                ("MTX_SRTADDRESS", "127.0.0.1:8890"),
             ]
             .map(|(name, value)| (name.to_string(), value.to_string()))
         );
