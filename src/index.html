@@ -796,6 +796,7 @@ function klvOutFact(stream) {
 
 /* One mode fact: what is in force, and why, only when the choice could not be honoured. */
 function modeFact(stream) {
+  if (!stream.effective_mode) return { mode: stream.mode, instead: "" };
   if (stream.mode === stream.effective_mode) return { mode: stream.effective_mode, instead: "" };
   return {
     mode: stream.effective_mode,
