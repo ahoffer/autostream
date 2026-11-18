@@ -12,11 +12,12 @@ Their instructions are `package/README.md`, which the zip carries. They need
 Docker and registry credentials, and no make, Rust, or source tree.
 
 The play page lists every file in `videos/` with Play once, Play forever,
-Stop, and the RTSP address to register in cxedge, such as
-`rtsp://autostream:10554/cargoship`. On a first start every video is already
-playing forever. Play once and Play forever start the file's first RTSP /
-HLS / RTMP stream, or create one named after the file, and set its loop
-count. On a playing video they restart it with the new loop count. On
+Stop, and the HTTP TS address to register in cxedge, such as
+`http://autostream:43000`. On a first start every video is already playing
+forever. Play once and Play forever start the file's first HTTP TS stream, or
+create one named after the file, and set its loop count. Docker mode chooses
+HTTP TS with `AUTOSTREAM_PLAY_TRANSPORT: http` in `package/compose.yaml`.
+Without it the play page uses RTSP / HLS / RTMP via MediaMTX. On a playing video they restart it with the new loop count. On
 `octo-cx-network` every advertised URL uses the host name `autostream`.
 Only the play page and its calls answer on port 9080.
 

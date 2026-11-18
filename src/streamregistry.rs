@@ -22,8 +22,6 @@ use crate::transports::{Direction, TemplateFields, TransportKind, kind_by_id};
 /// Random ports sit above every first port a transport can be given and below the ephemeral range.
 pub const RANDOM_PORT_LOW: u16 = 50000;
 pub const RANDOM_PORT_HIGH: u16 = 59999;
-/// A first start seeds the videos already present as streams of this kind.
-pub const SEED_TRANSPORT: &str = "rtsp";
 pub const STREAM_NAME_LENGTH: usize = 64;
 
 /// Why a mutation did not happen: refused on its merits, or failed in storage or a process.
@@ -56,9 +54,14 @@ pub fn is_ignored(path: &Path) -> bool {
 }
 
 /// The play page plays a file through the first stream, in creation order,
-/// that serves that file through MediaMTX.
-pub fn is_play_stream(stream_filename: &str, stream_transport: &str, filename: &str) -> bool {
-    stream_filename == filename && stream_transport == SEED_TRANSPORT
+/// that carries that file over the play transport.
+pub fn is_play_stream(
+    stream_filename: &str,
+    stream_transport: &str,
+    filename: &str,
+    play_transport: &str,
+) -> bool {
+    stream_filename == filename && stream_transport == play_transport
 }
 
 /// The file's stem as a valid stream name: runs of other characters become one dash,
@@ -173,6 +176,10 @@ impl StreamRegistry {
     /// Stable files from the last inventory, offered as sources.
     pub fn videos(&self) -> &[String] {
         &self.videos
+    }
+
+    pub fn play_transport(&self) -> &str {
+        &self.config.play_transport
     }
 
     pub fn has_stream(&self, name: &str) -> bool {
@@ -491,20 +498,21 @@ impl StreamRegistry {
         }
     }
 
-    /// Start one MediaMTX stream per video that settled, named after its file; the first
+    /// Start one play stream per video that settled, named after its file; the first
     /// stream to exist, seeded or made by hand, ends seeding.
     fn seed_streams(&mut self, filenames: &[String]) {
         if !self.streams.is_empty() {
             self.seeding = false;
             return;
         }
+        let transport = self.config.play_transport.clone();
         for filename in filenames {
             let name =
                 seeded_stream_name(filename, &|candidate| self.streams.contains_key(candidate));
             match self.create_stream(
                 &name,
                 filename,
-                SEED_TRANSPORT,
+                &transport,
                 &StreamChanges::default(),
                 true,
             ) {
@@ -539,7 +547,8 @@ impl StreamRegistry {
             None => {
                 let name =
                     seeded_stream_name(filename, &|candidate| self.streams.contains_key(candidate));
-                self.create_stream(&name, filename, SEED_TRANSPORT, &changes, true)?;
+                let transport = self.config.play_transport.clone();
+                self.create_stream(&name, filename, &transport, &changes, true)?;
                 Ok(true)
             }
         }
@@ -559,7 +568,12 @@ impl StreamRegistry {
             .iter()
             .find(|(_, stream)| {
                 let binding = stream.binding();
-                is_play_stream(&binding.filename, &binding.transport, filename)
+                is_play_stream(
+                    &binding.filename,
+                    &binding.transport,
+                    filename,
+                    &self.config.play_transport,
+                )
             })
             .map(|(name, _)| name.clone())
     }
@@ -1076,6 +1090,7 @@ mod tests {
                 statuses: registry.status(),
                 settings: registry.settings().clone(),
                 videos: vec![source.clone()],
+                play_transport: registry.play_transport().to_string(),
             };
             let url_facts = UrlFacts {
                 rtsp_port: 8554,
@@ -1096,6 +1111,35 @@ mod tests {
         assert!(harness.registry.play_file(&source, Some(0)).unwrap());
         assert_eq!(harness.ffmpeg.run_count(), runs + 1);
         assert_eq!(play_row(&mut harness.registry).selected, Some(PlayChoice::Once));
+    }
+
+    #[test]
+    fn the_play_transport_decides_which_stream_a_file_plays_through() {
+        let mut harness = Harness::new();
+        harness.config.play_transport = "http".to_string();
+        harness.registry =
+            build_registry(&harness.config, None, &harness.ffmpeg, &harness.resolver);
+        harness
+            .registry
+            .supervise(Some(&inventory(&["source.mp4"])));
+        let source = harness.source_name();
+        assert!(harness.registry.play_file(&source, Some(-1)).unwrap());
+        assert_eq!(harness.status("source").transport, "http");
+        let snapshot = StatusSnapshot {
+            statuses: harness.registry.status(),
+            settings: harness.registry.settings().clone(),
+            videos: vec![source.clone()],
+            play_transport: harness.registry.play_transport().to_string(),
+        };
+        let url_facts = UrlFacts {
+            rtsp_port: 8554,
+            hls_port: 8888,
+            rtmp_port: 1935,
+            api_port: 8080,
+            play_port: 9080,
+        };
+        let row = describe_play_rows(&snapshot, "publisher", &url_facts).remove(0);
+        assert_eq!(row.url.as_deref(), Some("http://publisher:43000"));
     }
 
     #[test]

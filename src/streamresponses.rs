@@ -65,6 +65,7 @@ pub struct StatusSnapshot {
     pub statuses: Vec<StreamStatus>,
     pub settings: RuntimeSettings,
     pub videos: Vec<String>,
+    pub play_transport: String,
 }
 
 /// Start-up facts needed to advertise streams; the host is chosen per request.
@@ -206,7 +207,14 @@ pub fn describe_play_rows(
             let stream = snapshot
                 .statuses
                 .iter()
-                .find(|status| is_play_stream(&status.filename, &status.transport, file));
+                .find(|status| {
+                    is_play_stream(
+                        &status.filename,
+                        &status.transport,
+                        file,
+                        &snapshot.play_transport,
+                    )
+                });
             let url = stream.and_then(|status| {
                 describe_streams(
                     std::slice::from_ref(status),
@@ -217,7 +225,8 @@ pub fn describe_play_rows(
                 .remove(0)
                 .register
                 .into_iter()
-                .find_map(|(label, url)| (label == "rtsp").then_some(url))
+                .next()
+                .map(|(_, url)| url)
             });
             PlayRow {
                 file: file.clone(),

@@ -47,6 +47,7 @@ pub fn snapshot_of(registry: &mut StreamRegistry) -> Arc<StatusSnapshot> {
         statuses: registry.status(),
         settings: registry.settings().clone(),
         videos: registry.videos().to_vec(),
+        play_transport: registry.play_transport().to_string(),
     })
 }
 

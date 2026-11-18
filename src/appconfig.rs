@@ -4,6 +4,8 @@ use std::collections::HashMap;
 use std::fmt;
 use std::path::PathBuf;
 
+use crate::transports::kind_by_id;
+
 pub const LOG_LEVEL_NAMES: [&str; 4] = ["debug", "info", "warning", "error"];
 
 /// Deployment mistakes: a missing or unusable start-up setting.
@@ -51,6 +53,8 @@ pub struct Config {
     /// This container's name on a consumer's Docker network, set only when it joins one.
     /// Advertised URLs use it in place of the advertised host setting.
     pub network_host: Option<String>,
+    /// The transport kind of the streams the play page starts and a first start seeds.
+    pub play_transport: String,
     pub log_level: String,
     pub videos_dir: PathBuf,
     pub state_path: PathBuf,
@@ -86,6 +90,7 @@ impl Config {
             api_port,
             play_port: 9080,
             network_host: None,
+            play_transport: "rtsp".to_string(),
             log_level: log_level.to_string(),
             videos_dir: PathBuf::from("/app/videos"),
             state_path: PathBuf::from("/app/mounted/streams_config.json"),
@@ -118,6 +123,14 @@ impl Config {
             .get("AUTOSTREAM_NETWORK_HOST")
             .map(|host| host.trim().to_string())
             .filter(|host| !host.is_empty());
+        if let Some(transport) = environ.get("AUTOSTREAM_PLAY_TRANSPORT") {
+            if kind_by_id(transport).is_none() {
+                return Err(ConfigError(format!(
+                    "AUTOSTREAM_PLAY_TRANSPORT names no transport: {transport:?}"
+                )));
+            }
+            config.play_transport = transport.clone();
+        }
         config.srt_port = require_port("MEDIAMTX_SRT_PORT", environ)?;
         config.rtp_port = require_port("MEDIAMTX_RTP_PORT", environ)?;
         config.rtcp_port = require_port("MEDIAMTX_RTCP_PORT", environ)?;
@@ -170,6 +183,7 @@ mod tests {
         assert_eq!(config.srt_port, 18890);
         assert_eq!(config.play_port, 8070);
         assert_eq!(config.network_host, None);
+        assert_eq!(config.play_transport, "rtsp");
         assert_eq!((config.rtp_port, config.rtcp_port), (18000, 18001));
         assert_eq!(config.log_level, "info");
         assert!(!config.show_ffmpeg_output());
@@ -184,8 +198,10 @@ mod tests {
         with_hosts.insert("LOG_LEVEL".into(), "DEBUG".into());
         with_hosts.insert("AUTOSTREAM_REFRESH_LAN_IP".into(), "true".into());
         with_hosts.insert("AUTOSTREAM_NETWORK_HOST".into(), "autostream".into());
+        with_hosts.insert("AUTOSTREAM_PLAY_TRANSPORT".into(), "http".into());
         let config = Config::from_env(&with_hosts).unwrap();
         assert_eq!(config.network_host.as_deref(), Some("autostream"));
+        assert_eq!(config.play_transport, "http");
         assert_eq!(
             (config.host_name.as_str(), config.host_lan_ip.as_str()),
             ("publisher", "192.168.1.20")
@@ -214,6 +230,11 @@ mod tests {
                 "AUTOSTREAM_REFRESH_LAN_IP",
                 "yes",
                 "AUTOSTREAM_REFRESH_LAN_IP must be true or false",
+            ),
+            (
+                "AUTOSTREAM_PLAY_TRANSPORT",
+                "ftp",
+                "AUTOSTREAM_PLAY_TRANSPORT names no transport",
             ),
         ] {
             let mut broken = environ();

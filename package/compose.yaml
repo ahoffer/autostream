@@ -16,8 +16,10 @@ services:
     env_file:
       - .env
     # Every advertised URL uses the container name, the one name cxedge resolves.
+    # The play page starts HTTP TS streams.
     environment:
       AUTOSTREAM_NETWORK_HOST: ${CONTAINER_NAME}
+      AUTOSTREAM_PLAY_TRANSPORT: http
     # A named volume keeps the stream state writable for the container user
     # (UID 1000) whatever user unpacked this folder.
     volumes:

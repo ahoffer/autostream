@@ -33,7 +33,7 @@ already playing.
    the end of the file. Play forever starts over at the end. Pressing either
    on a playing video restarts it.
 2. Press **Copy** beside its address, such as
-   `rtsp://autostream:10554/cargoship`.
+   `http://autostream:43000`.
 3. Register that address in cxedge.
 
 **Stop** ends a stream. To add a video, copy it into `videos/`. It appears on
