@@ -9,7 +9,7 @@
 VERSION := $(shell sed -n 's/^version = "\(.*\)"$$/\1/p' Cargo.toml | head -n 1)
 
 # Where `make push` publishes the image and the package pulls it, under
-# GITLAB_OLABS_HOST. The package names the host only by that variable.
+# GITLAB_OLABS_HOST. The package writes the host's value into its .env.
 REGISTRY_PATH := octo-cx/marsoc/marrs-vnv/autostream
 REGISTRY_IMAGE := $(GITLAB_OLABS_HOST)/$(REGISTRY_PATH)
 
@@ -62,14 +62,14 @@ push:  ## Tag the built image and push it to the olabs registry
 	docker push $(REGISTRY_IMAGE):$(VERSION)
 
 # Stage the folder in a temporary directory, then zip it into .generated/.
-# Its .env is this one plus the registry image the tester's Compose pulls.
-# Compose fills in GITLAB_OLABS_HOST from the tester's environment.
+# Its .env is this one plus the full registry image the tester's Compose pulls.
 package-docker-mode:  ## Zip the docker mode folder for testers into .generated/
+	@: "$${GITLAB_OLABS_HOST:?must be set}"
 	staging=$$(mktemp -d) && folder=$$staging/$(PACKAGE_NAME) && \
 	mkdir -p $$folder/videos .generated && \
 	cp $(DOCKER_MODE_COMPOSE) package/README.md $$folder/ && \
 	cp .env $$folder/.env && \
-	printf 'AUTOSTREAM_IMAGE=%s/%s:%s\n' '$${GITLAB_OLABS_HOST:?set GITLAB_OLABS_HOST}' '$(REGISTRY_PATH)' '$(VERSION)' >> $$folder/.env && \
+	printf 'AUTOSTREAM_IMAGE=%s/%s:%s\n' "$$GITLAB_OLABS_HOST" '$(REGISTRY_PATH)' '$(VERSION)' >> $$folder/.env && \
 	$(if $(PACKAGE_VIDEOS),cp $(PACKAGE_VIDEOS) $$folder/videos/ &&) \
 	rm -f .generated/$(PACKAGE_NAME).zip && \
 	(cd $$staging && zip -qr $(CURDIR)/.generated/$(PACKAGE_NAME).zip $(PACKAGE_NAME)) && \
