@@ -202,8 +202,55 @@ pub fn probe_file(video_path: &Path) -> MediaProbeResult {
     if !output.status.success() {
         return MediaProbeResult::UNKNOWN;
     }
-    parse_probe_report(&String::from_utf8_lossy(&output.stdout))
-        .unwrap_or(MediaProbeResult::UNKNOWN)
+    let probe = parse_probe_report(&String::from_utf8_lossy(&output.stdout))
+        .unwrap_or(MediaProbeResult::UNKNOWN);
+    if probe
+        .data_codecs
+        .as_ref()
+        .is_some_and(|codecs| codecs.iter().any(|codec| codec == "klv"))
+    {
+        check_klv(video_path);
+    }
+    probe
+}
+
+/// Warn when a track ffprobe names 'klv' does not hold valid ST 0601: the
+/// codec name only says the track is tagged KLV, not that its packets parse.
+fn check_klv(video_path: &Path) {
+    let argv: Vec<String> = ["ffmpeg", "-v", "error", "-i"]
+        .into_iter()
+        .map(str::to_string)
+        .chain([video_path.to_string_lossy().into_owned()])
+        .chain(["-map", "0:d", "-c", "copy", "-f", "data", "-"].map(str::to_string))
+        .collect();
+    let Ok(output) = run_bounded(&argv, Duration::from_secs(10), Stdio::null()) else {
+        return;
+    };
+    if let Some(problem) = klv_problem(&output.stdout) {
+        log::warn!(
+            "{}: {}",
+            video_path.file_name().unwrap_or_default().to_string_lossy(),
+            problem
+        );
+    }
+}
+
+/// Why a raw KLV stream fails MISB ST 0601, or None when it conforms.
+pub fn klv_problem(klv: &[u8]) -> Option<String> {
+    let report = misb::conform::check_stream(klv);
+    if report.passed() {
+        return None;
+    }
+    let first = report
+        .findings
+        .iter()
+        .find(|finding| finding.severity == misb::conform::Severity::Error)?;
+    Some(format!(
+        "KLV is not valid ST 0601 ({} errors in {} packets), first: {}",
+        report.errors(),
+        report.packets,
+        first
+    ))
 }
 
 /// How ffmpeg delivers one stream; when `url` is None, `blocker` says what the registry still lacks.
@@ -725,6 +772,21 @@ mod tests {
             carries_klv: false,
             ..Delivery::to_url("rtsp://localhost:8554/boats")
         }
+    }
+
+    #[test]
+    fn klv_problem_flags_corrupt_st0601_and_passes_valid() {
+        let mut builder = misb::st0601::Builder::new(1_700_000_000_000_000);
+        builder
+            .float(misb::st0601::Tag::SensorLatitude, 38.9)
+            .unwrap();
+        let packet = builder.finish();
+        assert_eq!(klv_problem(&packet), None);
+
+        let mut corrupt = packet.clone();
+        *corrupt.last_mut().unwrap() ^= 0xff;
+        assert!(klv_problem(&corrupt).unwrap().contains("CHECKSUM"));
+        assert!(klv_problem(&[0u8; 64]).is_some());
     }
 
     fn position(argv: &[String], flag: &str) -> usize {
