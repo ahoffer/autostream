@@ -17,6 +17,7 @@ dependencies = [
  "indexmap",
  "libc",
  "log",
+ "misb",
  "rand",
  "serde",
  "serde_json",
@@ -327,6 +328,12 @@ dependencies = [
  "wasi",
  "windows-sys",
 ]
+
+[[package]]
+name = "misb"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ec241aa17545dd10e31465c0605ca1e116f70a69158450733fb5b764b47253a9"
 
 [[package]]
 name = "once_cell"
